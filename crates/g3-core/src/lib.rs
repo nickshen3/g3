@@ -23,7 +23,7 @@ use anyhow::Result;
 use g3_computer_control::WebDriverController;
 use g3_config::Config;
 use g3_execution::CodeExecutor;
-use g3_providers::{CompletionRequest, Message, MessageRole, ProviderRegistry, Tool};
+use g3_providers::{CacheControl, CompletionRequest, Message, MessageRole, ProviderRegistry, Tool};
 #[allow(unused_imports)]
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -423,18 +423,12 @@ Format this as a detailed but concise summary that can be used to resume the con
         self.used_tokens = 0;
 
         // Add the summary as a system message
-        let summary_message = Message {
-            role: MessageRole::System,
-            content: format!("Previous conversation summary:\n\n{}", summary),
-        };
+        let summary_message = Message::new(MessageRole::System, format!("Previous conversation summary:\n\n{}", summary));
         self.add_message(summary_message);
 
         // Add the latest user message if provided
         if let Some(user_msg) = latest_user_message {
-            self.add_message(Message {
-                role: MessageRole::User,
-                content: user_msg,
-            });
+            self.add_message(Message::new(MessageRole::User, user_msg));
         }
 
         let new_chars: usize = self
@@ -756,6 +750,7 @@ pub struct Agent<W: UiWriter> {
     safaridriver_process: std::sync::Arc<tokio::sync::RwLock<Option<tokio::process::Child>>>,
     macax_controller:
         std::sync::Arc<tokio::sync::RwLock<Option<g3_computer_control::MacAxController>>>,
+    tool_call_count: usize,
 }
 
 impl<W: UiWriter> Agent<W> {
@@ -898,6 +893,8 @@ impl<W: UiWriter> Agent<W> {
                     Some(anthropic_config.model.clone()),
                     anthropic_config.max_tokens,
                     anthropic_config.temperature,
+                    anthropic_config.cache_config.clone(),
+                    anthropic_config.enable_1m_context,
                 )?;
                 providers.register(anthropic_provider);
             }
@@ -944,10 +941,7 @@ impl<W: UiWriter> Agent<W> {
 
         // If README content is provided, add it as the first system message
         if let Some(readme) = readme_content {
-            let readme_message = Message {
-                role: MessageRole::System,
-                content: readme,
-            };
+            let readme_message = Message::new(MessageRole::System, readme);
             context_window.add_message(readme_message);
         }
 
@@ -1003,7 +997,21 @@ impl<W: UiWriter> Agent<W> {
                     None
                 }))
             },
+            tool_call_count: 0,
         })
+    }
+
+    /// Convert cache config string to CacheControl enum
+    fn parse_cache_control(cache_config: &str) -> Option<CacheControl> {
+        match cache_config {
+            "ephemeral" => Some(CacheControl::Ephemeral),
+            "5minute" => Some(CacheControl::FiveMinute),
+            "1hour" => Some(CacheControl::OneHour),
+            _ => {
+                warn!("Invalid cache_config value: '{}'. Valid values are: ephemeral, 5minute, 1hour", cache_config);
+                None
+            }
+        }
     }
 
     fn get_configured_context_length(config: &Config, providers: &ProviderRegistry) -> Result<u32> {
@@ -1185,7 +1193,11 @@ impl<W: UiWriter> Agent<W> {
         // Only add system message if this is the first interaction (empty conversation history)
         if self.context_window.conversation_history.is_empty() {
             let provider = self.providers.get(None)?;
-            let system_prompt = if provider.has_native_tool_calling() {
+            let provider_has_native_tool_calling = provider.has_native_tool_calling();
+            let provider_name_for_system = provider.name().to_string();
+            drop(provider); // Drop provider reference to avoid borrowing issues
+            
+            let system_prompt = if provider_has_native_tool_calling {
                 // For native tool calling providers, use a more explicit system prompt
                 "You are G3, an AI programming agent of the same skill level as a seasoned engineer at a major technology company. You analyze given tasks and write code to achieve goals.
 
@@ -1493,18 +1505,34 @@ If you can complete it with 1-2 tool calls, skip TODO.
             }
 
             // Add system message to context window
-            let system_message = Message {
-                role: MessageRole::System,
-                content: system_prompt,
+            let system_message = {
+                // Check if we should use cache control for system message
+                if let Some(cache_config) = match provider_name_for_system.as_str() {
+                    "anthropic" => self.config.providers.anthropic.as_ref()
+                        .and_then(|c| c.cache_config.as_ref())
+                        .and_then(|config| Self::parse_cache_control(config)),
+                    "databricks" => self.config.providers.databricks.as_ref()
+                        .and_then(|c| {
+                            if c.model.contains("claude") {
+                                c.cache_config.as_ref()
+                                    .and_then(|config| Self::parse_cache_control(config))
+                            } else {
+                                None
+                            }
+                        }),
+                    _ => None,
+                } {
+                    let provider = self.providers.get(None)?;
+                    Message::with_cache_control_validated(MessageRole::System, system_prompt, cache_config, provider)
+                } else {
+                    Message::new(MessageRole::System, system_prompt)
+                }
             };
             self.context_window.add_message(system_message);
         }
 
         // Add user message to context window
-        let user_message = Message {
-            role: MessageRole::User,
-            content: format!("Task: {}", description),
-        };
+        let user_message = Message::new(MessageRole::User, format!("Task: {}", description));
         self.context_window.add_message(user_message);
 
         // Use the complete conversation history for the request
@@ -1512,6 +1540,9 @@ If you can complete it with 1-2 tool calls, skip TODO.
 
         // Check if provider supports native tool calling and add tools if so
         let provider = self.providers.get(None)?;
+        let provider_name = provider.name().to_string();
+        let has_native_tool_calling = provider.has_native_tool_calling();
+        let supports_cache_control = provider.supports_cache_control();
         let tools = if provider.has_native_tool_calling() {
             Some(Self::create_tool_definitions(
                 self.config.webdriver.enabled,
@@ -1521,9 +1552,10 @@ If you can complete it with 1-2 tool calls, skip TODO.
         } else {
             None
         };
+        drop(provider); // Drop the provider reference to avoid borrowing issues
 
         // Get max_tokens from provider configuration
-        let max_tokens = match provider.name() {
+        let max_tokens = match provider_name.as_str() {
             "databricks" => {
                 // Use the model's maximum limit for Databricks to allow large file generation
                 Some(32000)
@@ -1578,9 +1610,32 @@ If you can complete it with 1-2 tool calls, skip TODO.
         // Add assistant response to context window only if not empty
         // This prevents the "Skipping empty message" warning when only tools were executed
         if !response_content.trim().is_empty() {
-            let assistant_message = Message {
-                role: MessageRole::Assistant,
-                content: response_content.clone(),
+            let assistant_message = {
+                // Check if we should use cache control (every 10 tool calls)
+                if self.tool_call_count > 0 && self.tool_call_count % 10 == 0 {
+                    let provider = self.providers.get(None)?;
+                    if let Some(cache_config) = match provider.name() {
+                        "anthropic" => self.config.providers.anthropic.as_ref()
+                            .and_then(|c| c.cache_config.as_ref())
+                            .and_then(|config| Self::parse_cache_control(config)),
+                        "databricks" => self.config.providers.databricks.as_ref()
+                            .and_then(|c| {
+                                if c.model.contains("claude") {
+                                    c.cache_config.as_ref()
+                                        .and_then(|config| Self::parse_cache_control(config))
+                                } else {
+                                    None
+                                }
+                            }),
+                        _ => None,
+                    } {
+                        Message::with_cache_control_validated(MessageRole::Assistant, response_content.clone(), cache_config, provider)
+                    } else {
+                        Message::new(MessageRole::Assistant, response_content.clone())
+                    }
+                } else {
+                    Message::new(MessageRole::Assistant, response_content.clone())
+                }
             };
             self.context_window.add_message(assistant_message);
         } else {
@@ -1783,17 +1838,11 @@ If you can complete it with 1-2 tool calls, skip TODO.
             .join("\n\n");
 
         let summary_messages = vec![
-            Message {
-                role: MessageRole::System,
-                content: "You are a helpful assistant that creates concise summaries.".to_string(),
-            },
-            Message {
-                role: MessageRole::User,
-                content: format!(
+            Message::new(MessageRole::System, "You are a helpful assistant that creates concise summaries.".to_string()),
+            Message::new(MessageRole::User, format!(
                     "Based on this conversation history, {}\n\nConversation:\n{}",
                     summary_prompt, conversation_text
-                ),
-            },
+                )),
         ];
 
         let provider = self.providers.get(None)?;
@@ -2776,18 +2825,11 @@ If you can complete it with 1-2 tool calls, skip TODO.
                 .join("\n\n");
 
             let summary_messages = vec![
-                Message {
-                    role: MessageRole::System,
-                    content: "You are a helpful assistant that creates concise summaries."
-                        .to_string(),
-                },
-                Message {
-                    role: MessageRole::User,
-                    content: format!(
+                Message::new(MessageRole::System, "You are a helpful assistant that creates concise summaries.".to_string()),
+                Message::new(MessageRole::User, format!(
                         "Based on this conversation history, {}\n\nConversation:\n{}",
                         summary_prompt, conversation_text
-                    ),
-                },
+                )),
             ];
 
             let provider = self.providers.get(None)?;
@@ -3273,29 +3315,20 @@ If you can complete it with 1-2 tool calls, skip TODO.
                             // Add the tool call and result to the context window using RAW unfiltered content
                             // This ensures the log file contains the true raw content including JSON tool calls
                             let tool_message = if !raw_content_for_log.trim().is_empty() {
-                                Message {
-                                    role: MessageRole::Assistant,
-                                    content: format!(
+                                Message::new(MessageRole::Assistant, format!(
                                         "{}\n\n{{\"tool\": \"{}\", \"args\": {}}}",
                                         raw_content_for_log.trim(),
                                         tool_call.tool,
                                         tool_call.args
-                                    ),
-                                }
+                                ))
                             } else {
                                 // No text content before tool call, just include the tool call
-                                Message {
-                                    role: MessageRole::Assistant,
-                                    content: format!(
+                                Message::new(MessageRole::Assistant, format!(
                                         "{{\"tool\": \"{}\", \"args\": {}}}",
                                         tool_call.tool, tool_call.args
-                                    ),
-                                }
+                                ))
                             };
-                            let result_message = Message {
-                                role: MessageRole::User,
-                                content: format!("Tool result: {}", tool_result),
-                            };
+                            let result_message = Message::new(MessageRole::User, format!("Tool result: {}", tool_result));
 
                             self.context_window.add_message(tool_message);
                             self.context_window.add_message(result_message);
@@ -3304,7 +3337,8 @@ If you can complete it with 1-2 tool calls, skip TODO.
                             request.messages = self.context_window.conversation_history.clone();
 
                             // Ensure tools are included for native providers in subsequent iterations
-                            if provider.has_native_tool_calling() {
+                            let provider_for_tools = self.providers.get(None)?;
+                            if provider_for_tools.has_native_tool_calling() {
                                 request.tools = Some(Self::create_tool_definitions(
                                     self.config.webdriver.enabled,
                                     self.config.macax.enabled,
@@ -3635,9 +3669,32 @@ If you can complete it with 1-2 tool calls, skip TODO.
                         .replace("<</SYS>>", "");
 
                     if !raw_clean.trim().is_empty() {
-                        let assistant_message = Message {
-                            role: MessageRole::Assistant,
-                            content: raw_clean,
+                        let assistant_message = {
+                            // Check if we should use cache control (every 10 tool calls)
+                            if self.tool_call_count > 0 && self.tool_call_count % 10 == 0 {
+                                let provider = self.providers.get(None)?;
+                                if let Some(cache_config) = match provider.name() {
+                                    "anthropic" => self.config.providers.anthropic.as_ref()
+                                        .and_then(|c| c.cache_config.as_ref())
+                                        .and_then(|config| Self::parse_cache_control(config)),
+                                    "databricks" => self.config.providers.databricks.as_ref()
+                                        .and_then(|c| {
+                                            if c.model.contains("claude") {
+                                                c.cache_config.as_ref()
+                                                    .and_then(|config| Self::parse_cache_control(config))
+                                            } else {
+                                                None
+                                            }
+                                        }),
+                                    _ => None,
+                                } {
+                                    Message::with_cache_control_validated(MessageRole::Assistant, raw_clean, cache_config, provider)
+                                } else {
+                                    Message::new(MessageRole::Assistant, raw_clean)
+                                }
+                            } else {
+                                Message::new(MessageRole::Assistant, raw_clean)
+                            }
                         };
                         self.context_window.add_message(assistant_message);
                     }
@@ -3679,7 +3736,10 @@ If you can complete it with 1-2 tool calls, skip TODO.
         Ok(TaskResult::new(final_response, self.context_window.clone()))
     }
 
-    pub async fn execute_tool(&self, tool_call: &ToolCall) -> Result<String> {
+    pub async fn execute_tool(&mut self, tool_call: &ToolCall) -> Result<String> {
+        // Increment tool call count
+        self.tool_call_count += 1;
+        
         debug!("=== EXECUTING TOOL ===");
         debug!("Tool name: {}", tool_call.tool);
         debug!("Tool args (raw): {:?}", tool_call.args);

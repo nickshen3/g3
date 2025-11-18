@@ -14,6 +14,15 @@ max_tokens = 4096  # Per-request output limit (how many tokens the model can gen
                    # Note: This is different from max_context_length (total conversation history size)
 temperature = 0.1
 use_oauth = true
+# cache_config = "ephemeral"  # Optional: Enable prompt caching for Claude models on Databricks
+                              # Options: "ephemeral", "5minute", "1hour"
+                              # Reduces costs and latency for repeated prompts. Uses Anthropic's prompt caching with different TTLs.
+                                # The cache control will be automatically applied to:
+                                # - The system prompt at the start of each session
+                                # - Assistant responses after every 10 tool calls
+                                # - 5minute costs $3/mtok, more details below
+                                # https://docs.claude.com/en/docs/build-with-claude/prompt-caching#pricing
+
 
 # Multiple OpenAI-compatible providers can be configured with custom names
 # Each provider gets its own section under [providers.openai_compatible.<name>]

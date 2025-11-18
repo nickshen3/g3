@@ -21,22 +21,18 @@
 //!     // Create the provider with your API key
 //!     let provider = AnthropicProvider::new(
 //!         "your-api-key".to_string(),
-//!         Some("claude-3-5-sonnet-20241022".to_string()), // Optional: defaults to claude-3-5-sonnet-20241022
-//!         Some(4096),  // Optional: max tokens
-//!         Some(0.1),   // Optional: temperature
+//!         Some("claude-3-5-sonnet-20241022".to_string()),
+//!         Some(4096),
+//!         Some(0.1),
+//!         None, // cache_config
+//!         None, // enable_1m_context
 //!     )?;
 //!
 //!     // Create a completion request
 //!     let request = CompletionRequest {
 //!         messages: vec![
-//!             Message {
-//!                 role: MessageRole::System,
-//!                 content: "You are a helpful assistant.".to_string(),
-//!             },
-//!             Message {
-//!                 role: MessageRole::User,
-//!                 content: "Hello! How are you?".to_string(),
-//!             },
+//!             Message::new(MessageRole::System, "You are a helpful assistant.".to_string()),
+//!             Message::new(MessageRole::User, "Hello! How are you?".to_string()),
 //!         ],
 //!         max_tokens: Some(1000),
 //!         temperature: Some(0.7),
@@ -62,15 +58,16 @@
 //! async fn main() -> anyhow::Result<()> {
 //!     let provider = AnthropicProvider::new(
 //!         "your-api-key".to_string(),
-//!         None, None, None,
+//!         None,
+//!         None,
+//!         None,
+//!         None, // cache_config
+//!         None, // enable_1m_context
 //!     )?;
 //!
 //!     let request = CompletionRequest {
 //!         messages: vec![
-//!             Message {
-//!                 role: MessageRole::User,
-//!                 content: "Write a short story about a robot.".to_string(),
-//!             },
+//!             Message::new(MessageRole::User, "Write a short story about a robot.".to_string()),
 //!         ],
 //!         max_tokens: Some(1000),
 //!         temperature: Some(0.7),
@@ -123,6 +120,8 @@ pub struct AnthropicProvider {
     model: String,
     max_tokens: u32,
     temperature: f32,
+    cache_config: Option<String>,
+    enable_1m_context: bool,
 }
 
 impl AnthropicProvider {
@@ -131,6 +130,8 @@ impl AnthropicProvider {
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
+        cache_config: Option<String>,
+        enable_1m_context: Option<bool>,
     ) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(300))
@@ -147,6 +148,8 @@ impl AnthropicProvider {
             model,
             max_tokens: max_tokens.unwrap_or(4096),
             temperature: temperature.unwrap_or(0.1),
+            cache_config,
+            enable_1m_context: enable_1m_context.unwrap_or(false),
         })
     }
 
@@ -156,14 +159,28 @@ impl AnthropicProvider {
             .post(ANTHROPIC_API_URL)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
-            // Anthropic beta 1m context window. Enable if needed. It costs extra, so check first.
-            // .header("anthropic-beta", "context-1m-2025-08-07")
             .header("content-type", "application/json");
+        
+        if self.enable_1m_context {
+            builder = builder.header("anthropic-beta", "context-1m-2025-08-07");
+        }
+        
         if streaming {
             builder = builder.header("accept", "text/event-stream");
         }
 
         builder
+    }
+
+    fn convert_cache_control(cache_control: &crate::CacheControl) -> AnthropicCacheControl {
+        let cache_type = match cache_control {
+            crate::CacheControl::Ephemeral => "ephemeral",
+            crate::CacheControl::FiveMinute => "5minute", 
+            crate::CacheControl::OneHour => "1hour",
+        };
+        AnthropicCacheControl {
+            cache_type: cache_type.to_string(),
+        }
     }
 
     fn convert_tools(&self, tools: &[Tool]) -> Vec<AnthropicTool> {
@@ -214,6 +231,8 @@ impl AnthropicProvider {
                         role: "user".to_string(),
                         content: vec![AnthropicContent::Text {
                             text: message.content.clone(),
+                            cache_control: message.cache_control.as_ref()
+                                .map(Self::convert_cache_control),
                         }],
                     });
                 }
@@ -222,6 +241,8 @@ impl AnthropicProvider {
                         role: "assistant".to_string(),
                         content: vec![AnthropicContent::Text {
                             text: message.content.clone(),
+                            cache_control: message.cache_control.as_ref()
+                                .map(Self::convert_cache_control),
                         }],
                     });
                 }
@@ -564,7 +585,7 @@ impl LLMProvider for AnthropicProvider {
             .content
             .iter()
             .filter_map(|c| match c {
-                AnthropicContent::Text { text } => Some(text.as_str()),
+                AnthropicContent::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -658,6 +679,11 @@ impl LLMProvider for AnthropicProvider {
         // Claude models support native tool calling
         true
     }
+    
+    fn supports_cache_control(&self) -> bool {
+        // Anthropic supports cache control
+        true
+    }
 }
 
 // Anthropic API request/response structures
@@ -698,10 +724,20 @@ struct AnthropicMessage {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct AnthropicCacheControl {
+    #[serde(rename = "type")]
+    cache_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 enum AnthropicContent {
     #[serde(rename = "text")]
-    Text { text: String },
+    Text { 
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<AnthropicCacheControl>,
+    },
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,
@@ -771,21 +807,14 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         ).unwrap();
 
         let messages = vec![
-            Message {
-                role: MessageRole::System,
-                content: "You are a helpful assistant.".to_string(),
-            },
-            Message {
-                role: MessageRole::User,
-                content: "Hello!".to_string(),
-            },
-            Message {
-                role: MessageRole::Assistant,
-                content: "Hi there!".to_string(),
-            },
+            Message::new(MessageRole::System, "You are a helpful assistant.".to_string()),
+            Message::new(MessageRole::User, "Hello!".to_string()),
+            Message::new(MessageRole::Assistant, "Hi there!".to_string()),
         ];
 
         let (system, anthropic_messages) = provider.convert_messages(&messages).unwrap();
@@ -803,14 +832,11 @@ mod tests {
             Some("claude-3-haiku-20240307".to_string()),
             Some(1000),
             Some(0.5),
+            None,
+            None,
         ).unwrap();
 
-        let messages = vec![
-            Message {
-                role: MessageRole::User,
-                content: "Test message".to_string(),
-            },
-        ];
+        let messages = vec![Message::new(MessageRole::User, "Test message".to_string())];
 
         let request_body = provider
             .create_request_body(&messages, None, false, 1000, 0.5)
@@ -828,6 +854,8 @@ mod tests {
     fn test_tool_conversion() {
         let provider = AnthropicProvider::new(
             "test-key".to_string(),
+            None,
+            None,
             None,
             None,
             None,
@@ -858,5 +886,49 @@ mod tests {
         assert_eq!(anthropic_tools[0].input_schema.schema_type, "object");
         assert!(anthropic_tools[0].input_schema.required.is_some());
         assert_eq!(anthropic_tools[0].input_schema.required.as_ref().unwrap()[0], "location");
+    }
+
+    #[test]
+    fn test_cache_control_serialization() {
+        let provider = AnthropicProvider::new(
+            "test-key".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ).unwrap();
+
+        // Test message WITHOUT cache_control
+        let messages_without = vec![Message::new(MessageRole::User, "Hello".to_string())];
+        let (_, anthropic_messages_without) = provider.convert_messages(&messages_without).unwrap();
+        let json_without = serde_json::to_string(&anthropic_messages_without).unwrap();
+        
+        println!("Anthropic JSON without cache_control: {}", json_without);
+        // Check if cache_control appears in the JSON
+        if json_without.contains("cache_control") {
+            println!("WARNING: JSON contains 'cache_control' field when not configured!");
+            assert!(!json_without.contains("\"cache_control\":null"), 
+                    "JSON should not contain 'cache_control: null'");
+        }
+
+        // Test message WITH cache_control
+        let messages_with = vec![Message::with_cache_control(
+            MessageRole::User,
+            "Hello".to_string(),
+            crate::CacheControl::Ephemeral,
+        )];
+        let (_, anthropic_messages_with) = provider.convert_messages(&messages_with).unwrap();
+        let json_with = serde_json::to_string(&anthropic_messages_with).unwrap();
+        
+        println!("Anthropic JSON with cache_control: {}", json_with);
+        assert!(json_with.contains("cache_control"), 
+                "JSON should contain 'cache_control' field when configured");
+        assert!(json_with.contains("ephemeral"), 
+                "JSON should contain 'ephemeral' type");
+        
+        // The key assertion: when cache_control is None, it should not appear in JSON
+        assert!(!json_without.contains("cache_control") || !json_without.contains("null"),
+                "JSON should not contain 'cache_control' field or null values when not configured");
     }
 }
