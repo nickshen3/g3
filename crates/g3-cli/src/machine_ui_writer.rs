@@ -91,4 +91,18 @@ impl UiWriter for MachineUiWriter {
     fn wants_full_output(&self) -> bool {
         true  // Machine mode wants complete, untruncated output
     }
+
+    fn prompt_user_yes_no(&self, message: &str) -> bool {
+        // In machine mode, we can't interactively prompt, so we log the request and return true
+        // to allow automation to proceed.
+        println!("PROMPT_USER_YES_NO: {}", message);
+        true
+    }
+
+    fn prompt_user_choice(&self, message: &str, options: &[&str]) -> usize {
+        println!("PROMPT_USER_CHOICE: {}", message);
+        println!("OPTIONS: {:?}", options);
+        // Default to first option (index 0) for automation
+        0
+    }
 }

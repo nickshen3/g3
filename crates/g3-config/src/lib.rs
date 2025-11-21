@@ -75,6 +75,12 @@ pub struct AgentConfig {
     pub auto_compact: bool,
     pub max_retry_attempts: u32,
     pub autonomous_max_retry_attempts: u32,
+    #[serde(default = "default_check_todo_staleness")]
+    pub check_todo_staleness: bool,
+}
+
+fn default_check_todo_staleness() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +157,7 @@ impl Default for Config {
                 auto_compact: true,
                 max_retry_attempts: 3,
                 autonomous_max_retry_attempts: 6,
+                check_todo_staleness: true,
             },
             computer_control: ComputerControlConfig::default(),
             webdriver: WebDriverConfig::default(),
@@ -272,6 +279,7 @@ impl Config {
                 auto_compact: true,
                 max_retry_attempts: 3,
                 autonomous_max_retry_attempts: 6,
+                check_todo_staleness: true,
             },
             computer_control: ComputerControlConfig::default(),
             webdriver: WebDriverConfig::default(),

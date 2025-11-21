@@ -164,6 +164,7 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::path::Path;
 use std::path::PathBuf;
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -1660,6 +1661,17 @@ async fn run_autonomous(
     } else {
         output.print("📋 Requirements loaded from requirements.md");
     }
+
+    // Calculate SHA256 of requirements
+    let mut hasher = Sha256::new();
+    hasher.update(requirements.as_bytes());
+    let requirements_sha = hex::encode(hasher.finalize());
+    
+    output.print(&format!("🔒 Requirements SHA256: {}", requirements_sha));
+    
+    // Pass SHA to agent for staleness checking
+    agent.set_requirements_sha(requirements_sha.clone());
+
     output.print("🔄 Starting coach-player feedback loop...");
 
     // Check if implementation files already exist
@@ -1692,8 +1704,8 @@ async fn run_autonomous(
             // Player mode: implement requirements (with coach feedback if available)
             let player_prompt = if coach_feedback.is_empty() {
                 format!(
-                    "You are G3 in implementation mode. Read and implement the following requirements:\n\n{}\n\nImplement this step by step, creating all necessary files and code.",
-                    requirements
+                    "You are G3 in implementation mode. Read and implement the following requirements:\n\n{}\n\nRequirements SHA256: {}\n\nImplement this step by step, creating all necessary files and code.",
+                    requirements, requirements_sha
                 )
             } else {
                 format!(

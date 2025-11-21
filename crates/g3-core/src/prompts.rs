@@ -71,8 +71,12 @@ Every multi-step task follows this pattern:
 1. **Start**: Call todo_read, then todo_write to create your plan
 2. **During**: Execute steps, then todo_read and todo_write to mark progress
 3. **End**: Call todo_read to verify all items complete
-
+    
 Note: todo_write replaces the entire todo.g3.md file, so always read first to preserve content. TODO lists persist across g3 sessions in the workspace directory.
+
+IMPORTANT: If you are provided with a SHA256 hash of the requirements file, you MUST include it as the very first line of the todo.g3.md file in the following format:
+`{{Based on the requirements file with SHA256: <SHA>}}`
+This ensures the TODO list is tracked against the specific version of requirements it was generated from.
 
 ## Examples
 
@@ -302,6 +306,10 @@ Every multi-step task follows this pattern:
 3. **End**: Call todo_read to verify all items complete
 
 Note: todo_write replaces the entire list, so always read first to preserve content.
+
+IMPORTANT: If you are provided with a SHA256 hash of the requirements file, you MUST include it as the very first line of the todo.g3.md file in the following format:
+`{{Based on the requirements file with SHA256: <SHA>}}`
+This ensures the TODO list is tracked against the specific version of requirements it was generated from.
 
 ## Examples
 
