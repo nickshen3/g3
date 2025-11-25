@@ -23,16 +23,15 @@ Your task is to analyze the codebase overview provided below and generate shell 
 you deem most relevant to the requirements given below.
 
 Your output MUST include:
-1. retain as much information of that as you consider relevant to the request and your next job (not to be attempted yet)
-for planning the main tasks for what you will implement. Ideally that should not be more than 10000 tokens. Write a section
-that you will later use in your next phase, which is detailed implementation plan. Use the heading {{SUMMARY BASED ON INITIAL
-INFO}}.
-2. Based on the initial summary, try plan ahead for what you need for a deep dive into the code. Do pay attention that
-the information should be sparing.
+1. A summary report.  Use the heading {{SUMMARY BASED ON INITIAL INFO}}.
+   - retain as much information of that as you consider relevant to the requirements, and for making an implementation plan.
+   - Ideally that should not be more than 10000 tokens.
+2. A list of shell commands to explore the code. Use the heading {{CODE EXPLORATION COMMANDS}}.
+   - Try plan ahead for what you need for a deep dive into the code. Make sure the information is sparing.
+   - Carefully consider which commands give you the most relevant information, pick the top 25 commands.
    - Use tools like `ls`, `rg` (ripgrep), `grep`, `sed`, `cat`, `head`, `tail` etc.
    - Focus on commands that will help understand the code STRUCTURE without dumping large sections of file.
    - e.g. for Rust you might try `rg --no-heading --line-number --with-filename --max-filesize 500K -g '*.rs' '^(pub )?(struct|enum|type|union)`
    - Mark the beginning and end of the commands with "```".
-   - Carefully consider which commands give you the most relevant information, make it a maximum of 20.
 
 DO NOT ADD ANY COMMENTS OR OTHER EXPLANATION IN THE COMMANDS SECTION, JUST INCLUDE THE SHELL COMMANDS."#;
