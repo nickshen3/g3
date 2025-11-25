@@ -189,7 +189,7 @@ Do not explain what you're going to do - just do it by calling the tools.
 ";
 
 pub const SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE: &'static str =
-concatcp!(CODING_STYLE, SYSTEM_NATIVE_TOOL_CALLS);
+concatcp!(SYSTEM_NATIVE_TOOL_CALLS, CODING_STYLE);
 
 /// Generate system prompt based on whether multiple tool calls are allowed
 pub fn get_system_prompt_for_native(allow_multiple: bool) -> String {
@@ -371,4 +371,4 @@ If you can complete it with 1-2 tool calls, skip TODO.
 ";
 
 pub const SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE: &'static str =
-    concatcp!(CODING_STYLE, SYSTEM_NON_NATIVE_TOOL_USE);
+    concatcp!(SYSTEM_NON_NATIVE_TOOL_USE, CODING_STYLE);
