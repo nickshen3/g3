@@ -98,6 +98,25 @@ fn generate_turn_histogram(turn_metrics: &[TurnMetrics]) -> String {
     histogram
 }
 
+/// Format a Duration as human-readable elapsed time (e.g., "1h 23m 45s", "5m 30s", "45s")
+fn format_elapsed_time(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+    
+    if hours > 0 {
+        format!("{}h {}m {}s", hours, minutes, seconds)
+    } else if minutes > 0 {
+        format!("{}m {}s", minutes, seconds)
+    } else if seconds > 0 {
+        format!("{}s", seconds)
+    } else {
+        // For very short durations, show milliseconds
+        format!("{}ms", duration.as_millis())
+    }
+}
+
 /// Extract coach feedback by reading from the coach agent's specific log file
 /// Uses the coach agent's session ID to find the exact log file
 fn extract_coach_feedback_from_logs(
@@ -1681,6 +1700,7 @@ async fn run_autonomous(
     // Pass SHA to agent for staleness checking
     agent.set_requirements_sha(requirements_sha.clone());
 
+    let loop_start = Instant::now();
     output.print("🔄 Starting coach-player feedback loop...");
 
     // Check if implementation files already exist
@@ -1756,7 +1776,7 @@ async fn run_autonomous(
                 )
             };
 
-            output.print("🎯 Starting player implementation...");
+            output.print(&format!("🎯 Starting player implementation... (elapsed: {})", format_elapsed_time(loop_start.elapsed())));
 
             // Display what feedback the player is receiving
             // If there's no coach feedback on subsequent turns, this is an error
@@ -1984,7 +2004,7 @@ Remember: Be clear in your review and concise in your feedback. APPROVE iff the 
             requirements
         );
 
-        output.print("🎓 Starting coach review...");
+        output.print(&format!("🎓 Starting coach review... (elapsed: {})", format_elapsed_time(loop_start.elapsed())));
 
         // Execute coach task with retry on error
         let mut coach_retry_count = 0;
@@ -2230,9 +2250,9 @@ Remember: Be clear in your review and concise in your feedback. APPROVE iff the 
     output.print(&"=".repeat(60));
 
     if implementation_approved {
-        output.print("\n🎉 Autonomous mode completed successfully");
+        output.print(&format!("\n🎉 Autonomous mode completed successfully (total loop time: {})", format_elapsed_time(loop_start.elapsed())));
     } else {
-        output.print("\n🔄 Autonomous mode terminated (max iterations)");
+        output.print(&format!("\n🔄 Autonomous mode terminated (max iterations) (total loop time: {})", format_elapsed_time(loop_start.elapsed())));
     }
 
     Ok(())
