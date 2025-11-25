@@ -1,0 +1,13 @@
+[package]
+name = "g3-planner"
+version = "0.1.0"
+edition = "2021"
+description = "Fast-discovery planner for G3 AI coding agent"
+
+[dependencies]
+g3-providers = { path = "../g3-providers" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+const_format = "0.2"
+anyhow = { workspace = true }
+tokio = { workspace = true }

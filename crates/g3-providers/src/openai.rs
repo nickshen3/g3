@@ -384,6 +384,14 @@ impl LLMProvider for OpenAIProvider {
         // OpenAI models support native tool calling
         true
     }
+    
+    fn max_tokens(&self) -> u32 {
+        self.max_tokens.unwrap_or(16000)
+    }
+    
+    fn temperature(&self) -> f32 {
+        self._temperature.unwrap_or(0.1)
+    }
 }
 
 fn convert_messages(messages: &[Message]) -> Vec<serde_json::Value> {

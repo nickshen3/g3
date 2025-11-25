@@ -159,7 +159,7 @@ fn extract_coach_feedback_from_logs(
 
 use clap::Parser;
 use g3_config::Config;
-use g3_core::{project::Project, ui_writer::UiWriter, Agent};
+use g3_core::{project::Project, ui_writer::UiWriter, Agent, DiscoveryOptions};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::path::Path;
@@ -247,6 +247,10 @@ pub struct Cli {
     /// Enable WebDriver browser automation tools
     #[arg(long)]
     pub webdriver: bool,
+
+    /// Enable fast codebase discovery before first LLM turn
+    #[arg(long, value_name = "PATH")]
+    pub codebase_fast_start: Option<PathBuf>,
 }
 
 pub async fn run() -> Result<()> {
@@ -676,6 +680,7 @@ async fn run_accumulative_mode(
                     cli.show_code,
                     cli.max_turns,
                     cli.quiet,
+                    cli.codebase_fast_start.clone(),
                     ) => result,
                     _ = tokio::signal::ctrl_c() => {
                         output.print("\n⚠️  Autonomous run cancelled by user (Ctrl+C)");
@@ -727,6 +732,7 @@ async fn run_autonomous_machine(
     show_code: bool,
     max_turns: usize,
     _quiet: bool,
+    _codebase_fast_start: Option<PathBuf>,
 ) -> Result<()> {
     println!("AUTONOMOUS_MODE_STARTED");
     println!("WORKSPACE: {}", project.workspace().display());
@@ -757,7 +763,7 @@ async fn run_autonomous_machine(
     );
 
     println!("TASK_START");
-    let result = agent.execute_task_with_timing(&task, None, false, show_prompt, show_code, true).await?;
+    let result = agent.execute_task_with_timing(&task, None, false, show_prompt, show_code, true, None).await?;
     println!("AGENT_RESPONSE:");
     println!("{}", result.response);
     println!("END_AGENT_RESPONSE");
@@ -784,13 +790,14 @@ async fn run_with_console_mode(
             cli.show_code,
             cli.max_turns,
             cli.quiet,
+            cli.codebase_fast_start.clone(),
         )
         .await?;
     } else if let Some(task) = cli.task {
         // Single-shot mode
         let output = SimpleOutput::new();
         let result = agent
-            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true)
+            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
             .await?;
         output.print_smart(&result.response);
     } else {
@@ -815,12 +822,13 @@ async fn run_with_machine_mode(
             cli.show_code,
             cli.max_turns,
             cli.quiet,
+            cli.codebase_fast_start.clone(),
         )
         .await?;
     } else if let Some(task) = cli.task {
         // Single-shot mode
         let result = agent
-            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true)
+            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
             .await?;
         println!("AGENT_RESPONSE:");
         println!("{}", result.response);
@@ -1212,7 +1220,7 @@ async fn execute_task<W: UiWriter>(
         // Execute task with cancellation support
         let execution_result = tokio::select! {
             result = agent.execute_task_with_timing_cancellable(
-                input, None, false, show_prompt, show_code, true, cancellation_token.clone()
+                input, None, false, show_prompt, show_code, true, cancellation_token.clone(), None
             ) => {
                 result
             }
@@ -1403,7 +1411,7 @@ async fn execute_task_machine(
         // Execute task with cancellation support
         let execution_result = tokio::select! {
             result = agent.execute_task_with_timing_cancellable(
-                input, None, false, show_prompt, show_code, true, cancellation_token.clone()
+                input, None, false, show_prompt, show_code, true, cancellation_token.clone(), None
             ) => {
                 result
             }
@@ -1552,6 +1560,7 @@ async fn run_autonomous(
     show_code: bool,
     max_turns: usize,
     quiet: bool,
+    codebase_fast_start: Option<PathBuf>,
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
     let output = SimpleOutput::new();
@@ -1684,6 +1693,39 @@ async fn run_autonomous(
         output.print("🎯 Starting with player implementation");
     }
 
+    // Load fast-discovery messages before the loop starts (if enabled)
+    let (discovery_messages, discovery_working_dir): (Vec<g3_providers::Message>, Option<String>) = 
+    if let Some(ref codebase_path) = codebase_fast_start {
+        // Canonicalize the path to ensure it's absolute
+        let canonical_path = codebase_path.canonicalize().unwrap_or_else(|_| codebase_path.clone());
+        let path_str = canonical_path.to_string_lossy();
+        output.print(&format!("🔍 Fast-discovery mode: will explore codebase at {}", path_str));
+        // Get the provider from the agent and use async LLM-based discovery
+        match agent.get_provider() {
+            Ok(provider) => {
+                // Create a status callback that prints to output
+                let output_clone = output.clone();
+                let status_callback: g3_planner::StatusCallback = Box::new(move |msg: &str| {
+                    output_clone.print(msg);
+                });
+                match g3_planner::get_initial_discovery_messages(&path_str, provider, Some(&status_callback)).await {
+                    Ok(messages) => (messages, Some(path_str.to_string())),
+                    Err(e) => {
+                        output.print(&format!("⚠️ LLM discovery failed: {}, skipping fast-start", e));
+                        (Vec::new(), None)
+                    }
+                }
+            }
+            Err(e) => {
+                output.print(&format!("⚠️ Could not get provider: {}, skipping fast-start", e));
+                (Vec::new(), None)
+            }
+        }
+    } else {
+        (Vec::new(), None)
+    };
+    let has_discovery = !discovery_messages.is_empty();
+
     let mut turn = 1;
     let mut coach_feedback = String::new();
     let mut implementation_approved = false;
@@ -1749,6 +1791,12 @@ async fn run_autonomous(
                         show_prompt,
                         show_code,
                         true,
+                        if has_discovery {
+                            Some(DiscoveryOptions {
+                                messages: &discovery_messages,
+                                fast_start_path: discovery_working_dir.as_deref(),
+                            })
+                        } else { None },
                     )
                     .await
                 {
@@ -1946,7 +1994,13 @@ Remember: Be clear in your review and concise in your feedback. APPROVE iff the 
 
         loop {
             match coach_agent
-                .execute_task_with_timing(&coach_prompt, None, false, show_prompt, show_code, true)
+                .execute_task_with_timing(&coach_prompt, None, false, show_prompt, show_code, true, 
+                    if has_discovery {
+                        Some(DiscoveryOptions {
+                            messages: &discovery_messages,
+                            fast_start_path: discovery_working_dir.as_deref(),
+                        })
+                    } else { None })
                 .await
             {
                 Ok(result) => {

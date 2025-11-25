@@ -678,6 +678,14 @@ impl LLMProvider for AnthropicProvider {
         // Anthropic supports cache control
         true
     }
+    
+    fn max_tokens(&self) -> u32 {
+        self.max_tokens
+    }
+    
+    fn temperature(&self) -> f32 {
+        self.temperature
+    }
 }
 
 // Anthropic API request/response structures
