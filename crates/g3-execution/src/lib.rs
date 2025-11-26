@@ -5,6 +5,17 @@ use tempfile::NamedTempFile;
 use std::io::Write;
 use tracing::{info, debug, error};
 
+/// Expand tilde (~) in a path to the user's home directory
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~") {
+        if let Some(home) = std::env::var_os("HOME") {
+            let home_str = home.to_string_lossy();
+            return path.replacen("~", &home_str, 1);
+        }
+    }
+    path.to_string()
+}
+
 pub struct CodeExecutor {
     // Future: add configuration for execution limits, sandboxing, etc.
 }
@@ -242,9 +253,31 @@ impl CodeExecutor {
         code: &str, 
         receiver: &R
     ) -> Result<ExecutionResult> {
+        self.execute_bash_streaming_in_dir(code, receiver, None).await
+    }
+
+    /// Execute bash command with streaming output in a specific directory
+    pub async fn execute_bash_streaming_in_dir<R: OutputReceiver>(
+        &self, 
+        code: &str, 
+        receiver: &R,
+        working_dir: Option<&str>,
+    ) -> Result<ExecutionResult> {
         use std::process::Stdio;
         use tokio::io::{AsyncBufReadExt, BufReader};
         use tokio::process::Command as TokioCommand;
+        
+        // CRITICAL DEBUG: Print to stderr so it's always visible
+        debug!("========== execute_bash_streaming_in_dir START ==========");
+        debug!("Code to execute: {}", code);
+        debug!("Working directory parameter: {:?}", working_dir);
+        debug!("FULL DIAGNOSTIC: code='{}', working_dir={:?}", code, working_dir);
+        
+        if let Some(dir) = working_dir {
+            debug!("Working dir exists check: {}", std::path::Path::new(dir).exists());
+            debug!("Working dir is_dir check: {}", std::path::Path::new(dir).is_dir());
+        }
+        debug!("Current process working directory: {:?}", std::env::current_dir());
         
         // Check if this is a detached/daemon command that should run independently
         // Look for patterns like: setsid, nohup with &, or explicit backgrounding with disown
@@ -255,10 +288,17 @@ impl CodeExecutor {
         
         if is_detached {
             // For detached commands, just spawn and return immediately
-            TokioCommand::new("bash")
-                .arg("-c")
-                .arg(code)
-                .spawn()?;
+            let mut cmd = TokioCommand::new("bash");
+            cmd.arg("-c")
+                .arg(code);
+            
+            // Set working directory if provided
+            if let Some(dir) = working_dir {
+                let expanded_dir = expand_tilde(dir);
+                cmd.current_dir(&expanded_dir);
+            }
+            
+            cmd.spawn()?;
             
             // Don't wait for the process - it's meant to run independently
             return Ok(ExecutionResult {
@@ -269,12 +309,33 @@ impl CodeExecutor {
             });
         }
         
-        let mut child = TokioCommand::new("bash")
-            .arg("-c")
+        let mut cmd = TokioCommand::new("bash");
+        cmd.arg("-c")
             .arg(code)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+        
+        // Set working directory if provided
+        if let Some(dir) = working_dir {
+            debug!("Setting current_dir on command to: {}", dir);
+            let expanded_dir = expand_tilde(dir);
+            debug!("Expanded working dir: {}", expanded_dir);
+            debug!("Expanded dir exists: {}", std::path::Path::new(&expanded_dir).exists());
+            debug!("Expanded dir is_dir: {}", std::path::Path::new(&expanded_dir).is_dir());
+            cmd.current_dir(&expanded_dir);
+        }
+        
+        debug!("About to spawn command...");
+        let spawn_result = cmd.spawn();
+        debug!("Spawn result: {:?}", spawn_result.is_ok());
+        let mut child = match spawn_result {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("SPAWN ERROR: {:?}", e);
+                return Err(e.into());
+            }
+        };
+        debug!("Command spawned successfully");
         
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
@@ -322,12 +383,23 @@ impl CodeExecutor {
         
         let status = child.wait().await?;
         
-        Ok(ExecutionResult {
+        let result = ExecutionResult {
             stdout: stdout_output.join("\n"),
             stderr: stderr_output.join("\n"),
             exit_code: status.code().unwrap_or(-1),
             success: status.success(),
-        })
+        };
+        
+        debug!("========== execute_bash_streaming_in_dir END ==========");
+        debug!("Exit code: {}", result.exit_code);
+        debug!("Success: {}", result.success);
+        debug!("Stdout length: {}", result.stdout.len());
+        debug!("Stderr length: {}", result.stderr.len());
+        if !result.stderr.is_empty() {
+            debug!("Stderr content: {}", result.stderr);
+        }
+
+        Ok(result)
     }
 }
 

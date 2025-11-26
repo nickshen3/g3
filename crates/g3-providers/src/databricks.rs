@@ -1055,6 +1055,14 @@ impl LLMProvider for DatabricksProvider {
     fn supports_cache_control(&self) -> bool {
         false
     }
+    
+    fn max_tokens(&self) -> u32 {
+        self.max_tokens
+    }
+    
+    fn temperature(&self) -> f32 {
+        self.temperature
+    }
 }
 
 // Databricks API request/response structures

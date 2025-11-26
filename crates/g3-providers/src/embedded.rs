@@ -771,4 +771,12 @@ impl LLMProvider for EmbeddedProvider {
     fn model(&self) -> &str {
         &self.model_name
     }
+    
+    fn max_tokens(&self) -> u32 {
+        self.max_tokens
+    }
+    
+    fn temperature(&self) -> f32 {
+        self.temperature
+    }
 }

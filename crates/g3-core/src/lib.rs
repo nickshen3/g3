@@ -46,6 +46,13 @@ pub struct ToolCall {
     pub args: serde_json::Value, // Should be a JSON object with tool-specific arguments
 }
 
+/// Options for fast-start discovery execution
+#[derive(Debug, Clone)]
+pub struct DiscoveryOptions<'a> {
+    pub messages: &'a [Message],
+    pub fast_start_path: Option<&'a str>,
+}
+
 #[derive(Debug, Clone)]
 pub enum StreamState {
     Generating,
@@ -760,6 +767,8 @@ pub struct Agent<W: UiWriter> {
         std::sync::Arc<tokio::sync::RwLock<Option<g3_computer_control::MacAxController>>>,
     tool_call_count: usize,
     requirements_sha: Option<String>,
+    /// Working directory for tool execution (set by --codebase-fast-start)
+    working_dir: Option<String>,
 }
 
 impl<W: UiWriter> Agent<W> {
@@ -1032,6 +1041,7 @@ impl<W: UiWriter> Agent<W> {
             },
             tool_call_count: 0,
             requirements_sha: None,
+            working_dir: None,
         })
     }
 
@@ -1282,6 +1292,11 @@ impl<W: UiWriter> Agent<W> {
         Ok((provider.name().to_string(), provider.model().to_string()))
     }
 
+    /// Get the default LLM provider
+    pub fn get_provider(&self) -> Result<&dyn g3_providers::LLMProvider> {
+        self.providers.get(None)
+    }
+
     /// Get the current session ID for this agent
     pub fn get_session_id(&self) -> Option<&str> {
         self.session_id.as_deref()
@@ -1293,7 +1308,7 @@ impl<W: UiWriter> Agent<W> {
         language: Option<&str>,
         _auto_execute: bool,
     ) -> Result<TaskResult> {
-        self.execute_task_with_options(description, language, false, false, false)
+        self.execute_task_with_options(description, language, false, false, false, None)
             .await
     }
 
@@ -1304,6 +1319,7 @@ impl<W: UiWriter> Agent<W> {
         _auto_execute: bool,
         show_prompt: bool,
         show_code: bool,
+        discovery_options: Option<DiscoveryOptions<'_>>,
     ) -> Result<TaskResult> {
         self.execute_task_with_timing(
             description,
@@ -1312,6 +1328,7 @@ impl<W: UiWriter> Agent<W> {
             show_prompt,
             show_code,
             false,
+            discovery_options,
         )
         .await
     }
@@ -1324,6 +1341,7 @@ impl<W: UiWriter> Agent<W> {
         show_prompt: bool,
         show_code: bool,
         show_timing: bool,
+        discovery_options: Option<DiscoveryOptions<'_>>,
     ) -> Result<TaskResult> {
         // Create a cancellation token that never cancels for backward compatibility
         let cancellation_token = CancellationToken::new();
@@ -1335,6 +1353,7 @@ impl<W: UiWriter> Agent<W> {
             show_code,
             show_timing,
             cancellation_token,
+            discovery_options,
         )
         .await
     }
@@ -1349,6 +1368,7 @@ impl<W: UiWriter> Agent<W> {
         show_code: bool,
         show_timing: bool,
         cancellation_token: CancellationToken,
+        discovery_options: Option<DiscoveryOptions<'_>>,
     ) -> Result<TaskResult> {
         // Execute the task directly without splitting
         self.execute_single_task(
@@ -1357,6 +1377,7 @@ impl<W: UiWriter> Agent<W> {
             show_code,
             show_timing,
             cancellation_token,
+            discovery_options,
         )
         .await
     }
@@ -1368,6 +1389,7 @@ impl<W: UiWriter> Agent<W> {
         _show_code: bool,
         show_timing: bool,
         cancellation_token: CancellationToken,
+        discovery_options: Option<DiscoveryOptions<'_>>,
     ) -> Result<TaskResult> {
         // Reset the JSON tool call filter state at the start of each new task
         // This prevents the filter from staying in suppression mode between user interactions
@@ -1384,6 +1406,39 @@ impl<W: UiWriter> Agent<W> {
         // Add user message to context window
         let user_message = Message::new(MessageRole::User, format!("Task: {}", description));
         self.context_window.add_message(user_message);
+
+        // Execute fast-discovery tool calls if provided (immediately after user message)
+        if let Some(ref options) = discovery_options {
+            self.ui_writer.println("▶️  Playing back discovery commands...");
+            // Store the working directory for subsequent tool calls in the streaming loop
+            if let Some(path) = options.fast_start_path {
+                self.working_dir = Some(path.to_string());
+            }
+            let provider = self.providers.get(None)?;
+            let supports_cache = provider.supports_cache_control();
+            let message_count = options.messages.len();
+            
+            for (idx, discovery_msg) in options.messages.iter().enumerate() {
+                if let Ok(tool_call) = serde_json::from_str::<ToolCall>(&discovery_msg.content) {
+                    self.add_message_to_context(discovery_msg.clone());
+                    let result = self.execute_tool_call_in_dir(&tool_call, options.fast_start_path).await
+                        .unwrap_or_else(|e| format!("Error: {}", e));
+                    
+                    // Add cache_control to the last user message if provider supports it (anthropic)
+                    let is_last = idx == message_count - 1;
+                    let result_message = if is_last && supports_cache {
+                        Message::with_cache_control(
+                            MessageRole::User,
+                            format!("Tool result: {}", result),
+                            CacheControl::ephemeral(),
+                        )
+                    } else {
+                        Message::new(MessageRole::User, format!("Tool result: {}", result))
+                    };
+                    self.add_message_to_context(result_message);
+                }
+            }
+        }
 
         // Use the complete conversation history for the request
         let messages = self.context_window.conversation_history.clone();
@@ -1573,6 +1628,24 @@ impl<W: UiWriter> Agent<W> {
 
     pub fn get_context_window(&self) -> &ContextWindow {
         &self.context_window
+    }
+
+    /// Add a message directly to the context window.
+    /// Used for injecting discovery messages before the first LLM turn.
+    pub fn add_message_to_context(&mut self, message: Message) {
+        self.context_window.add_message(message);
+    }
+
+    /// Execute a tool call and return the result.
+    /// This is a public wrapper around execute_tool for use by external callers
+    /// like the planner's fast-discovery feature.
+    pub async fn execute_tool_call(&mut self, tool_call: &ToolCall) -> Result<String> {
+        self.execute_tool(tool_call).await
+    }
+
+    /// Execute a tool call with an optional working directory (for discovery commands)
+    pub async fn execute_tool_call_in_dir(&mut self, tool_call: &ToolCall, working_dir: Option<&str>) -> Result<String> {
+        self.execute_tool_in_dir(tool_call, working_dir).await
     }
 
     /// Log an error message to the session JSON file as the last message
@@ -3157,11 +3230,14 @@ impl<W: UiWriter> Agent<W> {
                                 self.ui_writer.print_tool_output_header();
                             }
 
+                            // Clone working_dir to avoid borrow checker issues
+                            let working_dir = self.working_dir.clone();
                             let exec_start = Instant::now();
                             // Add 8-minute timeout for tool execution
                             let tool_result = match tokio::time::timeout(
                                 Duration::from_secs(8 * 60), // 8 minutes
-                                self.execute_tool(&tool_call),
+                                // Use working_dir if set (from --codebase-fast-start)
+                                self.execute_tool_in_dir(&tool_call, working_dir.as_deref()),
                             )
                             .await
                             {
@@ -3707,8 +3783,17 @@ impl<W: UiWriter> Agent<W> {
     pub async fn execute_tool(&mut self, tool_call: &ToolCall) -> Result<String> {
         // Increment tool call count
         self.tool_call_count += 1;
+        self.execute_tool_in_dir(tool_call, None).await
+    }
 
-        let result = self.execute_tool_inner(tool_call).await;
+    /// Execute a tool with an optional working directory (for discovery commands)
+    pub async fn execute_tool_in_dir(&mut self, tool_call: &ToolCall, working_dir: Option<&str>) -> Result<String> {
+        // Only increment tool call count if not already incremented by execute_tool
+        if working_dir.is_some() {
+            self.tool_call_count += 1;
+        }
+
+        let result = self.execute_tool_inner_in_dir(tool_call, working_dir).await;
         let log_str = match &result {
             Ok(s) => s.clone(),
             Err(e) => format!("ERROR: {}", e),
@@ -3717,9 +3802,10 @@ impl<W: UiWriter> Agent<W> {
         result
     }
 
-    async fn execute_tool_inner(&mut self, tool_call: &ToolCall) -> Result<String> {
+    async fn execute_tool_inner_in_dir(&mut self, tool_call: &ToolCall, working_dir: Option<&str>) -> Result<String> {
         debug!("=== EXECUTING TOOL ===");
         debug!("Tool name: {}", tool_call.tool);
+        debug!("Working directory passed to execute_tool_inner_in_dir: {:?}", working_dir);
         debug!("Tool args (raw): {:?}", tool_call.args);
         debug!(
             "Tool args (JSON): {}",
@@ -3754,9 +3840,11 @@ impl<W: UiWriter> Agent<W> {
                         let receiver = ToolOutputReceiver {
                             ui_writer: &self.ui_writer,
                         };
+                        
+                        debug!("ABOUT TO CALL execute_bash_streaming_in_dir: escaped_command='{}', working_dir={:?}", escaped_command, working_dir);
 
                         match executor
-                            .execute_bash_streaming(&escaped_command, &receiver)
+                            .execute_bash_streaming_in_dir(&escaped_command, &receiver, working_dir)
                             .await
                         {
                             Ok(result) => {

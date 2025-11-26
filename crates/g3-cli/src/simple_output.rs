@@ -1,4 +1,5 @@
 /// Simple output helper for printing messages
+#[derive(Clone)]
 pub struct SimpleOutput {
     machine_mode: bool,
 }

@@ -1365,6 +1365,8 @@ dependencies = [
  "dirs 5.0.1",
  "g3-config",
  "g3-core",
+ "g3-planner",
+ "g3-providers",
  "hex",
  "indicatif",
  "ratatui",
@@ -1497,6 +1499,19 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "g3-planner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "const_format",
+ "g3-providers",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

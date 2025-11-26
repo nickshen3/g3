@@ -26,6 +26,12 @@ pub trait LLMProvider: Send + Sync {
     fn supports_cache_control(&self) -> bool {
         false
     }
+    
+    /// Get the configured max_tokens for this provider
+    fn max_tokens(&self) -> u32;
+    
+    /// Get the configured temperature for this provider
+    fn temperature(&self) -> f32;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
