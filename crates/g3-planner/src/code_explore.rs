@@ -291,7 +291,10 @@ pub fn explore_kotlin(path: &str) -> String {
 
     // Build files
     report.push_str("--- Build Configuration ---\n");
-    let build = run_command("cat build.gradle.kts 2>/dev/null | head -50 || cat build.gradle 2>/dev/null | head -50", path);
+    let build = run_command(
+        "cat build.gradle.kts 2>/dev/null | head -50 || cat build.gradle 2>/dev/null | head -50",
+        path,
+    );
     report.push_str(&build);
     report.push('\n');
 

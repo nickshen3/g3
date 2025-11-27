@@ -358,8 +358,8 @@ More text"#;
         // 2. Then the same complete JSON appears
         let chunks = vec![
             "Some text\n",
-            r#"{"tool": "str_replace", "args": {"diff":"...","file_path":"./crates/g3-cli"#,  // Truncated
-            r#"{"tool": "str_replace", "args": {"diff":"...","file_path":"./crates/g3-cli/src/lib.rs"}}"#,  // Complete
+            r#"{"tool": "str_replace", "args": {"diff":"...","file_path":"./crates/g3-cli"#, // Truncated
+            r#"{"tool": "str_replace", "args": {"diff":"...","file_path":"./crates/g3-cli/src/lib.rs"}}"#, // Complete
             "\nMore text",
         ];
 

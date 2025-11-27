@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub struct ProvidersConfig {
     pub databricks: Option<DatabricksConfig>,
     pub embedded: Option<EmbeddedConfig>,
     pub default_provider: String,
-    pub coach: Option<String>,  // Provider to use for coach in autonomous mode
+    pub coach: Option<String>, // Provider to use for coach in autonomous mode
     pub player: Option<String>, // Provider to use for player in autonomous mode
 }
 
@@ -103,9 +103,7 @@ pub struct MacAxConfig {
 
 impl Default for MacAxConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-        }
+        Self { enabled: false }
     }
 }
 
@@ -173,22 +171,18 @@ impl Config {
             Path::new(path).exists()
         } else {
             // Check default locations
-            let default_paths = [
-                "./g3.toml",
-                "~/.config/g3/config.toml",
-                "~/.g3.toml",
-            ];
-            
+            let default_paths = ["./g3.toml", "~/.config/g3/config.toml", "~/.g3.toml"];
+
             default_paths.iter().any(|path| {
                 let expanded_path = shellexpand::tilde(path);
                 Path::new(expanded_path.as_ref()).exists()
             })
         };
-        
+
         // If no config exists, create and save a default Databricks config
         if !config_exists {
             let databricks_config = Self::default();
-            
+
             // Save to default location
             let config_dir = dirs::home_dir()
                 .map(|mut path| {
@@ -197,26 +191,29 @@ impl Config {
                     path
                 })
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
-            
+
             // Create directory if it doesn't exist
             std::fs::create_dir_all(&config_dir).ok();
-            
+
             let config_file = config_dir.join("config.toml");
             if let Err(e) = databricks_config.save(config_file.to_str().unwrap()) {
                 eprintln!("Warning: Could not save default config: {}", e);
             } else {
-                println!("Created default Databricks configuration at: {}", config_file.display());
+                println!(
+                    "Created default Databricks configuration at: {}",
+                    config_file.display()
+                );
             }
-            
+
             return Ok(databricks_config);
         }
-        
+
         // Existing config loading logic
         let mut settings = config::Config::builder();
-        
+
         // Load default configuration
         settings = settings.add_source(config::Config::try_from(&Config::default())?);
-        
+
         // Load from config file if provided
         if let Some(path) = config_path {
             if Path::new(path).exists() {
@@ -224,12 +221,8 @@ impl Config {
             }
         } else {
             // Try to load from default locations
-            let default_paths = [
-                "./g3.toml",
-                "~/.config/g3/config.toml",
-                "~/.g3.toml",
-            ];
-            
+            let default_paths = ["./g3.toml", "~/.config/g3/config.toml", "~/.g3.toml"];
+
             for path in &default_paths {
                 let expanded_path = shellexpand::tilde(path);
                 if Path::new(expanded_path.as_ref()).exists() {
@@ -238,13 +231,10 @@ impl Config {
                 }
             }
         }
-        
+
         // Override with environment variables
-        settings = settings.add_source(
-            config::Environment::with_prefix("G3")
-                .separator("_")
-        );
-        
+        settings = settings.add_source(config::Environment::with_prefix("G3").separator("_"));
+
         let config = settings.build()?.try_deserialize()?;
         Ok(config)
     }
@@ -260,7 +250,7 @@ impl Config {
                 embedded: Some(EmbeddedConfig {
                     model_path: "~/.cache/g3/models/qwen2.5-7b-instruct-q3_k_m.gguf".to_string(),
                     model_type: "qwen".to_string(),
-                    context_length: Some(32768),  // Qwen2.5 supports 32k context
+                    context_length: Some(32768), // Qwen2.5 supports 32k context
                     max_tokens: Some(2048),
                     temperature: Some(0.1),
                     gpu_layers: Some(32),
@@ -286,13 +276,13 @@ impl Config {
             macax: MacAxConfig::default(),
         }
     }
-    
+
     pub fn save(&self, path: &str) -> Result<()> {
         let toml_string = toml::to_string_pretty(self)?;
         std::fs::write(path, toml_string)?;
         Ok(())
     }
-    
+
     pub fn load_with_overrides(
         config_path: Option<&str>,
         provider_override: Option<String>,
@@ -300,12 +290,12 @@ impl Config {
     ) -> Result<Self> {
         // Load the base configuration
         let mut config = Self::load(config_path)?;
-        
+
         // Apply provider override
         if let Some(provider) = provider_override {
             config.providers.default_provider = provider;
         }
-        
+
         // Apply model override to the active provider
         if let Some(model) = model_override {
             match config.providers.default_provider.as_str() {
@@ -345,28 +335,34 @@ impl Config {
                         ));
                     }
                 }
-                _ => return Err(anyhow::anyhow!("Unknown provider: {}", 
-                    config.providers.default_provider)),
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Unknown provider: {}",
+                        config.providers.default_provider
+                    ))
+                }
             }
         }
-        
+
         Ok(config)
     }
-    
+
     /// Get the provider to use for coach mode in autonomous execution
     pub fn get_coach_provider(&self) -> &str {
-        self.providers.coach
+        self.providers
+            .coach
             .as_deref()
             .unwrap_or(&self.providers.default_provider)
     }
-    
+
     /// Get the provider to use for player mode in autonomous execution
     pub fn get_player_provider(&self) -> &str {
-        self.providers.player
+        self.providers
+            .player
             .as_deref()
             .unwrap_or(&self.providers.default_provider)
     }
-    
+
     /// Create a copy of the config with a different default provider
     pub fn with_provider_override(&self, provider: &str) -> Result<Self> {
         // Validate that the provider is configured
@@ -397,17 +393,17 @@ impl Config {
             }
             _ => {} // Provider is configured or unknown (will be caught later)
         }
-        
+
         let mut config = self.clone();
         config.providers.default_provider = provider.to_string();
         Ok(config)
     }
-    
+
     /// Create a copy of the config for coach mode in autonomous execution
     pub fn for_coach(&self) -> Result<Self> {
         self.with_provider_override(self.get_coach_provider())
     }
-    
+
     /// Create a copy of the config for player mode in autonomous execution
     pub fn for_player(&self) -> Result<Self> {
         self.with_provider_override(self.get_player_provider())

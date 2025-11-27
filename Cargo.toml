@@ -45,3 +45,9 @@ license = "MIT"
 g3-cli = { path = "crates/g3-cli" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+g3-providers = { path = "crates/g3-providers" }
+serde_json = { workspace = true }
+
+[[example]]
+name = "verify_message_id"
+path = "examples/verify_message_id.rs"

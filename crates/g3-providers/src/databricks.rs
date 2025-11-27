@@ -312,7 +312,7 @@ impl DatabricksProvider {
 
                     // Append new bytes to our buffer
                     byte_buffer.extend_from_slice(&chunk);
-                    
+
                     // Try to convert the entire buffer to UTF-8
                     let chunk_str = match std::str::from_utf8(&byte_buffer) {
                         Ok(s) => {
@@ -326,7 +326,8 @@ impl DatabricksProvider {
                             let valid_up_to = e.valid_up_to();
                             if valid_up_to > 0 {
                                 // We have some valid UTF-8, extract it and keep the rest for next iteration
-                                let valid_bytes = byte_buffer.drain(..valid_up_to).collect::<Vec<_>>();
+                                let valid_bytes =
+                                    byte_buffer.drain(..valid_up_to).collect::<Vec<_>>();
                                 std::str::from_utf8(&valid_bytes).unwrap().to_string()
                             } else {
                                 // No valid UTF-8 at all, skip this chunk and continue
@@ -593,7 +594,7 @@ impl DatabricksProvider {
                 }
                 Err(e) => {
                     error!("Stream error at chunk {}: {}", chunk_count, e);
-                    
+
                     // Check if this is a connection error that might be recoverable
                     let error_msg = e.to_string();
                     if error_msg.contains("unexpected EOF") || error_msg.contains("connection") {
@@ -610,10 +611,14 @@ impl DatabricksProvider {
 
         // Log final state
         debug!("Stream ended after {} chunks", chunk_count);
-        debug!("Final state: buffer_len={}, incomplete_data_line_len={}, byte_buffer_len={}",
-               buffer.len(), incomplete_data_line.len(), byte_buffer.len());
+        debug!(
+            "Final state: buffer_len={}, incomplete_data_line_len={}, byte_buffer_len={}",
+            buffer.len(),
+            incomplete_data_line.len(),
+            byte_buffer.len()
+        );
         debug!("Accumulated tool calls: {}", current_tool_calls.len());
-        
+
         // If we have any remaining data in buffers, log it for debugging
         if !buffer.is_empty() {
             debug!("Remaining buffer content: {:?}", buffer);
@@ -924,7 +929,7 @@ impl LLMProvider for DatabricksProvider {
             "Processing Databricks streaming request with {} messages",
             request.messages.len()
         );
-        
+
         // Debug: Log tool count
         if let Some(ref tools) = request.tools {
             debug!("Request has {} tools", tools.len());
@@ -1051,15 +1056,15 @@ impl LLMProvider for DatabricksProvider {
         // This includes Claude, Llama, DBRX, and most other models on the platform
         true
     }
-    
+
     fn supports_cache_control(&self) -> bool {
         false
     }
-    
+
     fn max_tokens(&self) -> u32 {
         self.max_tokens
     }
-    
+
     fn temperature(&self) -> f32 {
         self.temperature
     }
@@ -1181,7 +1186,10 @@ mod tests {
         .unwrap();
 
         let messages = vec![
-            Message::new(MessageRole::System, "You are a helpful assistant.".to_string()),
+            Message::new(
+                MessageRole::System,
+                "You are a helpful assistant.".to_string(),
+            ),
             Message::new(MessageRole::User, "Hello!".to_string()),
             Message::new(MessageRole::Assistant, "Hi there!".to_string()),
         ];
@@ -1304,10 +1312,12 @@ mod tests {
         let messages_without = vec![Message::new(MessageRole::User, "Hello".to_string())];
         let databricks_messages_without = provider.convert_messages(&messages_without).unwrap();
         let json_without = serde_json::to_string(&databricks_messages_without).unwrap();
-        
+
         println!("JSON without cache_control: {}", json_without);
-        assert!(!json_without.contains("cache_control"), 
-                "JSON should not contain 'cache_control' field when not configured");
+        assert!(
+            !json_without.contains("cache_control"),
+            "JSON should not contain 'cache_control' field when not configured"
+        );
 
         // Test message WITH cache_control - should still NOT include it (Databricks doesn't support it)
         let messages_with = vec![Message::with_cache_control(
@@ -1317,10 +1327,12 @@ mod tests {
         )];
         let databricks_messages_with = provider.convert_messages(&messages_with).unwrap();
         let json_with = serde_json::to_string(&databricks_messages_with).unwrap();
-        
+
         println!("JSON with cache_control: {}", json_with);
-        assert!(!json_with.contains("cache_control"), 
-                "JSON should NOT contain 'cache_control' field - Databricks doesn't support it");
+        assert!(
+            !json_with.contains("cache_control"),
+            "JSON should NOT contain 'cache_control' field - Databricks doesn't support it"
+        );
     }
 
     #[test]
@@ -1343,7 +1355,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!claude_provider.supports_cache_control(), "Databricks should not support cache_control even for Claude models");
-        assert!(!llama_provider.supports_cache_control(), "Databricks should not support cache_control for Llama models");
+        assert!(
+            !claude_provider.supports_cache_control(),
+            "Databricks should not support cache_control even for Claude models"
+        );
+        assert!(
+            !llama_provider.supports_cache_control(),
+            "Databricks should not support cache_control for Llama models"
+        );
     }
 }

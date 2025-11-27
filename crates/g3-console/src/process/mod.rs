@@ -1,5 +1,5 @@
-pub mod detector;
 pub mod controller;
+pub mod detector;
 
-pub use detector::*;
 pub use controller::*;
+pub use detector::*;

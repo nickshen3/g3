@@ -34,27 +34,40 @@ fn main() {
         .expect("Failed to find .build/release directory");
 
     // Copy the dylib to the output directory so it can be found at runtime
-    let target_dir = manifest_dir.parent().unwrap().parent().unwrap().join("target");
+    let target_dir = manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("target");
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    
+
     // Determine the actual target directory (could be llvm-cov-target or regular target)
-    let target_dir_name = env::var("CARGO_TARGET_DIR")
-        .unwrap_or_else(|_| target_dir.to_string_lossy().to_string());
+    let target_dir_name =
+        env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| target_dir.to_string_lossy().to_string());
     let actual_target_dir = PathBuf::from(&target_dir_name);
     let output_dir = actual_target_dir.join(&profile);
-    
+
     let dylib_src = lib_path.join("libVisionBridge.dylib");
     let dylib_dst = output_dir.join("libVisionBridge.dylib");
-    
+
     // Create output directory if it doesn't exist
-    std::fs::create_dir_all(&output_dir)
-        .expect(&format!("Failed to create output directory {}", output_dir.display()));
-    
-    std::fs::copy(&dylib_src, &dylib_dst)
-        .expect(&format!("Failed to copy dylib from {} to {}", dylib_src.display(), dylib_dst.display()));
-    
-    println!("cargo:warning=Copied libVisionBridge.dylib to {}", dylib_dst.display());
-    
+    std::fs::create_dir_all(&output_dir).expect(&format!(
+        "Failed to create output directory {}",
+        output_dir.display()
+    ));
+
+    std::fs::copy(&dylib_src, &dylib_dst).expect(&format!(
+        "Failed to copy dylib from {} to {}",
+        dylib_src.display(),
+        dylib_dst.display()
+    ));
+
+    println!(
+        "cargo:warning=Copied libVisionBridge.dylib to {}",
+        dylib_dst.display()
+    );
+
     // Add rpath so the dylib can be found at runtime
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path");
     println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path");
@@ -68,5 +81,8 @@ fn main() {
     println!("cargo:rustc-link-lib=framework=CoreGraphics");
     println!("cargo:rustc-link-lib=framework=CoreImage");
 
-    println!("cargo:warning=VisionBridge built successfully at {}", lib_path.display());
+    println!(
+        "cargo:warning=VisionBridge built successfully at {}",
+        lib_path.display()
+    );
 }

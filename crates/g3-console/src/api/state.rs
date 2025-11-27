@@ -1,8 +1,8 @@
 use crate::launch::ConsoleState;
 use axum::{http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use tracing::{error, info};
 
 pub async fn get_state() -> Result<Json<ConsoleState>, StatusCode> {
@@ -52,24 +52,26 @@ pub async fn browse_filesystem(
     Json(request): Json<BrowseRequest>,
 ) -> Result<Json<BrowseResponse>, StatusCode> {
     use std::fs;
-    
+
     let path = if let Some(p) = request.path {
         PathBuf::from(p)
     } else {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     };
-    
-    let current_path = path.canonicalize()
+
+    let current_path = path
+        .canonicalize()
         .map_err(|_| StatusCode::BAD_REQUEST)?
         .to_string_lossy()
         .to_string();
-    
-    let parent_path = path.parent()
+
+    let parent_path = path
+        .parent()
         .and_then(|p| p.to_str())
         .map(|s| s.to_string());
-    
+
     let mut entries = Vec::new();
-    
+
     if let Ok(read_dir) = fs::read_dir(&path) {
         for entry in read_dir.flatten() {
             if let Ok(metadata) = entry.metadata() {
@@ -82,15 +84,13 @@ pub async fn browse_filesystem(
             }
         }
     }
-    
-    entries.sort_by(|a, b| {
-        match (a.is_dir, b.is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.cmp(&b.name),
-        }
+
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
     });
-    
+
     Ok(Json(BrowseResponse {
         current_path,
         parent_path,

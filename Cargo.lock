@@ -1351,6 +1351,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "g3-cli",
+ "g3-providers",
+ "serde_json",
  "tokio",
 ]
 

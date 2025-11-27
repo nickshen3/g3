@@ -12,7 +12,7 @@ pub async fn get_instance_logs(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut detector = detector.lock().await;
-    
+
     match detector.detect_instances() {
         Ok(instances) => {
             if let Some(instance) = instances.into_iter().find(|i| i.id == id) {
@@ -20,7 +20,7 @@ pub async fn get_instance_logs(
                     Ok(entries) => {
                         let messages = LogParser::extract_chat_messages(&entries);
                         let tool_calls = LogParser::extract_tool_calls(&entries);
-                        
+
                         Ok(Json(serde_json::json!({
                             "messages": messages,
                             "tool_calls": tool_calls,

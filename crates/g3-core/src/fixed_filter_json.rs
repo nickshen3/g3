@@ -5,7 +5,7 @@
 // 4. Return everything else as the final filtered string
 
 //! JSON tool call filtering for streaming LLM responses.
-//! 
+//!
 //! This module filters out JSON tool calls from LLM output streams while preserving
 //! regular text content. It uses a state machine to handle streaming chunks.
 
@@ -29,7 +29,7 @@ struct FixedJsonToolState {
     brace_depth: i32,
     buffer: String,
     json_start_in_buffer: Option<usize>, // Position where confirmed JSON tool call starts
-    content_returned_up_to: usize, // Track how much content we've already returned
+    content_returned_up_to: usize,       // Track how much content we've already returned
     potential_json_start: Option<usize>, // Where the potential JSON started
 }
 

@@ -71,7 +71,7 @@ fn create_test_project(name: &str) -> TempDir {
 }
 
 #[test]
- fn test_flock_config_validation() {
+fn test_flock_config_validation() {
     let temp_dir = TempDir::new().unwrap();
     let project_path = temp_dir.path().to_path_buf();
     let workspace_path = temp_dir.path().join("workspace");
@@ -213,8 +213,7 @@ fn test_multiple_segment_clones() {
     assert!(segment2.exists());
 
     // Modify segment 1
-    fs::write(segment1.join("test.txt"), "segment 1")
-        .expect("Failed to write to segment 1");
+    fs::write(segment1.join("test.txt"), "segment 1").expect("Failed to write to segment 1");
 
     // Verify segment 2 is unaffected
     assert!(!segment2.join("test.txt").exists());
@@ -236,8 +235,11 @@ fn test_segment_requirements_creation() {
 
     // Create segment-requirements.md (what flock mode does)
     let segment_requirements = "# Module A\n\nImplement module A functionality\n";
-    fs::write(segment_dir.join("segment-requirements.md"), segment_requirements)
-        .expect("Failed to write segment requirements");
+    fs::write(
+        segment_dir.join("segment-requirements.md"),
+        segment_requirements,
+    )
+    .expect("Failed to write segment requirements");
 
     // Verify it was created
     assert!(segment_dir.join("segment-requirements.md").exists());

@@ -283,8 +283,7 @@ mod tests {
         assert!(json.contains("Completed"));
 
         // Deserialize back
-        let deserialized: FlockStatus =
-            serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: FlockStatus = serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(deserialized.session_id, "test-session");
         assert_eq!(deserialized.segments.len(), 1);
         assert_eq!(deserialized.total_tokens, 1000);

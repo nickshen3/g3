@@ -1,7 +1,7 @@
 //! Test Python async query
 
-use tree_sitter::{Parser, Query, QueryCursor, Language};
 use streaming_iterator::StreamingIterator;
+use tree_sitter::{Language, Parser, Query, QueryCursor};
 
 fn main() -> anyhow::Result<()> {
     let source_code = r#"

@@ -25,22 +25,22 @@ impl ConsoleUiWriter {
     fn print_todo_line(&self, line: &str) {
         // Transform and print todo list lines elegantly
         let trimmed = line.trim();
-        
+
         // Skip the "📝 TODO list:" prefix line
         if trimmed.starts_with("📝 TODO list:") || trimmed == "📝 TODO list is empty" {
             return;
         }
-        
+
         // Handle empty lines
         if trimmed.is_empty() {
             println!();
             return;
         }
-        
+
         // Detect indentation level
         let indent_count = line.chars().take_while(|c| c.is_whitespace()).count();
         let indent = "  ".repeat(indent_count / 2); // Convert spaces to visual indent
-        
+
         // Format based on line type
         if trimmed.starts_with("- [ ]") {
             // Incomplete task
@@ -48,7 +48,8 @@ impl ConsoleUiWriter {
             println!("{}☐ {}", indent, task);
         } else if trimmed.starts_with("- [x]") || trimmed.starts_with("- [X]") {
             // Completed task
-            let task = trimmed.strip_prefix("- [x]")
+            let task = trimmed
+                .strip_prefix("- [x]")
                 .or_else(|| trimmed.strip_prefix("- [X]"))
                 .unwrap_or(trimmed)
                 .trim();
@@ -105,31 +106,31 @@ impl UiWriter for ConsoleUiWriter {
     fn print_context_thinning(&self, message: &str) {
         // Animated highlight for context thinning
         // Use bright cyan/green with a quick flash animation
-        
+
         // Flash animation: print with bright background, then normal
         let frames = vec![
-            "\x1b[1;97;46m",  // Frame 1: Bold white on cyan background
-            "\x1b[1;97;42m",  // Frame 2: Bold white on green background
-            "\x1b[1;96;40m",  // Frame 3: Bold cyan on black background
+            "\x1b[1;97;46m", // Frame 1: Bold white on cyan background
+            "\x1b[1;97;42m", // Frame 2: Bold white on green background
+            "\x1b[1;96;40m", // Frame 3: Bold cyan on black background
         ];
-        
+
         println!();
-        
+
         // Quick flash animation
         for frame in &frames {
             print!("\r{} ✨ {} ✨\x1b[0m", frame, message);
             let _ = io::stdout().flush();
             std::thread::sleep(std::time::Duration::from_millis(80));
         }
-        
+
         // Final display with bright cyan and sparkle emojis
         print!("\r\x1b[1;96m✨ {} ✨\x1b[0m", message);
         println!();
-        
+
         // Add a subtle "success" indicator line
         println!("\x1b[2;36m   └─ Context optimized successfully\x1b[0m");
         println!();
-        
+
         let _ = io::stdout().flush();
     }
 
@@ -137,14 +138,13 @@ impl UiWriter for ConsoleUiWriter {
         // Store the tool name and clear args for collection
         *self.current_tool_name.lock().unwrap() = Some(tool_name.to_string());
         self.current_tool_args.lock().unwrap().clear();
-        
+
         // Check if this is a todo tool call
         let is_todo = tool_name == "todo_read" || tool_name == "todo_write";
         *self.in_todo_tool.lock().unwrap() = is_todo;
-        
+
         // For todo tools, we'll skip the normal header and print a custom one later
-        if is_todo {
-        }
+        if is_todo {}
     }
 
     fn print_tool_arg(&self, key: &str, value: &str) {
@@ -172,7 +172,7 @@ impl UiWriter for ConsoleUiWriter {
             println!(); // Just add a newline
             return;
         }
-        
+
         println!();
         // Now print the tool header with the most important arg in bold green
         if let Some(tool_name) = self.current_tool_name.lock().unwrap().as_ref() {
@@ -192,7 +192,8 @@ impl UiWriter for ConsoleUiWriter {
                 // Truncate long values for display
                 let display_value = if first_line.len() > 80 {
                     // Use char_indices to safely truncate at character boundary
-                    let truncate_at = first_line.char_indices()
+                    let truncate_at = first_line
+                        .char_indices()
                         .nth(77)
                         .map(|(i, _)| i)
                         .unwrap_or(first_line.len());
@@ -206,10 +207,18 @@ impl UiWriter for ConsoleUiWriter {
                     // Check if start or end parameters are present
                     let has_start = args.iter().any(|(k, _)| k == "start");
                     let has_end = args.iter().any(|(k, _)| k == "end");
-                    
+
                     if has_start || has_end {
-                        let start_val = args.iter().find(|(k, _)| k == "start").map(|(_, v)| v.as_str()).unwrap_or("0");
-                        let end_val = args.iter().find(|(k, _)| k == "end").map(|(_, v)| v.as_str()).unwrap_or("end");
+                        let start_val = args
+                            .iter()
+                            .find(|(k, _)| k == "start")
+                            .map(|(_, v)| v.as_str())
+                            .unwrap_or("0");
+                        let end_val = args
+                            .iter()
+                            .find(|(k, _)| k == "end")
+                            .map(|(_, v)| v.as_str())
+                            .unwrap_or("end");
                         format!(" [{}..{}]", start_val, end_val)
                     } else {
                         String::new()
@@ -219,7 +228,10 @@ impl UiWriter for ConsoleUiWriter {
                 };
 
                 // Print with bold green tool name, purple (non-bold) for pipe and args
-                println!("┌─\x1b[1;32m {}\x1b[0m\x1b[35m | {}{}\x1b[0m", tool_name, display_value, header_suffix);
+                println!(
+                    "┌─\x1b[1;32m {}\x1b[0m\x1b[35m | {}{}\x1b[0m",
+                    tool_name, display_value, header_suffix
+                );
             } else {
                 // Print with bold green formatting using ANSI escape codes
                 println!("┌─\x1b[1;32m {}\x1b[0m", tool_name);
@@ -252,7 +264,7 @@ impl UiWriter for ConsoleUiWriter {
             self.print_todo_line(line);
             return;
         }
-        
+
         println!("│ \x1b[2m{}\x1b[0m", line);
     }
 
@@ -261,7 +273,7 @@ impl UiWriter for ConsoleUiWriter {
         if *self.in_todo_tool.lock().unwrap() {
             return;
         }
-        
+
         println!(
             "│ \x1b[2m({} line{})\x1b[0m",
             count,
@@ -276,7 +288,7 @@ impl UiWriter for ConsoleUiWriter {
             *self.in_todo_tool.lock().unwrap() = false;
             return;
         }
-        
+
         // Parse the duration string to determine color
         // Format is like "1.5s", "500ms", "2m 30.0s"
         let color_code = if duration_str.ends_with("ms") {
@@ -379,4 +391,3 @@ impl UiWriter for ConsoleUiWriter {
         }
     }
 }
-

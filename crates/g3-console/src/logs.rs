@@ -36,7 +36,7 @@ impl LogParser {
     /// Parse logs from a workspace directory
     pub fn parse_logs(workspace: &Path) -> Result<Vec<LogEntry>> {
         let logs_dir = workspace.join("logs");
-        
+
         if !logs_dir.exists() {
             return Ok(Vec::new());
         }
@@ -47,7 +47,7 @@ impl LogParser {
         for entry in fs::read_dir(&logs_dir).context("Failed to read logs directory")? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 if let Ok(content) = fs::read_to_string(&path) {
                     if let Ok(json) = serde_json::from_str::<Value>(&content) {
@@ -55,17 +55,21 @@ impl LogParser {
                         if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
                             for msg in messages {
                                 entries.push(LogEntry {
-                                    timestamp: msg.get("timestamp")
+                                    timestamp: msg
+                                        .get("timestamp")
                                         .and_then(|t| t.as_str())
                                         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                                         .map(|dt| dt.with_timezone(&Utc)),
-                                    role: msg.get("role")
+                                    role: msg
+                                        .get("role")
                                         .and_then(|r| r.as_str())
                                         .map(String::from),
-                                    content: msg.get("content")
+                                    content: msg
+                                        .get("content")
                                         .and_then(|c| c.as_str())
                                         .map(String::from),
-                                    tool_calls: msg.get("tool_calls")
+                                    tool_calls: msg
+                                        .get("tool_calls")
                                         .and_then(|tc| tc.as_array())
                                         .map(|arr| arr.clone()),
                                     raw: msg.clone(),
@@ -78,13 +82,11 @@ impl LogParser {
         }
 
         // Sort by timestamp
-        entries.sort_by(|a, b| {
-            match (&a.timestamp, &b.timestamp) {
-                (Some(t1), Some(t2)) => t1.cmp(t2),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            }
+        entries.sort_by(|a, b| match (&a.timestamp, &b.timestamp) {
+            (Some(t1), Some(t2)) => t1.cmp(t2),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
         });
 
         Ok(entries)
@@ -97,7 +99,7 @@ impl LogParser {
             .filter_map(|entry| {
                 let role = entry.role.clone()?;
                 let content = entry.content.clone()?;
-                
+
                 Some(ChatMessage {
                     role,
                     content,
@@ -117,10 +119,12 @@ impl LogParser {
                     if let Some(name) = call.get("name").and_then(|n| n.as_str()) {
                         tool_calls.push(ToolCall {
                             name: name.to_string(),
-                            parameters: call.get("parameters")
+                            parameters: call
+                                .get("parameters")
                                 .cloned()
                                 .unwrap_or(Value::Object(serde_json::Map::new())),
-                            result: call.get("result")
+                            result: call
+                                .get("result")
                                 .and_then(|r| r.as_str())
                                 .map(String::from),
                             timestamp: entry.timestamp,
@@ -146,7 +150,7 @@ impl StatsAggregator {
         let total_tokens = Self::count_tokens(entries);
         let tool_calls = Self::count_tool_calls(entries);
         let errors = Self::count_errors(entries);
-        
+
         let duration_secs = if let Some(last_entry) = entries.last() {
             if let Some(last_time) = last_entry.timestamp {
                 (last_time - start_time).num_seconds().max(0) as u64
@@ -193,7 +197,9 @@ impl StatsAggregator {
         entries
             .iter()
             .filter_map(|entry| {
-                entry.raw.get("usage")
+                entry
+                    .raw
+                    .get("usage")
                     .and_then(|u| u.get("total_tokens"))
                     .and_then(|t| t.as_u64())
             })
@@ -213,7 +219,11 @@ impl StatsAggregator {
             .iter()
             .filter(|entry| {
                 entry.raw.get("error").is_some()
-                    || entry.content.as_ref().map(|c| c.to_lowercase().contains("error")).unwrap_or(false)
+                    || entry
+                        .content
+                        .as_ref()
+                        .map(|c| c.to_lowercase().contains("error"))
+                        .unwrap_or(false)
             })
             .count() as u64
     }

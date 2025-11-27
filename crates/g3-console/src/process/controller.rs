@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Context, Result};
-use std::process::{Command, Stdio};
-use std::os::unix::process::CommandExt;
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::path::PathBuf;
-use sysinfo::{Pid, Signal, System, Process};
-use tracing::{debug, info};
 use crate::models::LaunchParams;
+use anyhow::{anyhow, Context, Result};
+use std::collections::HashMap;
+use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::Mutex;
+use sysinfo::{Pid, Process, Signal, System};
+use tracing::{debug, info};
 
 pub struct ProcessController {
     system: System,
@@ -27,15 +27,15 @@ impl ProcessController {
 
         if let Some(process) = self.system.process(sysinfo_pid) {
             info!("Killing process {} ({})", pid, process.name());
-            
+
             // Try SIGTERM first
             if process.kill_with(Signal::Term).is_some() {
                 debug!("Sent SIGTERM to process {}", pid);
-                
+
                 // Wait a bit and check if it's still running
                 std::thread::sleep(std::time::Duration::from_secs(2));
                 self.system.refresh_processes();
-                
+
                 if self.system.process(sysinfo_pid).is_some() {
                     // Still running, send SIGKILL
                     if let Some(proc) = self.system.process(sysinfo_pid) {
@@ -43,7 +43,7 @@ impl ProcessController {
                         debug!("Sent SIGKILL to process {}", pid);
                     }
                 }
-                
+
                 Ok(())
             } else {
                 Err(anyhow!("Failed to send signal to process {}", pid))
@@ -64,7 +64,7 @@ impl ProcessController {
         g3_binary_path: Option<&str>,
     ) -> Result<u32> {
         let binary = g3_binary_path.unwrap_or("g3");
-        
+
         let mut cmd = Command::new(binary);
         cmd.arg("--workspace")
             .arg(workspace)
@@ -108,36 +108,41 @@ impl ProcessController {
         }
 
         info!("Launching g3: {:?}", cmd);
-        
+
         // Spawn and wait for the intermediate process to exit
         let mut child = cmd.spawn().context("Failed to spawn g3 process")?;
         let intermediate_pid = child.id();
-        
+
         // Wait for intermediate process (it will exit immediately after forking)
-        child.wait().context("Failed to wait for intermediate process")?;
-        
+        child
+            .wait()
+            .context("Failed to wait for intermediate process")?;
+
         // The actual g3 process is now running as orphan
         // We need to scan for it by matching workspace and recent start time
-        info!("Scanning for newly launched g3 process in workspace: {}", workspace);
-        
+        info!(
+            "Scanning for newly launched g3 process in workspace: {}",
+            workspace
+        );
+
         // Wait even longer for the process to fully start and appear in process list
         std::thread::sleep(std::time::Duration::from_millis(2500));
-        
+
         // Refresh and scan for the process
         self.system.refresh_processes();
         let workspace_path = PathBuf::from(workspace);
         let mut found_pid = None;
-        
+
         for (pid, process) in self.system.processes() {
             let cmd = process.cmd();
             let cmd_str = cmd.join(" ");
-            
+
             // Check if this is a g3 process
             let is_g3 = process.name().contains("g3") || cmd_str.contains("g3");
             if !is_g3 {
                 continue;
             }
-            
+
             // Check if it has our workspace
             let has_workspace = cmd.iter().any(|arg| {
                 if let Ok(path) = PathBuf::from(arg).canonicalize() {
@@ -147,11 +152,12 @@ impl ProcessController {
                 }
                 false
             });
-            
+
             if has_workspace {
                 // Check if it's recent (started within last 10 seconds)
                 let now = std::time::SystemTime::now();
-                let start_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(process.start_time());
+                let start_time =
+                    std::time::UNIX_EPOCH + std::time::Duration::from_secs(process.start_time());
                 if let Ok(duration) = now.duration_since(start_time) {
                     if duration.as_secs() < 10 {
                         found_pid = Some(pid.as_u32());
@@ -160,7 +166,7 @@ impl ProcessController {
                 }
             }
         }
-        
+
         let pid = if let Some(found) = found_pid {
             found
         } else {
@@ -168,18 +174,18 @@ impl ProcessController {
             info!("Process not found on first scan, trying again...");
             std::thread::sleep(std::time::Duration::from_millis(2000));
             self.system.refresh_processes();
-            
+
             // Try the scan again with full logic
             let mut retry_found = None;
             for (pid, process) in self.system.processes() {
                 let cmd = process.cmd();
                 let cmd_str = cmd.join(" ");
-                
+
                 let is_g3 = process.name().contains("g3") || cmd_str.contains("g3");
                 if !is_g3 {
                     continue;
                 }
-                
+
                 let has_workspace = cmd.iter().any(|arg| {
                     if let Ok(path) = PathBuf::from(arg).canonicalize() {
                         if let Ok(ws) = workspace_path.canonicalize() {
@@ -188,18 +194,18 @@ impl ProcessController {
                     }
                     false
                 });
-                
+
                 if has_workspace {
                     retry_found = Some(pid.as_u32());
                     break;
                 }
             }
-            
+
             retry_found.unwrap_or(intermediate_pid)
         };
 
         info!("Launched g3 process with PID {}", pid);
-        
+
         // Store launch params for restart
         let params = LaunchParams {
             workspace: workspace.into(),
@@ -209,14 +215,14 @@ impl ProcessController {
             autonomous,
             g3_binary_path: g3_binary_path.map(|s| s.to_string()),
         };
-        
+
         if let Ok(mut map) = self.launch_params.lock() {
             map.insert(pid, params);
         }
-        
+
         Ok(pid)
     }
-    
+
     pub fn get_launch_params(&mut self, pid: u32) -> Option<LaunchParams> {
         // First check if we have stored params (for console-launched instances)
         if let Ok(map) = self.launch_params.lock() {
@@ -224,19 +230,19 @@ impl ProcessController {
                 return Some(params.clone());
             }
         }
-        
+
         // If not found, try to parse from process command line (for detected instances)
         self.system.refresh_processes();
         let sysinfo_pid = Pid::from_u32(pid);
-        
+
         if let Some(process) = self.system.process(sysinfo_pid) {
             let cmd = process.cmd();
             return self.parse_launch_params_from_cmd(cmd);
         }
-        
+
         None
     }
-    
+
     fn parse_launch_params_from_cmd(&self, cmd: &[String]) -> Option<LaunchParams> {
         let mut workspace = None;
         let mut provider = None;
@@ -244,7 +250,7 @@ impl ProcessController {
         let mut prompt = None;
         let mut autonomous = false;
         let mut g3_binary_path = None;
-        
+
         let mut i = 0;
         while i < cmd.len() {
             match cmd[i].as_str() {
@@ -273,7 +279,7 @@ impl ProcessController {
                 }
             }
         }
-        
+
         // Try to determine binary path from cmd[0]
         if !cmd.is_empty() {
             let first = &cmd[0];
@@ -281,9 +287,10 @@ impl ProcessController {
                 g3_binary_path = Some(first.clone());
             }
         }
-        
+
         // Only return params if we have the minimum required fields
-        if let (Some(ws), Some(prov), Some(mdl), Some(prmt)) = (workspace, provider, model, prompt) {
+        if let (Some(ws), Some(prov), Some(mdl), Some(prmt)) = (workspace, provider, model, prompt)
+        {
             Some(LaunchParams {
                 workspace: ws,
                 provider: prov,

@@ -12,16 +12,18 @@ impl TesseractOCR {
         let tesseract_check = std::process::Command::new("which")
             .arg("tesseract")
             .output();
-        
+
         if tesseract_check.is_err() || !tesseract_check.as_ref().unwrap().status.success() {
-            anyhow::bail!("Tesseract OCR is not installed on your system.\n\n\
+            anyhow::bail!(
+                "Tesseract OCR is not installed on your system.\n\n\
                 To install tesseract:\n  macOS:   brew install tesseract\n  \
                 Linux:   sudo apt-get install tesseract-ocr (Ubuntu/Debian)\n           \
                 sudo yum install tesseract (RHEL/CentOS)\n  \
                 Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki\n\n\
-                After installation, restart your terminal and try again.");
+                After installation, restart your terminal and try again."
+            );
         }
-        
+
         Ok(Self)
     }
 }
@@ -36,18 +38,23 @@ impl OCREngine for TesseractOCR {
             .arg("tsv")
             .output()
             .map_err(|e| anyhow::anyhow!("Failed to run tesseract: {}", e))?;
-        
+
         if !output.status.success() {
-            anyhow::bail!("Tesseract failed: {}", String::from_utf8_lossy(&output.stderr));
+            anyhow::bail!(
+                "Tesseract failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
-        
+
         let tsv_text = String::from_utf8_lossy(&output.stdout);
         let mut locations = Vec::new();
-        
+
         // Parse TSV output (skip header line)
         for (i, line) in tsv_text.lines().enumerate() {
-            if i == 0 { continue; } // Skip header
-            
+            if i == 0 {
+                continue;
+            } // Skip header
+
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 12 {
                 // TSV format: level, page_num, block_num, par_num, line_num, word_num,
@@ -74,10 +81,10 @@ impl OCREngine for TesseractOCR {
                 }
             }
         }
-        
+
         Ok(locations)
     }
-    
+
     fn name(&self) -> &str {
         "Tesseract OCR"
     }

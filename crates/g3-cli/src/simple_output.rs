@@ -6,7 +6,9 @@ pub struct SimpleOutput {
 
 impl SimpleOutput {
     pub fn new() -> Self {
-        SimpleOutput { machine_mode: false }
+        SimpleOutput {
+            machine_mode: false,
+        }
     }
 
     pub fn new_with_mode(machine_mode: bool) -> Self {

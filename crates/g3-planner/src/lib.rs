@@ -9,11 +9,11 @@ pub mod prompts;
 pub use code_explore::explore_codebase;
 
 use anyhow::Result;
-use g3_providers::{CompletionRequest, LLMProvider, Message, MessageRole};
 use chrono::Local;
+use g3_providers::{CompletionRequest, LLMProvider, Message, MessageRole};
+use prompts::{DISCOVERY_REQUIREMENTS_PROMPT, DISCOVERY_SYSTEM_PROMPT};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use prompts::{DISCOVERY_REQUIREMENTS_PROMPT, DISCOVERY_SYSTEM_PROMPT};
 
 /// Type alias for a status callback function
 pub type StatusCallback = Box<dyn Fn(&str) + Send + Sync>;
@@ -94,7 +94,10 @@ pub async fn get_initial_discovery_messages(
     // Step 5: Extract shell commands from the response
     let shell_commands = extract_shell_commands(&response.content);
 
-    status(&format!("📋 Extracted {} discovery commands", shell_commands.len()));
+    status(&format!(
+        "📋 Extracted {} discovery commands",
+        shell_commands.len()
+    ));
 
     // Write the discovery commands to logs directory
     write_discovery_commands(&shell_commands)?;

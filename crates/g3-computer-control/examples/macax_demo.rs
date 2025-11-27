@@ -11,11 +11,11 @@ use g3_computer_control::MacAxController;
 async fn main() -> Result<()> {
     println!("🍎 macOS Accessibility API Demo\n");
     println!("This demo shows how to control macOS applications using the Accessibility API.\n");
-    
+
     // Create controller
     let controller = MacAxController::new()?;
     println!("✅ MacAxController initialized\n");
-    
+
     // List running applications
     println!("📱 Listing running applications:");
     match controller.list_applications() {
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
         Err(e) => println!("  ❌ Error: {}", e),
     }
     println!();
-    
+
     // Get frontmost app
     println!("🎯 Getting frontmost application:");
     match controller.get_frontmost_app() {
@@ -38,16 +38,16 @@ async fn main() -> Result<()> {
         Err(e) => println!("  ❌ Error: {}", e),
     }
     println!();
-    
+
     // Example: Activate Finder and get its UI tree
     println!("📂 Activating Finder and inspecting UI:");
     match controller.activate_app("Finder") {
         Ok(_) => {
             println!("  ✅ Finder activated");
-            
+
             // Wait a moment for activation
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            
+
             // Get UI tree
             match controller.get_ui_tree("Finder", 2) {
                 Ok(tree) => {
@@ -62,13 +62,13 @@ async fn main() -> Result<()> {
         Err(e) => println!("  ❌ Error: {}", e),
     }
     println!();
-    
+
     println!("✨ Demo complete!\n");
     println!("💡 Tips:");
     println!("  - Use --macax flag with g3 to enable these tools");
     println!("  - Grant accessibility permissions in System Preferences");
     println!("  - Add accessibility identifiers to your apps for easier automation");
     println!("  - See docs/macax-tools.md for full documentation\n");
-    
+
     Ok(())
 }

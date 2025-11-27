@@ -3,8 +3,8 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tree_sitter::{Language, Parser, Query, QueryCursor};
 use streaming_iterator::StreamingIterator;
+use tree_sitter::{Language, Parser, Query, QueryCursor};
 use walkdir::WalkDir;
 
 pub struct TreeSitterSearcher {
@@ -47,10 +47,11 @@ impl TreeSitterSearcher {
                 .set_language(&language)
                 .map_err(|e| anyhow!("Failed to set JavaScript language: {}", e))?;
             parsers.insert("javascript".to_string(), parser);
-            
+
             // Create separate parser for "js" alias
             let mut parser_js = Parser::new();
-            parser_js.set_language(&language)
+            parser_js
+                .set_language(&language)
                 .map_err(|e| anyhow!("Failed to set JavaScript language: {}", e))?;
             parsers.insert("js".to_string(), parser_js);
             languages.insert("javascript".to_string(), language.clone());
@@ -65,10 +66,11 @@ impl TreeSitterSearcher {
                 .set_language(&language)
                 .map_err(|e| anyhow!("Failed to set TypeScript language: {}", e))?;
             parsers.insert("typescript".to_string(), parser);
-            
+
             // Create separate parser for "ts" alias
             let mut parser_ts = Parser::new();
-            parser_ts.set_language(&language)
+            parser_ts
+                .set_language(&language)
                 .map_err(|e| anyhow!("Failed to set TypeScript language: {}", e))?;
             parsers.insert("ts".to_string(), parser_ts);
             languages.insert("typescript".to_string(), language.clone());
@@ -215,8 +217,8 @@ impl TreeSitterSearcher {
             .ok_or_else(|| anyhow!("Language not found: {}", spec.language))?;
 
         // Parse query
-        let query = Query::new(language, &spec.query)
-            .map_err(|e| anyhow!("Invalid query: {}", e))?;
+        let query =
+            Query::new(language, &spec.query).map_err(|e| anyhow!("Invalid query: {}", e))?;
 
         let mut matches = Vec::new();
         let mut files_searched = 0;
@@ -255,11 +257,8 @@ impl TreeSitterSearcher {
                 if let Ok(source_code) = fs::read_to_string(path) {
                     if let Some(tree) = parser.parse(&source_code, None) {
                         let mut cursor = QueryCursor::new();
-                        let mut query_matches = cursor.matches(
-                            &query,
-                            tree.root_node(),
-                            source_code.as_bytes(),
-                        );
+                        let mut query_matches =
+                            cursor.matches(&query, tree.root_node(), source_code.as_bytes());
 
                         query_matches.advance();
                         while let Some(query_match) = query_matches.get() {
@@ -308,7 +307,7 @@ impl TreeSitterSearcher {
                                 captures: captures_map,
                                 context,
                             });
-                            
+
                             query_matches.advance();
                         }
                     }

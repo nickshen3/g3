@@ -3,10 +3,13 @@ use g3_computer_control::create_controller;
 #[tokio::main]
 async fn main() {
     println!("Testing screenshot with permission prompt...");
-    
+
     let controller = create_controller().expect("Failed to create controller");
-    
-    match controller.take_screenshot("/tmp/test_with_prompt.png", None, None).await {
+
+    match controller
+        .take_screenshot("/tmp/test_with_prompt.png", None, None)
+        .await
+    {
         Ok(_) => {
             println!("\n✅ Screenshot saved to /tmp/test_with_prompt.png");
             println!("Opening screenshot...");

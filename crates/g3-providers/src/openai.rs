@@ -10,8 +10,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error};
 
 use crate::{
-    CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, LLMProvider,
-    Message, MessageRole, Tool, ToolCall, Usage,
+    CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, LLMProvider, Message,
+    MessageRole, Tool, ToolCall, Usage,
 };
 
 #[derive(Clone)]
@@ -138,7 +138,8 @@ impl OpenAIProvider {
                                 debug!("Received stream completion marker");
 
                                 // Send final chunk with accumulated content and tool calls
-                                if !accumulated_content.is_empty() || !current_tool_calls.is_empty() {
+                                if !accumulated_content.is_empty() || !current_tool_calls.is_empty()
+                                {
                                     let tool_calls = if current_tool_calls.is_empty() {
                                         None
                                     } else {
@@ -188,8 +189,9 @@ impl OpenAIProvider {
                                                 if let Some(index) = delta_tool_call.index {
                                                     // Ensure we have enough tool calls in our vector
                                                     while current_tool_calls.len() <= index {
-                                                        current_tool_calls
-                                                            .push(OpenAIStreamingToolCall::default());
+                                                        current_tool_calls.push(
+                                                            OpenAIStreamingToolCall::default(),
+                                                        );
                                                     }
 
                                                     let tool_call = &mut current_tool_calls[index];
@@ -198,11 +200,14 @@ impl OpenAIProvider {
                                                         tool_call.id = Some(id.clone());
                                                     }
 
-                                                    if let Some(function) = &delta_tool_call.function {
+                                                    if let Some(function) =
+                                                        &delta_tool_call.function
+                                                    {
                                                         if let Some(name) = &function.name {
                                                             tool_call.name = Some(name.clone());
                                                         }
-                                                        if let Some(arguments) = &function.arguments {
+                                                        if let Some(arguments) = &function.arguments
+                                                        {
                                                             tool_call.arguments.push_str(arguments);
                                                         }
                                                     }
@@ -246,7 +251,7 @@ impl OpenAIProvider {
                     .collect(),
             )
         };
-        
+
         let final_chunk = CompletionChunk {
             content: String::new(),
             finished: true,
@@ -254,7 +259,7 @@ impl OpenAIProvider {
             usage: accumulated_usage.clone(),
         };
         let _ = tx.send(Ok(final_chunk)).await;
-        
+
         accumulated_usage
     }
 }
@@ -291,7 +296,11 @@ impl LLMProvider for OpenAIProvider {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow::anyhow!("OpenAI API error {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "OpenAI API error {}: {}",
+                status,
+                error_text
+            ));
         }
 
         let openai_response: OpenAIResponse = response.json().await?;
@@ -334,7 +343,10 @@ impl LLMProvider for OpenAIProvider {
             request.temperature,
         );
 
-        debug!("Sending streaming request to OpenAI API: model={}", self.model);
+        debug!(
+            "Sending streaming request to OpenAI API: model={}",
+            self.model
+        );
 
         let response = self
             .client
@@ -350,7 +362,11 @@ impl LLMProvider for OpenAIProvider {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow::anyhow!("OpenAI API error {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "OpenAI API error {}: {}",
+                status,
+                error_text
+            ));
         }
 
         let stream = response.bytes_stream();
@@ -384,11 +400,11 @@ impl LLMProvider for OpenAIProvider {
         // OpenAI models support native tool calling
         true
     }
-    
+
     fn max_tokens(&self) -> u32 {
         self.max_tokens.unwrap_or(16000)
     }
-    
+
     fn temperature(&self) -> f32 {
         self._temperature.unwrap_or(0.1)
     }
@@ -472,9 +488,9 @@ impl OpenAIStreamingToolCall {
     fn to_tool_call(&self) -> Option<ToolCall> {
         let id = self.id.as_ref()?;
         let name = self.name.as_ref()?;
-        
+
         let args = serde_json::from_str(&self.arguments).unwrap_or(serde_json::Value::Null);
-        
+
         Some(ToolCall {
             id: id.clone(),
             tool: name.clone(),

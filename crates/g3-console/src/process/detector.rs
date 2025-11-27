@@ -2,7 +2,7 @@ use crate::models::{ExecutionMethod, Instance, InstanceStatus, InstanceType};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
-use sysinfo::{System, Pid, Process};
+use sysinfo::{Pid, Process, System};
 use tracing::{debug, info, warn};
 
 pub struct ProcessDetector {
@@ -41,36 +41,37 @@ impl ProcessDetector {
         Ok(instances)
     }
 
-    fn parse_g3_process(
-        &self,
-        pid: Pid,
-        process: &Process,
-        cmd: &[String],
-    ) -> Option<Instance> {
+    fn parse_g3_process(&self, pid: Pid, process: &Process, cmd: &[String]) -> Option<Instance> {
         let cmd_str = cmd.join(" ");
-        
+
         // Exclude g3-console itself
         if cmd_str.contains("g3-console") {
             return None;
         }
-        
+
         // Check if this is a g3 binary (more comprehensive check)
-        let is_g3_binary = cmd.get(0).map(|s| {
-            (s.ends_with("g3") || s.ends_with("/g3") || s.contains("/target/release/g3") || s.contains("/target/debug/g3"))
-            && !s.contains("g3-") // Exclude other g3-* binaries
-        }).unwrap_or(false);
-        
+        let is_g3_binary = cmd
+            .get(0)
+            .map(|s| {
+                (s.ends_with("g3")
+                    || s.ends_with("/g3")
+                    || s.contains("/target/release/g3")
+                    || s.contains("/target/debug/g3"))
+                    && !s.contains("g3-") // Exclude other g3-* binaries
+            })
+            .unwrap_or(false);
+
         // Check if this is cargo run with g3 (not g3-console or other variants)
-        let is_cargo_run = cmd.get(0).map(|s| s.contains("cargo")).unwrap_or(false) 
+        let is_cargo_run = cmd.get(0).map(|s| s.contains("cargo")).unwrap_or(false)
             && cmd.iter().any(|s| s == "run")
             && !cmd_str.contains("g3-console");
-        
+
         // Also check if command line has g3-specific flags
         let has_g3_flags = cmd_str.contains("--workspace") || cmd_str.contains("--autonomous");
-        
+
         // Accept if it's a g3 binary or cargo run with g3, and has typical g3 patterns
         let is_g3_process = is_g3_binary || (is_cargo_run && has_g3_flags);
-        
+
         if !is_g3_process {
             return None;
         }
@@ -97,8 +98,8 @@ impl ProcessDetector {
         let model = self.extract_flag_value(cmd, "--model");
 
         // Get start time
-        let start_time = DateTime::from_timestamp(process.start_time() as i64, 0)
-            .unwrap_or_else(Utc::now);
+        let start_time =
+            DateTime::from_timestamp(process.start_time() as i64, 0).unwrap_or_else(Utc::now);
 
         // Generate instance ID from PID and start time
         let id = format!("{}_{}", pid, start_time.timestamp());
@@ -139,7 +140,7 @@ impl ProcessDetector {
                 return Some(cwd);
             }
         }
-        
+
         #[cfg(target_os = "macos")]
         {
             // On macOS, use lsof to get the current working directory
@@ -156,9 +157,12 @@ impl ProcessDetector {
                 }
             }
         }
-        
+
         // Final fallback: use current directory of console
-        warn!("Could not determine workspace for PID {}, using current directory", pid);
+        warn!(
+            "Could not determine workspace for PID {}, using current directory",
+            pid
+        );
         std::env::current_dir().ok()
     }
 
@@ -173,7 +177,7 @@ impl ProcessDetector {
 
     pub fn get_process_status(&mut self, pid: u32) -> Option<InstanceStatus> {
         self.system.refresh_all();
-        
+
         let sysinfo_pid = Pid::from_u32(pid);
         if self.system.process(sysinfo_pid).is_some() {
             Some(InstanceStatus::Running)

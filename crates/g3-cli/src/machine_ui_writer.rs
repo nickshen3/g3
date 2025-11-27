@@ -87,9 +87,9 @@ impl UiWriter for MachineUiWriter {
     fn flush(&self) {
         let _ = io::stdout().flush();
     }
-    
+
     fn wants_full_output(&self) -> bool {
-        true  // Machine mode wants complete, untruncated output
+        true // Machine mode wants complete, untruncated output
     }
 
     fn prompt_user_yes_no(&self, message: &str) -> bool {

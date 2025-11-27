@@ -23,11 +23,12 @@ mod error_handling_test;
 mod prompts;
 
 use anyhow::Result;
+use chrono::Local;
 use g3_computer_control::WebDriverController;
 use g3_config::Config;
 use g3_execution::CodeExecutor;
 use g3_providers::{CacheControl, CompletionRequest, Message, MessageRole, ProviderRegistry, Tool};
-use chrono::Local;
+use prompts::{get_system_prompt_for_native, SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE};
 #[allow(unused_imports)]
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -38,7 +39,6 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
-use prompts::{SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE, get_system_prompt_for_native};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
@@ -438,7 +438,10 @@ Format this as a detailed but concise summary that can be used to resume the con
         self.used_tokens = 0;
 
         // Add the summary as a system message
-        let summary_message = Message::new(MessageRole::System, format!("Previous conversation summary:\n\n{}", summary));
+        let summary_message = Message::new(
+            MessageRole::System,
+            format!("Previous conversation summary:\n\n{}", summary),
+        );
         self.add_message(summary_message);
 
         // Add the latest user message if provided
@@ -503,21 +506,27 @@ Format this as a detailed but concise summary that can be used to resume the con
             let is_todo_result = if i > 0 {
                 if let Some(prev_message) = self.conversation_history.get(i - 1) {
                     if matches!(prev_message.role, MessageRole::Assistant) {
-                        prev_message.content.contains(r#""tool":"todo_read""#) ||
-                        prev_message.content.contains(r#""tool":"todo_write""#) ||
-                        prev_message.content.contains(r#""tool": "todo_read""#) ||
-                        prev_message.content.contains(r#""tool": "todo_write""#)
-                    } else { false }
-                } else { false }
-            } else { false };
-            
+                        prev_message.content.contains(r#""tool":"todo_read""#)
+                            || prev_message.content.contains(r#""tool":"todo_write""#)
+                            || prev_message.content.contains(r#""tool": "todo_read""#)
+                            || prev_message.content.contains(r#""tool": "todo_write""#)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
             if let Some(message) = self.conversation_history.get_mut(i) {
                 // Process User messages that look like tool results
                 if matches!(message.role, MessageRole::User)
                     && message.content.starts_with("Tool result:")
                 {
                     let content_len = message.content.len();
-                    
+
                     // Only thin if the content is greater than 500 chars and not a TODO tool result
                     if !is_todo_result && content_len > 500 {
                         // Generate a unique filename based on timestamp and index
@@ -744,9 +753,9 @@ Format this as a detailed but concise summary that can be used to resume the con
 pub struct Agent<W: UiWriter> {
     providers: ProviderRegistry,
     context_window: ContextWindow,
-    thinning_events: Vec<usize>, // chars saved per thinning event
-    pending_90_summarization: bool, // flag to trigger summarization at 90%
-    auto_compact: bool, // whether to auto-compact at 90% before tool calls
+    thinning_events: Vec<usize>,      // chars saved per thinning event
+    pending_90_summarization: bool,   // flag to trigger summarization at 90%
+    auto_compact: bool,               // whether to auto-compact at 90% before tool calls
     summarization_events: Vec<usize>, // chars saved per summarization event
     first_token_times: Vec<Duration>, // time to first token for each completion
     config: Config,
@@ -977,10 +986,10 @@ impl<W: UiWriter> Agent<W> {
             // For non-native providers (embedded models), use JSON format instructions
             SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE.to_string()
         };
-        
+
         let system_message = Message::new(MessageRole::System, system_prompt);
         context_window.add_message(system_message);
-        
+
         // If README content is provided, add it as a second system message (after the main system prompt)
         if let Some(readme) = readme_content {
             let readme_message = Message::new(MessageRole::System, readme);
@@ -1017,10 +1026,8 @@ impl<W: UiWriter> Agent<W> {
             ui_writer,
             todo_content: std::sync::Arc::new(tokio::sync::RwLock::new({
                 // Initialize from TODO.md file if it exists
-                let todo_path = std::env::current_dir()
-                    .ok()
-                    .map(|p| p.join("todo.g3.md"));
-                
+                let todo_path = std::env::current_dir().ok().map(|p| p.join("todo.g3.md"));
+
                 if let Some(path) = todo_path {
                     std::fs::read_to_string(&path).unwrap_or_default()
                 } else {
@@ -1047,7 +1054,7 @@ impl<W: UiWriter> Agent<W> {
 
     /// Validate that the system prompt is the first message in the conversation history.
     /// This is a critical invariant that must be maintained for proper agent operation.
-    /// 
+    ///
     /// # Panics
     /// Panics if:
     /// - The conversation history is empty
@@ -1061,7 +1068,7 @@ impl<W: UiWriter> Agent<W> {
         }
 
         let first_message = &self.context_window.conversation_history[0];
-        
+
         if !matches!(first_message.role, MessageRole::System) {
             panic!(
                 "FATAL: First message is not a System message. Found: {:?}",
@@ -1081,7 +1088,10 @@ impl<W: UiWriter> Agent<W> {
             "5minute" => Some(CacheControl::five_minute()),
             "1hour" => Some(CacheControl::one_hour()),
             _ => {
-                warn!("Invalid cache_config value: '{}'. Valid values are: ephemeral, 5minute, 1hour", cache_config);
+                warn!(
+                    "Invalid cache_config value: '{}'. Valid values are: ephemeral, 5minute, 1hour",
+                    cache_config
+                );
                 None
             }
         }
@@ -1089,7 +1099,8 @@ impl<W: UiWriter> Agent<W> {
 
     /// Count how many cache_control annotations exist in the conversation history
     fn count_cache_controls_in_history(&self) -> usize {
-        self.context_window.conversation_history
+        self.context_window
+            .conversation_history
             .iter()
             .filter(|msg| msg.cache_control.is_some())
             .count()
@@ -1157,7 +1168,10 @@ impl<W: UiWriter> Agent<W> {
     ) -> Result<u32> {
         // First, check if there's a global max_context_length override in agent config
         if let Some(max_context_length) = config.agent.max_context_length {
-            debug!("Using configured agent.max_context_length: {}", max_context_length);
+            debug!(
+                "Using configured agent.max_context_length: {}",
+                max_context_length
+            );
             return Ok(max_context_length);
         }
 
@@ -1251,11 +1265,7 @@ impl<W: UiWriter> Agent<W> {
                 let ts = Local::now().format("%Y%m%d_%H%M%S").to_string();
                 let path = format!("logs/tool_calls_{}.log", ts);
 
-                match OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path)
-                {
+                match OpenOptions::new().create(true).append(true).open(&path) {
                     Ok(file) => Some(Mutex::new(file)),
                     Err(e) => {
                         error!("Failed to open tool log file {}: {}", path, e);
@@ -1402,7 +1412,7 @@ impl<W: UiWriter> Agent<W> {
         // Reset the JSON tool call filter state at the start of each new task
         // This prevents the filter from staying in suppression mode between user interactions
         fixed_filter_json::reset_fixed_json_tool_state();
-        
+
         // Validate that the system prompt is the first message (critical invariant)
         self.validate_system_prompt_is_first();
 
@@ -1417,12 +1427,21 @@ impl<W: UiWriter> Agent<W> {
             // But only if we haven't already added 4 cache_control annotations
             let provider = self.providers.get(None)?;
             if let Some(cache_config) = match provider.name() {
-                "anthropic" => self.config.providers.anthropic.as_ref()
+                "anthropic" => self
+                    .config
+                    .providers
+                    .anthropic
+                    .as_ref()
                     .and_then(|c| c.cache_config.as_ref())
                     .and_then(|config| Self::parse_cache_control(config)),
                 _ => None,
             } {
-                Message::with_cache_control_validated(MessageRole::User, format!("Task: {}", description), cache_config, provider)
+                Message::with_cache_control_validated(
+                    MessageRole::User,
+                    format!("Task: {}", description),
+                    cache_config,
+                    provider,
+                )
             } else {
                 Message::new(MessageRole::User, format!("Task: {}", description))
             }
@@ -1431,7 +1450,8 @@ impl<W: UiWriter> Agent<W> {
 
         // Execute fast-discovery tool calls if provided (immediately after user message)
         if let Some(ref options) = discovery_options {
-            self.ui_writer.println("▶️  Playing back discovery commands...");
+            self.ui_writer
+                .println("▶️  Playing back discovery commands...");
             // Store the working directory for subsequent tool calls in the streaming loop
             if let Some(path) = options.fast_start_path {
                 self.working_dir = Some(path.to_string());
@@ -1439,16 +1459,21 @@ impl<W: UiWriter> Agent<W> {
             let provider = self.providers.get(None)?;
             let supports_cache = provider.supports_cache_control();
             let message_count = options.messages.len();
-            
+
             for (idx, discovery_msg) in options.messages.iter().enumerate() {
                 if let Ok(tool_call) = serde_json::from_str::<ToolCall>(&discovery_msg.content) {
                     self.add_message_to_context(discovery_msg.clone());
-                    let result = self.execute_tool_call_in_dir(&tool_call, options.fast_start_path).await
+                    let result = self
+                        .execute_tool_call_in_dir(&tool_call, options.fast_start_path)
+                        .await
                         .unwrap_or_else(|e| format!("Error: {}", e));
-                    
+
                     // Add cache_control to the last user message if provider supports it (anthropic)
                     let is_last = idx == message_count - 1;
-                    let result_message = if supports_cache && is_last && self.count_cache_controls_in_history() < 4 {
+                    let result_message = if supports_cache
+                        && is_last
+                        && self.count_cache_controls_in_history() < 4
+                    {
                         Message::with_cache_control(
                             MessageRole::User,
                             format!("Tool result: {}", result),
@@ -1539,9 +1564,8 @@ impl<W: UiWriter> Agent<W> {
 
         // Check if we need to do 90% auto-compaction
         if self.pending_90_summarization {
-            self.ui_writer.print_context_status(
-                "\n⚡ Context window reached 90% - auto-compacting...\n"
-            );
+            self.ui_writer
+                .print_context_status("\n⚡ Context window reached 90% - auto-compacting...\n");
             if let Err(e) = self.force_summarize().await {
                 warn!("Failed to auto-compact at 90%: {}", e);
             } else {
@@ -1631,6 +1655,144 @@ impl<W: UiWriter> Agent<W> {
         }
     }
 
+    /// Format token count in compact form (e.g., 1K, 2M, 100b, 200K) and clamp to 4 chars right-aligned
+    fn format_token_count(tokens: u32) -> String {
+        let mut raw = if tokens >= 1_000_000_000 {
+            format!("{}b", tokens / 1_000_000_000)
+        } else if tokens >= 1_000_000 {
+            format!("{}M", tokens / 1_000_000)
+        } else if tokens >= 1_000 {
+            format!("{}K", tokens / 1_000)
+        } else {
+            format!("0K")
+        };
+
+        if raw.len() > 4 {
+            raw.truncate(4);
+        }
+
+        format!("{:>4}", raw)
+    }
+
+    /// Pick a single Unicode indicator for token magnitude (maps to previous color bands)
+    fn token_indicator(tokens: u32) -> &'static str {
+        if tokens <= 1_000 {
+            "🟢"
+        } else if tokens <= 5_000 {
+            "🟡"
+        } else if tokens <= 10_000 {
+            "🟠"
+        } else if tokens <= 20_000 {
+            "🔴"
+        } else {
+            "🟣"
+        }
+    }
+
+    /// Write context window summary to file
+    /// Format: date&time, token_count, message_id, role, first_100_chars
+    fn write_context_window_summary(&self) {
+        // Skip if quiet mode is enabled
+        if self.quiet {
+            return;
+        }
+
+        // Skip if no session ID
+        let session_id = match &self.session_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Create logs directory if it doesn't exist
+        let logs_dir = std::path::Path::new("logs");
+        if !logs_dir.exists() {
+            if let Err(e) = std::fs::create_dir_all(logs_dir) {
+                error!("Failed to create logs directory: {}", e);
+                return;
+            }
+        }
+
+        // Generate filename using same pattern as save_context_window
+        let filename = format!("logs/context_window_{}.txt", session_id);
+        let symlink_path = "logs/current_context_window";
+
+        // Build the summary content
+        let mut summary_lines = Vec::new();
+
+        for message in &self.context_window.conversation_history {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+            // Estimate tokens for this message
+            let message_tokens = ContextWindow::estimate_tokens(&message.content);
+
+            // Format token count
+            let token_str = Self::format_token_count(message_tokens);
+
+            // Get token indicator
+            let indicator = Self::token_indicator(message_tokens);
+
+            // Get role as string
+            let role = match message.role {
+                MessageRole::System => "sys",
+                MessageRole::User => "usr",
+                MessageRole::Assistant => "ass",
+            };
+
+            // Get first 100 characters of content
+            let content_preview: String = message.content.chars().take(100).collect();
+
+            // Replace newlines with spaces for single-line format
+            let content_preview = content_preview.replace('\n', " ").replace('\r', " ");
+
+            // Format: date&time, indicator + token_count (fixed width), message_id, role, first_100_chars
+            let line = format!(
+                "{}, {} {}, {}, {}, {}\n",
+                timestamp, token_str, indicator, message.id, role, content_preview
+            );
+
+            summary_lines.push(line);
+        }
+
+        // Write to file
+        let summary_content = summary_lines.join("");
+        if let Err(e) = std::fs::write(&filename, summary_content) {
+            error!(
+                "Failed to write context window summary to {}: {}",
+                filename, e
+            );
+            return;
+        }
+
+        // Update symlink
+        // Remove old symlink if it exists
+        let _ = std::fs::remove_file(symlink_path);
+
+        // Create new symlink
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let target = format!("context_window_{}.txt", session_id);
+            if let Err(e) = symlink(&target, symlink_path) {
+                error!("Failed to create symlink {}: {}", symlink_path, e);
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::symlink_file;
+            let target = format!("context_window_{}.txt", session_id);
+            if let Err(e) = symlink_file(&target, symlink_path) {
+                error!("Failed to create symlink {}: {}", symlink_path, e);
+            }
+        }
+
+        debug!(
+            "Context window summary written to {} ({} messages)",
+            filename,
+            self.context_window.conversation_history.len()
+        );
+    }
+
     pub fn get_context_window(&self) -> &ContextWindow {
         &self.context_window
     }
@@ -1649,7 +1811,11 @@ impl<W: UiWriter> Agent<W> {
     }
 
     /// Execute a tool call with an optional working directory (for discovery commands)
-    pub async fn execute_tool_call_in_dir(&mut self, tool_call: &ToolCall, working_dir: Option<&str>) -> Result<String> {
+    pub async fn execute_tool_call_in_dir(
+        &mut self,
+        tool_call: &ToolCall,
+        working_dir: Option<&str>,
+    ) -> Result<String> {
         self.execute_tool_in_dir(tool_call, working_dir).await
     }
 
@@ -1748,11 +1914,17 @@ impl<W: UiWriter> Agent<W> {
             .join("\n\n");
 
         let summary_messages = vec![
-            Message::new(MessageRole::System, "You are a helpful assistant that creates concise summaries.".to_string()),
-            Message::new(MessageRole::User, format!(
+            Message::new(
+                MessageRole::System,
+                "You are a helpful assistant that creates concise summaries.".to_string(),
+            ),
+            Message::new(
+                MessageRole::User,
+                format!(
                     "Based on this conversation history, {}\n\nConversation:\n{}",
                     summary_prompt, conversation_text
-                )),
+                ),
+            ),
         ];
 
         let provider = self.providers.get(None)?;
@@ -1845,14 +2017,14 @@ impl<W: UiWriter> Agent<W> {
         let has_readme = self
             .context_window
             .conversation_history
-            .get(1)  // Check the SECOND message (index 1)
+            .get(1) // Check the SECOND message (index 1)
             .map(|m| {
                 matches!(m.role, MessageRole::System)
                     && (m.content.contains("Project README")
                         || m.content.contains("Agent Configuration"))
             })
             .unwrap_or(false);
-        
+
         // Validate that the system prompt is still first
         self.validate_system_prompt_is_first();
 
@@ -2717,157 +2889,174 @@ impl<W: UiWriter> Agent<W> {
                     "\n🥒 Context window at {}%. Trying thinning first...",
                     self.context_window.percentage_used() as u32
                 ));
-                
+
                 let (thin_summary, chars_saved) = self.context_window.thin_context();
                 self.thinning_events.push(chars_saved);
                 self.ui_writer.print_context_thinning(&thin_summary);
-                
+
                 // Check if thinning was sufficient
                 if !self.context_window.should_summarize() {
-                    self.ui_writer.print_context_status("✅ Thinning resolved capacity issue. Continuing...\n");
+                    self.ui_writer.print_context_status(
+                        "✅ Thinning resolved capacity issue. Continuing...\n",
+                    );
                     // Continue with the original request without summarization
                 } else {
-                    self.ui_writer.print_context_status("⚠️ Thinning insufficient. Proceeding with summarization...\n");
+                    self.ui_writer.print_context_status(
+                        "⚠️ Thinning insufficient. Proceeding with summarization...\n",
+                    );
                 }
             }
-            
+
             // Only proceed with summarization if still needed after thinning
             if self.context_window.should_summarize() {
-            // Notify user about summarization
-            self.ui_writer.print_context_status(&format!(
-                "\n🗜️ Context window reaching capacity ({}%). Creating summary...",
-                self.context_window.percentage_used() as u32
-            ));
+                // Notify user about summarization
+                self.ui_writer.print_context_status(&format!(
+                    "\n🗜️ Context window reaching capacity ({}%). Creating summary...",
+                    self.context_window.percentage_used() as u32
+                ));
 
-            // Create summary request with FULL history
-            let summary_prompt = self.context_window.create_summary_prompt();
+                // Create summary request with FULL history
+                let summary_prompt = self.context_window.create_summary_prompt();
 
-            // Get the full conversation history
-            let conversation_text = self
-                .context_window
-                .conversation_history
-                .iter()
-                .map(|m| format!("{:?}: {}", m.role, m.content))
-                .collect::<Vec<_>>()
-                .join("\n\n");
+                // Get the full conversation history
+                let conversation_text = self
+                    .context_window
+                    .conversation_history
+                    .iter()
+                    .map(|m| format!("{:?}: {}", m.role, m.content))
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
 
-            let summary_messages = vec![
-                Message::new(MessageRole::System, "You are a helpful assistant that creates concise summaries.".to_string()),
-                Message::new(MessageRole::User, format!(
-                        "Based on this conversation history, {}\n\nConversation:\n{}",
-                        summary_prompt, conversation_text
-                )),
-            ];
+                let summary_messages = vec![
+                    Message::new(
+                        MessageRole::System,
+                        "You are a helpful assistant that creates concise summaries.".to_string(),
+                    ),
+                    Message::new(
+                        MessageRole::User,
+                        format!(
+                            "Based on this conversation history, {}\n\nConversation:\n{}",
+                            summary_prompt, conversation_text
+                        ),
+                    ),
+                ];
 
-            let provider = self.providers.get(None)?;
+                let provider = self.providers.get(None)?;
 
-            // Dynamically calculate max_tokens for summary based on what's left
-            // We need to ensure: used_tokens + max_tokens <= total_context_limit
-            let summary_max_tokens = match provider.name() {
-                "databricks" | "anthropic" => {
-                    // Use the actual configured context window size
-                    let model_limit = self.context_window.total_tokens;
-                    let current_usage = self.context_window.used_tokens;
-                    
-                    // Check if we have enough capacity for summarization
-                    if current_usage >= model_limit.saturating_sub(1000) {
-                        error!("Context window at capacity ({}%), cannot summarize. Current: {}, Limit: {}", 
+                // Dynamically calculate max_tokens for summary based on what's left
+                // We need to ensure: used_tokens + max_tokens <= total_context_limit
+                let summary_max_tokens = match provider.name() {
+                    "databricks" | "anthropic" => {
+                        // Use the actual configured context window size
+                        let model_limit = self.context_window.total_tokens;
+                        let current_usage = self.context_window.used_tokens;
+
+                        // Check if we have enough capacity for summarization
+                        if current_usage >= model_limit.saturating_sub(1000) {
+                            error!("Context window at capacity ({}%), cannot summarize. Current: {}, Limit: {}", 
                                self.context_window.percentage_used(), current_usage, model_limit);
-                        return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify or /compact commands to reduce context size, or start a new session."));
-                    }
-                    
-                    // Leave buffer proportional to model size (min 1k, max 10k)
-                    let buffer = (model_limit / 40).clamp(1000, 10000); // 2.5% buffer
-                    let available = model_limit
-                        .saturating_sub(current_usage)
-                        .saturating_sub(buffer);
-                    // Cap at a reasonable summary size (10k tokens max)
-                    Some(available.min(10_000))
-                }
-                "embedded" => {
-                    // For smaller context models, be more conservative
-                    let model_limit = self.context_window.total_tokens;
-                    let current_usage = self.context_window.used_tokens;
-                    
-                    // Check capacity for embedded models too
-                    if current_usage >= model_limit.saturating_sub(500) {
-                        error!("Embedded model context window at capacity ({}%)", self.context_window.percentage_used());
-                        return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify command to reduce context size, or start a new session."));
-                    }
-                    
-                    // Leave 1k buffer
-                    let available = model_limit
-                        .saturating_sub(current_usage)
-                        .saturating_sub(1000);
-                    // Cap at 3k for embedded models
-                    Some(available.min(3000))
-                }
-                _ => {
-                    // Default: conservative approach
-                    let model_limit = self.context_window.total_tokens;
-                    let current_usage = self.context_window.used_tokens;
-                    
-                    if current_usage >= model_limit.saturating_sub(1000) {
-                        error!("Context window at capacity ({}%)", self.context_window.percentage_used());
-                        return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify or /compact commands, or start a new session."));
-                    }
-                    
-                    let available = self.context_window.remaining_tokens().saturating_sub(2000);
-                    Some(available.min(5000))
-                }
-            };
+                            return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify or /compact commands to reduce context size, or start a new session."));
+                        }
 
-            debug!(
-                "Requesting summary with max_tokens: {:?} (current usage: {} tokens)",
-                summary_max_tokens, self.context_window.used_tokens
-            );
-            
-            // Final safety check
-            if summary_max_tokens.unwrap_or(0) == 0 {
-                error!("No tokens available for summarization");
-                return Err(anyhow::anyhow!("No context window capacity left for summarization. Use /thinnify to reduce context size or start a new session."));
+                        // Leave buffer proportional to model size (min 1k, max 10k)
+                        let buffer = (model_limit / 40).clamp(1000, 10000); // 2.5% buffer
+                        let available = model_limit
+                            .saturating_sub(current_usage)
+                            .saturating_sub(buffer);
+                        // Cap at a reasonable summary size (10k tokens max)
+                        Some(available.min(10_000))
+                    }
+                    "embedded" => {
+                        // For smaller context models, be more conservative
+                        let model_limit = self.context_window.total_tokens;
+                        let current_usage = self.context_window.used_tokens;
+
+                        // Check capacity for embedded models too
+                        if current_usage >= model_limit.saturating_sub(500) {
+                            error!(
+                                "Embedded model context window at capacity ({}%)",
+                                self.context_window.percentage_used()
+                            );
+                            return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify command to reduce context size, or start a new session."));
+                        }
+
+                        // Leave 1k buffer
+                        let available = model_limit
+                            .saturating_sub(current_usage)
+                            .saturating_sub(1000);
+                        // Cap at 3k for embedded models
+                        Some(available.min(3000))
+                    }
+                    _ => {
+                        // Default: conservative approach
+                        let model_limit = self.context_window.total_tokens;
+                        let current_usage = self.context_window.used_tokens;
+
+                        if current_usage >= model_limit.saturating_sub(1000) {
+                            error!(
+                                "Context window at capacity ({}%)",
+                                self.context_window.percentage_used()
+                            );
+                            return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify or /compact commands, or start a new session."));
+                        }
+
+                        let available = self.context_window.remaining_tokens().saturating_sub(2000);
+                        Some(available.min(5000))
+                    }
+                };
+
+                debug!(
+                    "Requesting summary with max_tokens: {:?} (current usage: {} tokens)",
+                    summary_max_tokens, self.context_window.used_tokens
+                );
+
+                // Final safety check
+                if summary_max_tokens.unwrap_or(0) == 0 {
+                    error!("No tokens available for summarization");
+                    return Err(anyhow::anyhow!("No context window capacity left for summarization. Use /thinnify to reduce context size or start a new session."));
+                }
+
+                let summary_request = CompletionRequest {
+                    messages: summary_messages,
+                    max_tokens: summary_max_tokens,
+                    temperature: Some(0.3), // Lower temperature for factual summary
+                    stream: false,
+                    tools: None,
+                };
+
+                // Get the summary
+                match provider.complete(summary_request).await {
+                    Ok(summary_response) => {
+                        self.ui_writer.print_context_status(
+                            "✅ Context compacted successfully. Continuing...\n",
+                        );
+
+                        // Extract the latest user message from the request
+                        let latest_user_msg = request
+                            .messages
+                            .iter()
+                            .rev()
+                            .find(|m| matches!(m.role, MessageRole::User))
+                            .map(|m| m.content.clone());
+
+                        // Reset context with summary
+                        let chars_saved = self
+                            .context_window
+                            .reset_with_summary(summary_response.content, latest_user_msg);
+                        self.summarization_events.push(chars_saved);
+
+                        // Update the request with new context
+                        request.messages = self.context_window.conversation_history.clone();
+                    }
+                    Err(e) => {
+                        error!("Failed to create summary: {}", e);
+                        self.ui_writer.print_context_status("⚠️ Unable to create summary. Consider starting a new session if you continue to see errors.\n");
+                        // Don't continue with the original request if summarization failed
+                        // as we're likely at token limit
+                        return Err(anyhow::anyhow!("Context window at capacity and summarization failed. Please start a new session."));
+                    }
+                }
             }
-
-            let summary_request = CompletionRequest {
-                messages: summary_messages,
-                max_tokens: summary_max_tokens,
-                temperature: Some(0.3), // Lower temperature for factual summary
-                stream: false,
-                tools: None,
-            };
-
-            // Get the summary
-            match provider.complete(summary_request).await {
-                Ok(summary_response) => {
-                    self.ui_writer
-                        .print_context_status("✅ Context compacted successfully. Continuing...\n");
-
-                    // Extract the latest user message from the request
-                    let latest_user_msg = request
-                        .messages
-                        .iter()
-                        .rev()
-                        .find(|m| matches!(m.role, MessageRole::User))
-                        .map(|m| m.content.clone());
-
-                    // Reset context with summary
-                    let chars_saved = self
-                        .context_window
-                        .reset_with_summary(summary_response.content, latest_user_msg);
-                    self.summarization_events.push(chars_saved);
-
-                    // Update the request with new context
-                    request.messages = self.context_window.conversation_history.clone();
-                }
-                Err(e) => {
-                    error!("Failed to create summary: {}", e);
-                    self.ui_writer.print_context_status("⚠️ Unable to create summary. Consider starting a new session if you continue to see errors.\n");
-                    // Don't continue with the original request if summarization failed
-                    // as we're likely at token limit
-                    return Err(anyhow::anyhow!("Context window at capacity and summarization failed. Please start a new session."));
-                }
-            }
-        }
         }
 
         loop {
@@ -2949,6 +3138,9 @@ impl<W: UiWriter> Agent<W> {
                 }
             };
 
+            // Write context window summary every time we send messages to LLM
+            self.write_context_window_summary();
+
             let mut parser = StreamingToolParser::new();
             let mut current_response = String::new();
             let mut tool_executed = false;
@@ -3007,12 +3199,13 @@ impl<W: UiWriter> Agent<W> {
                         let completed_tools = parser.process_chunk(&chunk);
 
                         // Handle completed tool calls - process all if multiple calls enabled
-                        let tools_to_process: Vec<ToolCall> = if self.config.agent.allow_multiple_tool_calls {
-                            completed_tools
-                        } else {
-                            // Original behavior - only take the first tool
-                            completed_tools.into_iter().take(1).collect()
-                        };
+                        let tools_to_process: Vec<ToolCall> =
+                            if self.config.agent.allow_multiple_tool_calls {
+                                completed_tools
+                            } else {
+                                // Original behavior - only take the first tool
+                                completed_tools.into_iter().take(1).collect()
+                            };
 
                         // Helper function to check if two tool calls are duplicates
                         let are_duplicates = |tc1: &ToolCall, tc2: &ToolCall| -> bool {
@@ -3022,12 +3215,15 @@ impl<W: UiWriter> Agent<W> {
                         // De-duplicate tool calls and track duplicates
                         let mut seen_in_chunk: Vec<ToolCall> = Vec::new();
                         let mut deduplicated_tools: Vec<(ToolCall, Option<String>)> = Vec::new();
-                        
+
                         for tool_call in tools_to_process {
                             let mut duplicate_type = None;
-                            
+
                             // Check for duplicates in current chunk
-                            if seen_in_chunk.iter().any(|tc| are_duplicates(tc, &tool_call)) {
+                            if seen_in_chunk
+                                .iter()
+                                .any(|tc| are_duplicates(tc, &tool_call))
+                            {
                                 duplicate_type = Some("DUP IN CHUNK".to_string());
                             } else {
                                 // Check for duplicate against previous message in history
@@ -3040,15 +3236,18 @@ impl<W: UiWriter> Agent<W> {
                                             // Simple JSON extraction for tool calls
                                             let content = &msg.content;
                                             let mut start_idx = 0;
-                                            while let Some(tool_start) = content[start_idx..].find(r#"{\"tool\""#) {
+                                            while let Some(tool_start) =
+                                                content[start_idx..].find(r#"{\"tool\""#)
+                                            {
                                                 let tool_start = start_idx + tool_start;
                                                 // Find the end of this JSON object
                                                 let mut brace_count = 0;
                                                 let mut in_string = false;
                                                 let mut escape_next = false;
                                                 let mut end_idx = tool_start;
-                                                
-                                                for (i, ch) in content[tool_start..].char_indices() {
+
+                                                for (i, ch) in content[tool_start..].char_indices()
+                                                {
                                                     if escape_next {
                                                         escape_next = false;
                                                         continue;
@@ -3072,10 +3271,12 @@ impl<W: UiWriter> Agent<W> {
                                                         }
                                                     }
                                                 }
-                                                
+
                                                 if end_idx > tool_start {
                                                     let tool_json = &content[tool_start..end_idx];
-                                                    if let Ok(prev_tool) = serde_json::from_str::<ToolCall>(tool_json) {
+                                                    if let Ok(prev_tool) =
+                                                        serde_json::from_str::<ToolCall>(tool_json)
+                                                    {
                                                         if are_duplicates(&prev_tool, &tool_call) {
                                                             found_in_prev = true;
                                                             break;
@@ -3089,42 +3290,46 @@ impl<W: UiWriter> Agent<W> {
                                         break;
                                     }
                                 }
-                                
+
                                 if found_in_prev {
                                     duplicate_type = Some("DUP IN MSG".to_string());
                                 }
                             }
-                            
+
                             // Add to seen list if not a duplicate in chunk
-                            if duplicate_type.as_ref().map_or(true, |s| s != "DUP IN CHUNK") {
+                            if duplicate_type
+                                .as_ref()
+                                .map_or(true, |s| s != "DUP IN CHUNK")
+                            {
                                 seen_in_chunk.push(tool_call.clone());
                             }
-                            
+
                             deduplicated_tools.push((tool_call, duplicate_type));
                         }
 
                         // Process each tool call
                         for (tool_call, duplicate_type) in deduplicated_tools {
                             debug!("Processing completed tool call: {:?}", tool_call);
-                            
+
                             // If it's a duplicate, log it and return a warning
                             if let Some(dup_type) = &duplicate_type {
                                 // Log the duplicate with red prefix
-                                let prefixed_tool_name = format!("🟥 {} {}", tool_call.tool, dup_type);
+                                let prefixed_tool_name =
+                                    format!("🟥 {} {}", tool_call.tool, dup_type);
                                 let warning_msg = format!(
                                     "⚠️ Duplicate tool call detected ({}): Skipping execution of {} with args {}",
                                     dup_type,
                                     tool_call.tool,
                                     serde_json::to_string(&tool_call.args).unwrap_or_else(|_| "<unserializable>".to_string())
                                 );
-                                
+
                                 // Log to tool log with red prefix
                                 let mut modified_tool_call = tool_call.clone();
                                 modified_tool_call.tool = prefixed_tool_name;
                                 self.log_tool_call(&modified_tool_call, &warning_msg);
                                 continue; // Skip execution of duplicate
                             }
-                            
+
                             // Check if we should auto-compact at 90% BEFORE executing the tool
                             // We need to do this before any borrows of self
                             if self.auto_compact && self.context_window.percentage_used() >= 90.0 {
@@ -3132,7 +3337,7 @@ impl<W: UiWriter> Agent<W> {
                                 // We can't do it now due to borrow checker constraints
                                 self.pending_90_summarization = true;
                             }
-                            
+
                             // Check if we should thin the context BEFORE executing the tool
                             if self.context_window.should_thin() {
                                 let (thin_summary, chars_saved) =
@@ -3141,7 +3346,6 @@ impl<W: UiWriter> Agent<W> {
                                 // Print the thinning summary to the user
                                 self.ui_writer.print_context_thinning(&thin_summary);
                             }
-
 
                             // Track what we've already displayed before getting new text
                             // This prevents re-displaying old content after tool execution
@@ -3312,8 +3516,12 @@ impl<W: UiWriter> Agent<W> {
                                         break;
                                     }
                                     // Clip line to max width (but not for todo tools)
-                                    let clipped_line = truncate_line(line, MAX_LINE_WIDTH, !wants_full && !is_todo_tool);
-                                    
+                                    let clipped_line = truncate_line(
+                                        line,
+                                        MAX_LINE_WIDTH,
+                                        !wants_full && !is_todo_tool,
+                                    );
+
                                     // Use print_tool_output_line for todo tools to get special formatting
                                     if is_todo_tool {
                                         self.ui_writer.print_tool_output_line(&clipped_line);
@@ -3364,36 +3572,60 @@ impl<W: UiWriter> Agent<W> {
                             // Add the tool call and result to the context window using RAW unfiltered content
                             // This ensures the log file contains the true raw content including JSON tool calls
                             let tool_message = if !raw_content_for_log.trim().is_empty() {
-                                Message::new(MessageRole::Assistant, format!(
+                                Message::new(
+                                    MessageRole::Assistant,
+                                    format!(
                                         "{}\n\n{{\"tool\": \"{}\", \"args\": {}}}",
                                         raw_content_for_log.trim(),
                                         tool_call.tool,
                                         tool_call.args
-                                ))
+                                    ),
+                                )
                             } else {
                                 // No text content before tool call, just include the tool call
-                                Message::new(MessageRole::Assistant, format!(
+                                Message::new(
+                                    MessageRole::Assistant,
+                                    format!(
                                         "{{\"tool\": \"{}\", \"args\": {}}}",
                                         tool_call.tool, tool_call.args
-                                ))
+                                    ),
+                                )
                             };
                             let result_message = {
                                 // Check if we should use cache control (every 10 tool calls)
                                 // But only if we haven't already added 4 cache_control annotations
-                                if self.tool_call_count > 0 && self.tool_call_count % 10 == 0 && self.count_cache_controls_in_history() < 4 {
+                                if self.tool_call_count > 0
+                                    && self.tool_call_count % 10 == 0
+                                    && self.count_cache_controls_in_history() < 4
+                                {
                                     let provider = self.providers.get(None)?;
                                     if let Some(cache_config) = match provider.name() {
-                                        "anthropic" => self.config.providers.anthropic.as_ref()
+                                        "anthropic" => self
+                                            .config
+                                            .providers
+                                            .anthropic
+                                            .as_ref()
                                             .and_then(|c| c.cache_config.as_ref())
                                             .and_then(|config| Self::parse_cache_control(config)),
                                         _ => None,
                                     } {
-                                        Message::with_cache_control_validated(MessageRole::User, format!("Tool result: {}", tool_result), cache_config, provider)
+                                        Message::with_cache_control_validated(
+                                            MessageRole::User,
+                                            format!("Tool result: {}", tool_result),
+                                            cache_config,
+                                            provider,
+                                        )
                                     } else {
-                                        Message::new(MessageRole::User, format!("Tool result: {}", tool_result))
+                                        Message::new(
+                                            MessageRole::User,
+                                            format!("Tool result: {}", tool_result),
+                                        )
                                     }
                                 } else {
-                                    Message::new(MessageRole::User, format!("Tool result: {}", tool_result))
+                                    Message::new(
+                                        MessageRole::User,
+                                        format!("Tool result: {}", tool_result),
+                                    )
                                 }
                             };
 
@@ -3434,7 +3666,7 @@ impl<W: UiWriter> Agent<W> {
                             current_response.clear();
                             // Reset response_started flag for next iteration
                             response_started = false;
-                            
+
                             // For single tool mode, break immediately
                             if !self.config.agent.allow_multiple_tool_calls {
                                 break; // Break out of current stream to start a new one
@@ -3526,8 +3758,7 @@ impl<W: UiWriter> Agent<W> {
                                     error!("Iteration: {}/{}", iteration_count, MAX_ITERATIONS);
                                     error!(
                                         "Provider: {} (model: {})",
-                                        provider_name,
-                                        provider_model
+                                        provider_name, provider_model
                                     );
                                     error!("Chunks received: {}", chunks_received);
                                     error!("Parser state:");
@@ -3648,25 +3879,35 @@ impl<W: UiWriter> Agent<W> {
                     Err(e) => {
                         // Capture detailed streaming error information
                         let error_msg = e.to_string();
-                        let error_details = format!("Streaming error at chunk {}: {}", chunks_received + 1, error_msg);
-                        
+                        let error_details = format!(
+                            "Streaming error at chunk {}: {}",
+                            chunks_received + 1,
+                            error_msg
+                        );
+
                         error!("Error type: {}", std::any::type_name_of_val(&e));
                         error!("Parser state at error: text_buffer_len={}, native_tool_calls={}, message_stopped={}",
                             parser.text_buffer_len(), parser.native_tool_calls.len(), parser.is_message_stopped());
 
                         // Store the error for potential logging later
                         _last_error = Some(error_details.clone());
-                        
+
                         // Check if this is a recoverable connection error
-                        let is_connection_error = error_msg.contains("unexpected EOF") 
-                            || error_msg.contains("connection") 
+                        let is_connection_error = error_msg.contains("unexpected EOF")
+                            || error_msg.contains("connection")
                             || error_msg.contains("chunk size line")
                             || error_msg.contains("body error");
-                        
+
                         if is_connection_error {
-                            warn!("Connection error at chunk {}, treating as end of stream", chunks_received + 1);
+                            warn!(
+                                "Connection error at chunk {}, treating as end of stream",
+                                chunks_received + 1
+                            );
                             // If we have any content or tool calls, treat this as a graceful end
-                            if chunks_received > 0 && (!parser.get_text_content().is_empty() || parser.native_tool_calls.len() > 0) {
+                            if chunks_received > 0
+                                && (!parser.get_text_content().is_empty()
+                                    || parser.native_tool_calls.len() > 0)
+                            {
                                 warn!("Stream terminated unexpectedly but we have content, continuing");
                                 break; // Break to process what we have
                             }
@@ -3793,7 +4034,11 @@ impl<W: UiWriter> Agent<W> {
     }
 
     /// Execute a tool with an optional working directory (for discovery commands)
-    pub async fn execute_tool_in_dir(&mut self, tool_call: &ToolCall, working_dir: Option<&str>) -> Result<String> {
+    pub async fn execute_tool_in_dir(
+        &mut self,
+        tool_call: &ToolCall,
+        working_dir: Option<&str>,
+    ) -> Result<String> {
         // Only increment tool call count if not already incremented by execute_tool
         if working_dir.is_some() {
             self.tool_call_count += 1;
@@ -3808,10 +4053,17 @@ impl<W: UiWriter> Agent<W> {
         result
     }
 
-    async fn execute_tool_inner_in_dir(&mut self, tool_call: &ToolCall, working_dir: Option<&str>) -> Result<String> {
+    async fn execute_tool_inner_in_dir(
+        &mut self,
+        tool_call: &ToolCall,
+        working_dir: Option<&str>,
+    ) -> Result<String> {
         debug!("=== EXECUTING TOOL ===");
         debug!("Tool name: {}", tool_call.tool);
-        debug!("Working directory passed to execute_tool_inner_in_dir: {:?}", working_dir);
+        debug!(
+            "Working directory passed to execute_tool_inner_in_dir: {:?}",
+            working_dir
+        );
         debug!("Tool args (raw): {:?}", tool_call.args);
         debug!(
             "Tool args (JSON): {}",
@@ -3846,7 +4098,7 @@ impl<W: UiWriter> Agent<W> {
                         let receiver = ToolOutputReceiver {
                             ui_writer: &self.ui_writer,
                         };
-                        
+
                         debug!("ABOUT TO CALL execute_bash_streaming_in_dir: escaped_command='{}', working_dir={:?}", escaped_command, working_dir);
 
                         match executor
@@ -4346,7 +4598,7 @@ impl<W: UiWriter> Agent<W> {
                 debug!("Processing todo_read tool call");
                 // Read from todo.g3.md file in current workspace directory
                 let todo_path = std::env::current_dir()?.join("todo.g3.md");
-                
+
                 if !todo_path.exists() {
                     // Also update in-memory content to stay in sync
                     let mut todo = self.todo_content.write().await;
@@ -4358,34 +4610,44 @@ impl<W: UiWriter> Agent<W> {
                             // Update in-memory content to stay in sync
                             let mut todo = self.todo_content.write().await;
                             *todo = content.clone();
-                            
+
                             // Check for staleness if enabled and we have a requirements SHA
                             if self.config.agent.check_todo_staleness {
                                 if let Some(req_sha) = &self.requirements_sha {
                                     // Parse the first line for the SHA header
                                     if let Some(first_line) = content.lines().next() {
-                                        if first_line.starts_with("{{Based on the requirements file with SHA256:") {
-                                            let parts: Vec<&str> = first_line.split("SHA256:").collect();
+                                        if first_line.starts_with(
+                                            "{{Based on the requirements file with SHA256:",
+                                        ) {
+                                            let parts: Vec<&str> =
+                                                first_line.split("SHA256:").collect();
                                             if parts.len() > 1 {
-                                                let todo_sha = parts[1].trim().trim_end_matches("}}").trim();
+                                                let todo_sha =
+                                                    parts[1].trim().trim_end_matches("}}").trim();
                                                 if todo_sha != req_sha {
                                                     let warning = format!(
                                                         "⚠️ TODO list is stale! It was generated from a different requirements file.\nExpected SHA: {}\nFound SHA:    {}",
                                                         req_sha, todo_sha
                                                     );
                                                     self.ui_writer.print_context_status(&warning);
-                                                    
+
                                                     // Beep 6 times
                                                     print!("\x07\x07\x07\x07\x07\x07");
                                                     let _ = std::io::stdout().flush();
-                                                    
-                                                    let options = ["Ignore and Continue", "Mark as Stale", "Quit Application"];
+
+                                                    let options = [
+                                                        "Ignore and Continue",
+                                                        "Mark as Stale",
+                                                        "Quit Application",
+                                                    ];
                                                     let choice = self.ui_writer.prompt_user_choice("Requirements have changed! What would you like to do?", &options);
-                                                    
+
                                                     match choice {
                                                         0 => {
                                                             // Ignore and Continue
-                                                            self.ui_writer.print_context_status("⚠️ Ignoring staleness warning.");
+                                                            self.ui_writer.print_context_status(
+                                                                "⚠️ Ignoring staleness warning.",
+                                                            );
                                                         }
                                                         1 => {
                                                             // Mark as Stale
@@ -4438,13 +4700,16 @@ impl<W: UiWriter> Agent<W> {
 
                         // Write to todo.g3.md file in current workspace directory
                         let todo_path = std::env::current_dir()?.join("todo.g3.md");
-                        
+
                         match std::fs::write(&todo_path, content_str) {
                             Ok(_) => {
                                 // Also update in-memory content to stay in sync
                                 let mut todo = self.todo_content.write().await;
                                 *todo = content_str.to_string();
-                                Ok(format!("✅ TODO list updated ({} chars) and saved to todo.g3.md", char_count))
+                                Ok(format!(
+                                    "✅ TODO list updated ({} chars) and saved to todo.g3.md",
+                                    char_count
+                                ))
                             }
                             Err(e) => Ok(format!("❌ Failed to write todo.g3.md: {}", e)),
                         }
@@ -4457,32 +4722,35 @@ impl<W: UiWriter> Agent<W> {
             }
             "code_coverage" => {
                 debug!("Processing code_coverage tool call");
-                self.ui_writer.print_context_status("🔍 Generating code coverage report...");
-                
+                self.ui_writer
+                    .print_context_status("🔍 Generating code coverage report...");
+
                 // Ensure coverage tools are installed
                 match g3_execution::ensure_coverage_tools_installed() {
                     Ok(already_installed) => {
                         if !already_installed {
-                            self.ui_writer.print_context_status("✅ Coverage tools installed successfully");
+                            self.ui_writer
+                                .print_context_status("✅ Coverage tools installed successfully");
                         }
                     }
                     Err(e) => {
                         return Ok(format!("❌ Failed to install coverage tools: {}", e));
                     }
                 }
-                
+
                 // Run cargo llvm-cov --workspace
                 let output = std::process::Command::new("cargo")
                     .args(&["llvm-cov", "--workspace"])
                     .current_dir(std::env::current_dir()?)
                     .output()?;
-                
+
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    
+
                     // Combine output
-                    let mut result = String::from("✅ Code coverage report generated successfully\n\n");
+                    let mut result =
+                        String::from("✅ Code coverage report generated successfully\n\n");
                     result.push_str("## Coverage Summary\n");
                     result.push_str(&stdout);
                     if !stderr.is_empty() {
@@ -4492,7 +4760,10 @@ impl<W: UiWriter> Agent<W> {
                     Ok(result)
                 } else {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    Ok(format!("❌ Failed to generate coverage report:\n{}", stderr))
+                    Ok(format!(
+                        "❌ Failed to generate coverage report:\n{}",
+                        stderr
+                    ))
                 }
             }
             "webdriver_start" => {
@@ -5426,9 +5697,7 @@ impl<W: UiWriter> Agent<W> {
                             Err(e) => Ok(format!("❌ Failed to serialize response: {}", e)),
                         }
                     }
-                    Err(e) => {
-                        Ok(format!("❌ Code search failed: {}", e))
-                    }
+                    Err(e) => Ok(format!("❌ Code search failed: {}", e)),
                 }
             }
             _ => {
@@ -5891,10 +6160,13 @@ impl<W: UiWriter> Drop for Agent<W> {
             if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 self.validate_system_prompt_is_first();
             })) {
-                eprintln!("\n⚠️  FATAL ERROR ON EXIT: System prompt validation failed: {:?}", e);
+                eprintln!(
+                    "\n⚠️  FATAL ERROR ON EXIT: System prompt validation failed: {:?}",
+                    e
+                );
             }
         }
-        
+
         // Try to kill safaridriver process if it's still running
         // We need to use try_lock since we can't await in Drop
         if let Ok(mut process_guard) = self.safaridriver_process.try_write() {

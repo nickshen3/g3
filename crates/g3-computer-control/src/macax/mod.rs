@@ -34,7 +34,7 @@ impl AXElement {
     /// Convert to a human-readable string representation
     pub fn to_string(&self) -> String {
         let mut parts = vec![format!("Role: {}", self.role)];
-        
+
         if let Some(ref title) = self.title {
             parts.push(format!("Title: {}", title));
         }
@@ -47,19 +47,19 @@ impl AXElement {
         if let Some(ref id) = self.identifier {
             parts.push(format!("ID: {}", id));
         }
-        
+
         parts.push(format!("Enabled: {}", self.enabled));
         parts.push(format!("Focused: {}", self.focused));
-        
+
         if let Some((x, y)) = self.position {
             parts.push(format!("Position: ({:.0}, {:.0})", x, y));
         }
         if let Some((w, h)) = self.size {
             parts.push(format!("Size: ({:.0}, {:.0})", w, h));
         }
-        
+
         parts.push(format!("Children: {}", self.children_count));
-        
+
         parts.join(", ")
     }
 }

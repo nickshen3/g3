@@ -1,9 +1,9 @@
 use anyhow::Result;
 use regex::Regex;
+use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
-use std::io::Write;
-use tracing::{info, debug, error};
+use tracing::{debug, error, info};
 
 /// Expand tilde (~) in a path to the user's home directory
 fn expand_tilde(path: &str) -> String {
@@ -32,40 +32,52 @@ impl CodeExecutor {
     pub fn new() -> Self {
         Self {}
     }
-    
+
     /// Extract code blocks from LLM response and execute them
     pub async fn execute_from_response(&self, response: &str) -> Result<String> {
-        self.execute_from_response_with_options(response, true).await
+        self.execute_from_response_with_options(response, true)
+            .await
     }
-    
+
     /// Extract code blocks from LLM response and execute them with UI options
-    pub async fn execute_from_response_with_options(&self, response: &str, show_code: bool) -> Result<String> {
-        debug!("CodeExecutor received response ({} chars): {}", response.len(), response);
+    pub async fn execute_from_response_with_options(
+        &self,
+        response: &str,
+        show_code: bool,
+    ) -> Result<String> {
+        debug!(
+            "CodeExecutor received response ({} chars): {}",
+            response.len(),
+            response
+        );
         let code_blocks = self.extract_code_blocks(response)?;
-        
+
         if code_blocks.is_empty() {
             if show_code {
-                return Ok(format!("⚠️  No executable code blocks found in response.\n\n{}", response));
+                return Ok(format!(
+                    "⚠️  No executable code blocks found in response.\n\n{}",
+                    response
+                ));
             } else {
                 return Ok("⚠️  No executable code found.".to_string());
             }
         }
-        
+
         let mut results = Vec::new();
-        
+
         // Only show the original LLM response if show_code is true
         if show_code {
             results.push(response.to_string());
             results.push("\n🚀 Executing code...\n".to_string());
         }
-        
+
         for (language, code) in code_blocks {
             info!("Executing {} code", language);
-            
+
             if show_code {
                 results.push(format!("📋 Running {} code:", language));
             }
-            
+
             match self.execute_code(&language, &code).await {
                 Ok(result) => {
                     if result.success {
@@ -89,8 +101,8 @@ impl CodeExecutor {
                 }
             }
         }
-        
-        // If no results were added (e.g., successful execution with no output), 
+
+        // If no results were added (e.g., successful execution with no output),
         // return a simple success message when show_code is false
         if results.is_empty() && !show_code {
             Ok("✅ Done".to_string())
@@ -98,51 +110,58 @@ impl CodeExecutor {
             Ok(results.join("\n"))
         }
     }
-    
+
     /// Extract code blocks from markdown-formatted text
     fn extract_code_blocks(&self, text: &str) -> Result<Vec<(String, String)>> {
         let mut blocks = Vec::new();
-        
+
         debug!("Extracting code blocks from text: {}", text);
-        
+
         // Pattern 1: Standard markdown format ```language\ncode```
         let markdown_re = Regex::new(r"(?s)```(\w+)?\n(.*?)```")?;
         for cap in markdown_re.captures_iter(text) {
-            let language = cap.get(1)
+            let language = cap
+                .get(1)
                 .map(|m| m.as_str().to_lowercase())
                 .unwrap_or_else(|| "bash".to_string()); // Default to bash
             let code = cap.get(2).map(|m| m.as_str()).unwrap_or("").trim();
-            
-            debug!("Found markdown code block - language: '{}', code: '{}'", language, code);
-            
+
+            debug!(
+                "Found markdown code block - language: '{}', code: '{}'",
+                language, code
+            );
+
             if !code.is_empty() {
                 blocks.push((language, code.to_string()));
             }
         }
-        
+
         // Pattern 2: Bracket format [Language]code[/Language]
         let bracket_re = Regex::new(r"(?s)\[(\w+)\]\s*(.*?)\s*\[/(\w+)\]")?;
         for cap in bracket_re.captures_iter(text) {
             let open_lang = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let close_lang = cap.get(3).map(|m| m.as_str()).unwrap_or("");
-            
+
             // Only match if opening and closing tags are the same (case insensitive)
             if open_lang.to_lowercase() == close_lang.to_lowercase() {
                 let language = open_lang.to_lowercase();
                 let code = cap.get(2).map(|m| m.as_str()).unwrap_or("").trim();
-                
-                debug!("Found bracket code block - language: '{}', code: '{}'", language, code);
-                
+
+                debug!(
+                    "Found bracket code block - language: '{}', code: '{}'",
+                    language, code
+                );
+
                 if !code.is_empty() {
                     blocks.push((language, code.to_string()));
                 }
             }
         }
-        
+
         debug!("Total code blocks found: {}", blocks.len());
         Ok(blocks)
     }
-    
+
     /// Execute code in the specified language
     pub async fn execute_code(&self, language: &str, code: &str) -> Result<ExecutionResult> {
         match language.to_lowercase().as_str() {
@@ -156,17 +175,15 @@ impl CodeExecutor {
             }
         }
     }
-    
+
     /// Execute Python code
     async fn execute_python(&self, code: &str) -> Result<ExecutionResult> {
         let mut temp_file = NamedTempFile::new()?;
         temp_file.write_all(code.as_bytes())?;
         let temp_path = temp_file.path();
-        
-        let output = Command::new("python3")
-            .arg(temp_path)
-            .output()?;
-        
+
+        let output = Command::new("python3").arg(temp_path).output()?;
+
         Ok(ExecutionResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
@@ -174,15 +191,15 @@ impl CodeExecutor {
             success: output.status.success(),
         })
     }
-    
+
     /// Execute Bash code
     async fn execute_bash(&self, code: &str) -> Result<ExecutionResult> {
         // Check if this is a detached/daemon command that should run independently
-        let is_detached = code.trim_start().starts_with("setsid ") 
+        let is_detached = code.trim_start().starts_with("setsid ")
             || code.trim_start().starts_with("nohup ")
             || code.contains(" disown")
             || (code.contains(" &") && (code.contains("nohup") || code.contains("setsid")));
-        
+
         if is_detached {
             // For detached commands, just spawn and return immediately
             use std::process::Stdio;
@@ -193,7 +210,7 @@ impl CodeExecutor {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()?;
-            
+
             return Ok(ExecutionResult {
                 stdout: "✅ Command launched in background (detached process)".to_string(),
                 stderr: String::new(),
@@ -201,12 +218,9 @@ impl CodeExecutor {
                 success: true,
             });
         }
-        
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg(code)
-            .output()?;
-        
+
+        let output = Command::new("bash").arg("-c").arg(code).output()?;
+
         Ok(ExecutionResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
@@ -214,17 +228,15 @@ impl CodeExecutor {
             success: output.status.success(),
         })
     }
-    
+
     /// Execute JavaScript code (requires Node.js)
     async fn execute_javascript(&self, code: &str) -> Result<ExecutionResult> {
         let mut temp_file = NamedTempFile::new()?;
         temp_file.write_all(code.as_bytes())?;
         let temp_path = temp_file.path();
-        
-        let output = Command::new("node")
-            .arg(temp_path)
-            .output()?;
-        
+
+        let output = Command::new("node").arg(temp_path).output()?;
+
         Ok(ExecutionResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
@@ -249,57 +261,69 @@ pub trait OutputReceiver: Send + Sync {
 impl CodeExecutor {
     /// Execute bash command with streaming output
     pub async fn execute_bash_streaming<R: OutputReceiver>(
-        &self, 
-        code: &str, 
-        receiver: &R
+        &self,
+        code: &str,
+        receiver: &R,
     ) -> Result<ExecutionResult> {
-        self.execute_bash_streaming_in_dir(code, receiver, None).await
+        self.execute_bash_streaming_in_dir(code, receiver, None)
+            .await
     }
 
     /// Execute bash command with streaming output in a specific directory
     pub async fn execute_bash_streaming_in_dir<R: OutputReceiver>(
-        &self, 
-        code: &str, 
+        &self,
+        code: &str,
         receiver: &R,
         working_dir: Option<&str>,
     ) -> Result<ExecutionResult> {
         use std::process::Stdio;
         use tokio::io::{AsyncBufReadExt, BufReader};
         use tokio::process::Command as TokioCommand;
-        
+
         // CRITICAL DEBUG: Print to stderr so it's always visible
         debug!("========== execute_bash_streaming_in_dir START ==========");
         debug!("Code to execute: {}", code);
         debug!("Working directory parameter: {:?}", working_dir);
-        debug!("FULL DIAGNOSTIC: code='{}', working_dir={:?}", code, working_dir);
-        
+        debug!(
+            "FULL DIAGNOSTIC: code='{}', working_dir={:?}",
+            code, working_dir
+        );
+
         if let Some(dir) = working_dir {
-            debug!("Working dir exists check: {}", std::path::Path::new(dir).exists());
-            debug!("Working dir is_dir check: {}", std::path::Path::new(dir).is_dir());
+            debug!(
+                "Working dir exists check: {}",
+                std::path::Path::new(dir).exists()
+            );
+            debug!(
+                "Working dir is_dir check: {}",
+                std::path::Path::new(dir).is_dir()
+            );
         }
-        debug!("Current process working directory: {:?}", std::env::current_dir());
-        
+        debug!(
+            "Current process working directory: {:?}",
+            std::env::current_dir()
+        );
+
         // Check if this is a detached/daemon command that should run independently
         // Look for patterns like: setsid, nohup with &, or explicit backgrounding with disown
-        let is_detached = code.trim_start().starts_with("setsid ") 
+        let is_detached = code.trim_start().starts_with("setsid ")
             || code.trim_start().starts_with("nohup ")
             || code.contains(" disown")
             || (code.contains(" &") && (code.contains("nohup") || code.contains("setsid")));
-        
+
         if is_detached {
             // For detached commands, just spawn and return immediately
             let mut cmd = TokioCommand::new("bash");
-            cmd.arg("-c")
-                .arg(code);
-            
+            cmd.arg("-c").arg(code);
+
             // Set working directory if provided
             if let Some(dir) = working_dir {
                 let expanded_dir = expand_tilde(dir);
                 cmd.current_dir(&expanded_dir);
             }
-            
+
             cmd.spawn()?;
-            
+
             // Don't wait for the process - it's meant to run independently
             return Ok(ExecutionResult {
                 stdout: "✅ Command launched in background (detached process)".to_string(),
@@ -308,23 +332,29 @@ impl CodeExecutor {
                 success: true,
             });
         }
-        
+
         let mut cmd = TokioCommand::new("bash");
         cmd.arg("-c")
             .arg(code)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        
+
         // Set working directory if provided
         if let Some(dir) = working_dir {
             debug!("Setting current_dir on command to: {}", dir);
             let expanded_dir = expand_tilde(dir);
             debug!("Expanded working dir: {}", expanded_dir);
-            debug!("Expanded dir exists: {}", std::path::Path::new(&expanded_dir).exists());
-            debug!("Expanded dir is_dir: {}", std::path::Path::new(&expanded_dir).is_dir());
+            debug!(
+                "Expanded dir exists: {}",
+                std::path::Path::new(&expanded_dir).exists()
+            );
+            debug!(
+                "Expanded dir is_dir: {}",
+                std::path::Path::new(&expanded_dir).is_dir()
+            );
             cmd.current_dir(&expanded_dir);
         }
-        
+
         debug!("About to spawn command...");
         let spawn_result = cmd.spawn();
         debug!("Spawn result: {:?}", spawn_result.is_ok());
@@ -336,19 +366,19 @@ impl CodeExecutor {
             }
         };
         debug!("Command spawned successfully");
-        
+
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        
+
         let stdout_reader = BufReader::new(stdout);
         let stderr_reader = BufReader::new(stderr);
-        
+
         let mut stdout_lines = stdout_reader.lines();
         let mut stderr_lines = stderr_reader.lines();
-        
+
         let mut stdout_output = Vec::new();
         let mut stderr_output = Vec::new();
-        
+
         // Read output lines as they come
         loop {
             tokio::select! {
@@ -380,16 +410,16 @@ impl CodeExecutor {
                 else => break
             }
         }
-        
+
         let status = child.wait().await?;
-        
+
         let result = ExecutionResult {
             stdout: stdout_output.join("\n"),
             stderr: stderr_output.join("\n"),
             exit_code: status.code().unwrap_or(-1),
             success: status.success(),
         };
-        
+
         debug!("========== execute_bash_streaming_in_dir END ==========");
         debug!("Exit code: {}", result.exit_code);
         debug!("Success: {}", result.success);
@@ -408,24 +438,22 @@ pub fn is_llvm_tools_installed() -> Result<bool> {
     let output = Command::new("rustup")
         .args(&["component", "list", "--installed"])
         .output()?;
-    
+
     let installed = String::from_utf8_lossy(&output.stdout)
         .lines()
         .any(|line| line.trim() == "llvm-tools-preview" || line.starts_with("llvm-tools"));
-    
+
     Ok(installed)
 }
 
 /// Check if cargo-llvm-cov is installed
 pub fn is_cargo_llvm_cov_installed() -> Result<bool> {
-    let output = Command::new("cargo")
-        .args(&["--list"])
-        .output()?;
-    
+    let output = Command::new("cargo").args(&["--list"]).output()?;
+
     let installed = String::from_utf8_lossy(&output.stdout)
         .lines()
         .any(|line| line.trim().starts_with("llvm-cov"));
-    
+
     Ok(installed)
 }
 
@@ -435,12 +463,12 @@ pub fn install_llvm_tools() -> Result<()> {
     let output = Command::new("rustup")
         .args(&["component", "add", "llvm-tools-preview"])
         .output()?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("Failed to install llvm-tools-preview: {}", stderr);
     }
-    
+
     info!("✅ llvm-tools-preview installed successfully");
     Ok(())
 }
@@ -451,12 +479,12 @@ pub fn install_cargo_llvm_cov() -> Result<()> {
     let output = Command::new("cargo")
         .args(&["install", "cargo-llvm-cov"])
         .output()?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("Failed to install cargo-llvm-cov: {}", stderr);
     }
-    
+
     info!("✅ cargo-llvm-cov installed successfully");
     Ok(())
 }
@@ -465,7 +493,7 @@ pub fn install_cargo_llvm_cov() -> Result<()> {
 /// Returns Ok(true) if tools were already installed, Ok(false) if they were installed by this function
 pub fn ensure_coverage_tools_installed() -> Result<bool> {
     let mut already_installed = true;
-    
+
     // Check and install llvm-tools-preview
     if !is_llvm_tools_installed()? {
         info!("llvm-tools-preview not found, installing...");
@@ -474,7 +502,7 @@ pub fn ensure_coverage_tools_installed() -> Result<bool> {
     } else {
         info!("✅ llvm-tools-preview is already installed");
     }
-    
+
     // Check and install cargo-llvm-cov
     if !is_cargo_llvm_cov_installed()? {
         info!("cargo-llvm-cov not found, installing...");
@@ -483,6 +511,6 @@ pub fn ensure_coverage_tools_installed() -> Result<bool> {
     } else {
         info!("✅ cargo-llvm-cov is already installed");
     }
-    
+
     Ok(already_installed)
 }

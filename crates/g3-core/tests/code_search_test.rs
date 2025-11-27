@@ -8,7 +8,7 @@ async fn test_find_async_functions() {
     // Create a temporary test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.rs");
     fs::write(
         &test_file,
@@ -47,7 +47,10 @@ pub async fn another_async(x: i32) -> Result<(), ()> {
     assert_eq!(response.searches.len(), 1);
     let search_result = &response.searches[0];
     assert_eq!(search_result.name, "find_async_functions");
-    assert_eq!(search_result.match_count, 2, "Should find 2 async functions");
+    assert_eq!(
+        search_result.match_count, 2,
+        "Should find 2 async functions"
+    );
     assert!(search_result.error.is_none());
 
     // Check that we found the right functions
@@ -69,7 +72,7 @@ async fn test_find_all_functions() {
     // Create a temporary test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search_2");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.rs");
     fs::write(
         &test_file,
@@ -107,7 +110,10 @@ pub async fn another_async(x: i32) -> Result<(), ()> {
     assert_eq!(response.searches.len(), 1);
     let search_result = &response.searches[0];
     assert_eq!(search_result.name, "find_all_functions");
-    assert_eq!(search_result.match_count, 3, "Should find 3 functions total");
+    assert_eq!(
+        search_result.match_count, 3,
+        "Should find 3 functions total"
+    );
     assert!(search_result.error.is_none());
 
     // Check that we found all functions
@@ -130,7 +136,7 @@ async fn test_find_structs() {
     // Create a temporary test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search_3");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.rs");
     fs::write(
         &test_file,
@@ -188,7 +194,7 @@ async fn test_context_lines() {
     // Create a temporary test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search_4");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.rs");
     fs::write(
         &test_file,
@@ -223,16 +229,22 @@ pub fn target_function() {
     assert_eq!(response.searches.len(), 1);
     let search_result = &response.searches[0];
     assert_eq!(search_result.match_count, 1);
-    
+
     let match_result = &search_result.matches[0];
     assert!(match_result.context.is_some());
-    
+
     let context = match_result.context.as_ref().unwrap();
     assert!(context.contains("Line 2"), "Should include 2 lines before");
-    assert!(context.contains("target_function"), "Should include the function");
+    assert!(
+        context.contains("target_function"),
+        "Should include the function"
+    );
     // Note: context_lines=2 means 2 lines before and after the match line (line 4)
     // So we get lines 2-6, which includes up to println but not the closing brace
-    assert!(context.contains("println"), "Should include 2 lines after the match");
+    assert!(
+        context.contains("println"),
+        "Should include 2 lines after the match"
+    );
 
     // Cleanup
     fs::remove_dir_all(&test_dir).ok();
@@ -243,7 +255,7 @@ async fn test_multiple_searches() {
     // Create a temporary test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search_5");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.rs");
     fs::write(
         &test_file,
@@ -301,7 +313,7 @@ async fn test_python_search() {
     // Create a temporary Python test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search_python");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.py");
     fs::write(
         &test_file,
@@ -338,14 +350,17 @@ class MyClass:
 
     assert_eq!(response.searches.len(), 1);
     let search_result = &response.searches[0];
-    assert_eq!(search_result.match_count, 3, "Should find 3 functions in Python (2 regular + 1 async + 1 method)");
-    
+    assert_eq!(
+        search_result.match_count, 3,
+        "Should find 3 functions in Python (2 regular + 1 async + 1 method)"
+    );
+
     let function_names: Vec<String> = search_result
         .matches
         .iter()
         .filter_map(|m| m.captures.get("name").cloned())
         .collect();
-    
+
     assert!(function_names.contains(&"regular_function".to_string()));
     assert!(function_names.contains(&"async_function".to_string()));
     assert!(function_names.contains(&"method".to_string()));
@@ -359,7 +374,7 @@ async fn test_javascript_search() {
     // Create a temporary JavaScript test file
     let test_dir = std::env::temp_dir().join("g3_test_code_search_js");
     fs::create_dir_all(&test_dir).unwrap();
-    
+
     let test_file = test_dir.join("test.js");
     fs::write(
         &test_file,
@@ -396,14 +411,17 @@ class MyClass {
 
     assert_eq!(response.searches.len(), 1);
     let search_result = &response.searches[0];
-    assert_eq!(search_result.match_count, 2, "Should find 2 functions in JavaScript");
-    
+    assert_eq!(
+        search_result.match_count, 2,
+        "Should find 2 functions in JavaScript"
+    );
+
     let function_names: Vec<String> = search_result
         .matches
         .iter()
         .filter_map(|m| m.captures.get("name").cloned())
         .collect();
-    
+
     assert!(function_names.contains(&"regularFunction".to_string()));
     assert!(function_names.contains(&"asyncFunction".to_string()));
 
@@ -420,7 +438,7 @@ async fn test_go_search() {
         .and_then(|p| p.parent())
         .unwrap();
     let test_code_path = workspace_root.join("examples/test_code");
-    
+
     let request = CodeSearchRequest {
         searches: vec![SearchSpec {
             name: "go_functions".to_string(),
@@ -435,14 +453,19 @@ async fn test_go_search() {
 
     let response = execute_code_search(request).await.unwrap();
     assert_eq!(response.searches.len(), 1);
-    
+
     eprintln!("Go search result: {:?}", response.searches[0]);
     eprintln!("Match count: {}", response.searches[0].matches.len());
     eprintln!("Error: {:?}", response.searches[0].error);
-    assert!(response.searches[0].matches.len() > 0, "No matches found for Go search");
-    
+    assert!(
+        response.searches[0].matches.len() > 0,
+        "No matches found for Go search"
+    );
+
     // Should find main and greet functions
-    let names: Vec<&str> = response.searches[0].matches.iter()
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
         .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
         .collect();
     assert!(names.contains(&"main"));
@@ -458,7 +481,7 @@ async fn test_java_search() {
         .and_then(|p| p.parent())
         .unwrap();
     let test_code_path = workspace_root.join("examples/test_code");
-    
+
     let request = CodeSearchRequest {
         searches: vec![SearchSpec {
             name: "java_classes".to_string(),
@@ -474,9 +497,11 @@ async fn test_java_search() {
     let response = execute_code_search(request).await.unwrap();
     assert_eq!(response.searches.len(), 1);
     assert!(response.searches[0].matches.len() > 0);
-    
+
     // Should find Example class
-    let names: Vec<&str> = response.searches[0].matches.iter()
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
         .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
         .collect();
     assert!(names.contains(&"Example"));
@@ -491,7 +516,7 @@ async fn test_c_search() {
         .and_then(|p| p.parent())
         .unwrap();
     let test_code_path = workspace_root.join("examples/test_code");
-    
+
     let request = CodeSearchRequest {
         searches: vec![SearchSpec {
             name: "c_functions".to_string(),
@@ -507,9 +532,11 @@ async fn test_c_search() {
     let response = execute_code_search(request).await.unwrap();
     assert_eq!(response.searches.len(), 1);
     assert!(response.searches[0].matches.len() > 0);
-    
+
     // Should find greet, add, and main functions
-    let names: Vec<&str> = response.searches[0].matches.iter()
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
         .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
         .collect();
     assert!(names.contains(&"greet"));
@@ -526,7 +553,7 @@ async fn test_cpp_search() {
         .and_then(|p| p.parent())
         .unwrap();
     let test_code_path = workspace_root.join("examples/test_code");
-    
+
     let request = CodeSearchRequest {
         searches: vec![SearchSpec {
             name: "cpp_classes".to_string(),
@@ -542,9 +569,11 @@ async fn test_cpp_search() {
     let response = execute_code_search(request).await.unwrap();
     assert_eq!(response.searches.len(), 1);
     assert!(response.searches[0].matches.len() > 0);
-    
+
     // Should find Person class
-    let names: Vec<&str> = response.searches[0].matches.iter()
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
         .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
         .collect();
     assert!(names.contains(&"Person"));
@@ -568,9 +597,11 @@ async fn test_kotlin_search() {
     let response = execute_code_search(request).await.unwrap();
     assert_eq!(response.searches.len(), 1);
     assert!(response.searches[0].matches.len() > 0);
-    
+
     // Should find Person class
-    let names: Vec<&str> = response.searches[0].matches.iter()
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
         .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
         .collect();
     assert!(names.contains(&"Person"));

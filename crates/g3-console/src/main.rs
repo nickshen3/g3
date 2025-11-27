@@ -1,11 +1,11 @@
 use g3_console::api;
-use g3_console::process;
 use g3_console::launch;
+use g3_console::process;
 
 use api::control::{kill_instance, launch_instance, restart_instance};
-use api::instances::{get_instance, get_file_content, list_instances};
+use api::instances::{get_file_content, get_instance, list_instances};
 use api::logs::get_instance_logs;
-use api::state::{get_state, save_state, browse_filesystem};
+use api::state::{browse_filesystem, get_state, save_state};
 use axum::{
     routing::{get, post},
     Router,
@@ -39,9 +39,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let args = Args::parse();
 

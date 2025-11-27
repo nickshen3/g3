@@ -27,7 +27,7 @@ impl Default for ConsoleState {
 impl ConsoleState {
     pub fn load() -> Self {
         let config_path = Self::config_path();
-        
+
         if config_path.exists() {
             if let Ok(content) = fs::read_to_string(&config_path) {
                 return serde_json::from_str(&content).unwrap_or_else(|e| {
@@ -36,31 +36,29 @@ impl ConsoleState {
                 });
             }
         }
-        
+
         Self::default()
     }
-    
+
     pub fn save(&self) -> anyhow::Result<()> {
         let config_path = Self::config_path();
         info!("Saving console state to: {:?}", config_path);
-        
+
         // Create parent directory if it doesn't exist
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         let content = serde_json::to_string_pretty(self)?;
         fs::write(&config_path, content)?;
         info!("Console state saved successfully to: {:?}", config_path);
-        
+
         Ok(())
     }
-    
+
     fn config_path() -> PathBuf {
         // Use explicit ~/.config/g3/console.json path as per requirements
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.join(".config")
-            .join("g3")
-            .join("console.json")
+        home.join(".config").join("g3").join("console.json")
     }
 }

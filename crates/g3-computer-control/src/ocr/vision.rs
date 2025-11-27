@@ -1,6 +1,6 @@
 use super::OCREngine;
 use crate::types::TextLocation;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_float, c_uint};
@@ -24,7 +24,7 @@ extern "C" {
         out_boxes: *mut *mut std::ffi::c_void,
         out_count: *mut c_uint,
     ) -> bool;
-    
+
     fn vision_free_boxes(boxes: *mut std::ffi::c_void, count: c_uint);
 }
 
@@ -41,12 +41,11 @@ impl AppleVisionOCR {
 impl OCREngine for AppleVisionOCR {
     async fn extract_text_with_locations(&self, path: &str) -> Result<Vec<TextLocation>> {
         // Convert path to C string
-        let c_path = CString::new(path)
-            .context("Failed to convert path to C string")?;
-        
+        let c_path = CString::new(path).context("Failed to convert path to C string")?;
+
         let mut boxes_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut count: c_uint = 0;
-        
+
         // Call Swift Vision API
         let success = unsafe {
             vision_recognize_text(
@@ -56,28 +55,26 @@ impl OCREngine for AppleVisionOCR {
                 &mut count,
             )
         };
-        
+
         if !success || boxes_ptr.is_null() {
             anyhow::bail!("Apple Vision OCR failed");
         }
-        
+
         // Convert C array to Rust Vec
         let mut locations = Vec::new();
-        
+
         unsafe {
             let typed_boxes = boxes_ptr as *const VisionTextBox;
             let boxes_slice = std::slice::from_raw_parts(typed_boxes, count as usize);
-            
+
             for box_data in boxes_slice {
                 // Convert C string to Rust String
                 let text = if !box_data.text.is_null() {
-                    CStr::from_ptr(box_data.text)
-                        .to_string_lossy()
-                        .into_owned()
+                    CStr::from_ptr(box_data.text).to_string_lossy().into_owned()
                 } else {
                     String::new()
                 };
-                
+
                 if !text.is_empty() {
                     locations.push(TextLocation {
                         text,
@@ -89,14 +86,14 @@ impl OCREngine for AppleVisionOCR {
                     });
                 }
             }
-            
+
             // Free the C array
             vision_free_boxes(boxes_ptr, count);
         }
-        
+
         Ok(locations)
     }
-    
+
     fn name(&self) -> &str {
         "Apple Vision Framework"
     }

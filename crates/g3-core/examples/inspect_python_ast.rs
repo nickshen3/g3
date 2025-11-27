@@ -1,6 +1,6 @@
 //! Inspect tree-sitter AST structure for Python code
 
-use tree_sitter::{Parser, Language};
+use tree_sitter::{Language, Parser};
 
 fn print_tree(node: tree_sitter::Node, source: &str, indent: usize) {
     let indent_str = "  ".repeat(indent);
@@ -10,7 +10,7 @@ fn print_tree(node: tree_sitter::Node, source: &str, indent: usize) {
     } else {
         node_text.to_string()
     };
-    
+
     println!(
         "{}{} [{}:{}] '{}'",
         indent_str,
@@ -19,7 +19,7 @@ fn print_tree(node: tree_sitter::Node, source: &str, indent: usize) {
         node.start_position().column + 1,
         preview.replace('\n', "\\n")
     );
-    
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         print_tree(child, source, indent + 1);

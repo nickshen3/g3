@@ -7,7 +7,7 @@ use async_trait::async_trait;
 pub trait OCREngine: Send + Sync {
     /// Extract text with locations from an image file
     async fn extract_text_with_locations(&self, path: &str) -> Result<Vec<TextLocation>>;
-    
+
     /// Get the name of the OCR engine
     fn name(&self) -> &str;
 }

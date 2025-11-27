@@ -1,9 +1,9 @@
-use g3_core::{Agent, ToolCall};
-use g3_core::ui_writer::UiWriter;
 use g3_config::Config;
+use g3_core::ui_writer::UiWriter;
+use g3_core::{Agent, ToolCall};
+use serial_test::serial;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
-use serial_test::serial;
 
 // Mock UI Writer for testing
 #[derive(Clone)]
@@ -47,7 +47,10 @@ impl UiWriter for MockUiWriter {
     }
     fn print_system_prompt(&self, _prompt: &str) {}
     fn print_context_status(&self, message: &str) {
-        self.output.lock().unwrap().push(format!("STATUS: {}", message));
+        self.output
+            .lock()
+            .unwrap()
+            .push(format!("STATUS: {}", message));
     }
     fn print_context_thinning(&self, _message: &str) {}
     fn print_tool_header(&self, _tool_name: &str) {}
@@ -61,13 +64,21 @@ impl UiWriter for MockUiWriter {
     fn print_agent_response(&self, _content: &str) {}
     fn notify_sse_received(&self) {}
     fn flush(&self) {}
-    fn wants_full_output(&self) -> bool { false }
+    fn wants_full_output(&self) -> bool {
+        false
+    }
     fn prompt_user_yes_no(&self, message: &str) -> bool {
-        self.output.lock().unwrap().push(format!("PROMPT: {}", message));
+        self.output
+            .lock()
+            .unwrap()
+            .push(format!("PROMPT: {}", message));
         self.prompt_responses.lock().unwrap().pop().unwrap_or(true)
     }
     fn prompt_user_choice(&self, message: &str, options: &[&str]) -> usize {
-        self.output.lock().unwrap().push(format!("CHOICE: {} Options: {:?}", message, options));
+        self.output
+            .lock()
+            .unwrap()
+            .push(format!("CHOICE: {} Options: {:?}", message, options));
         self.choice_responses.lock().unwrap().pop().unwrap_or(0)
     }
 }
@@ -80,7 +91,10 @@ async fn test_todo_staleness_check_matching_sha() {
     std::env::set_current_dir(&temp_dir).unwrap();
 
     let sha = "abc123hash";
-    let content = format!("{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1", sha);
+    let content = format!(
+        "{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1",
+        sha
+    );
     std::fs::write(&todo_path, content).unwrap();
 
     let mut config = Config::default();
@@ -109,7 +123,10 @@ async fn test_todo_staleness_check_mismatch_sha_ignore() {
 
     let sha_file = "old_sha";
     let sha_req = "new_sha";
-    let content = format!("{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1", sha_file);
+    let content = format!(
+        "{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1",
+        sha_file
+    );
     std::fs::write(&todo_path, content).unwrap();
 
     let mut config = Config::default();
@@ -139,7 +156,10 @@ async fn test_todo_staleness_check_mismatch_sha_mark_stale() {
 
     let sha_file = "old_sha";
     let sha_req = "new_sha";
-    let content = format!("{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1", sha_file);
+    let content = format!(
+        "{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1",
+        sha_file
+    );
     std::fs::write(&todo_path, content).unwrap();
 
     let mut config = Config::default();
@@ -173,7 +193,10 @@ async fn test_todo_staleness_check_disabled() {
 
     let sha_file = "old_sha";
     let sha_req = "new_sha";
-    let content = format!("{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1", sha_file);
+    let content = format!(
+        "{{{{Based on the requirements file with SHA256: {}}}}}\n- [ ] Task 1",
+        sha_file
+    );
     std::fs::write(&todo_path, content).unwrap();
 
     let mut config = Config::default();
