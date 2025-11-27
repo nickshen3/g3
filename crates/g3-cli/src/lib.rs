@@ -205,7 +205,6 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
