@@ -183,6 +183,7 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::exit;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -298,6 +299,10 @@ pub async fn run() -> Result<()> {
         return run_flock_mode(project_dir.clone(), flock_workspace.clone(), num_segments, cli.flock_max_turns).await;
     }
 
+    if cli.codebase_fast_start.is_some() {
+        print!("codebase_fast_start is temporarily disabled.");
+        exit(1);
+    }
     // Otherwise, continue with normal mode
 
     // Only initialize logging if not in retro mode
