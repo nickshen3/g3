@@ -103,7 +103,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 use crate::{
     CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, LLMProvider, Message,
@@ -223,10 +223,12 @@ impl AnthropicProvider {
         for message in messages {
             match message.role {
                 MessageRole::System => {
-                    if system_message.is_some() {
-                        warn!("Multiple system messages found, using the last one");
+                    if let Some(existing) = system_message {
+                        // Concatenate system messages instead of replacing
+                        system_message = Some(format!("{}\n\n{}", existing, message.content));
+                    } else {
+                        system_message = Some(message.content.clone());
                     }
-                    system_message = Some(message.content.clone());
                 }
                 MessageRole::User => {
                     anthropic_messages.push(AnthropicMessage {
