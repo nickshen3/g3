@@ -76,3 +76,18 @@
   Previous attempts failed due to lack of actual testing. Implementer must visually verify fixes work before submitting.
 >>
 2025-12-10 16:17:02 - COMPLETED REQUIREMENTS (completed_requirements_2025-12-10_16-17-02.md,  completed_todo_2025-12-10_16-17-02.md)
+2025-12-10 16:18:49 - GIT COMMIT (Fix planner UI whitespace and workspace logs directory)
+2025-12-10 16:19:01 - REFINING REQUIREMENTS (new_requirements.md)
+2025-12-10 16:30:35 - REFINING REQUIREMENTS (new_requirements.md)
+2025-12-10 16:36:59 - REFINING REQUIREMENTS (new_requirements.md)
+2025-12-10 16:40:51 - GIT HEAD (5f3a2a42035d15ce873982f355f9a30dccbdaa60)
+2025-12-10 16:40:54 - START IMPLEMENTING (current_requirements.md)
+<<
+  Ensure g3-planner always writes `GIT COMMIT (<MESSAGE>)` to planner_history.txt before any git commit.  
+  The history entry must remain even if git commit fails, and the summary must match the commit message.  
+  Use git history to find when write_git_commit was moved after git::commit, and when it was fixed again.  
+  Record SHAs, messages, and a short explanation of why the regression happened in an external note.  
+  Add code comments, a unit test, and documentation to guard against reintroducing the wrong ordering.
+>>
+2025-12-10 16:54:45  USER SKIPPED RECOVERY
+2025-12-10 16:55:05 - COMPLETED REQUIREMENTS (completed_requirements_2025-12-10_16-55-05.md,  completed_todo_2025-12-10_16-55-05.md)
