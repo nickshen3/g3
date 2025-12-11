@@ -45,6 +45,7 @@
 //!         temperature: Some(0.7),
 //!         stream: false,
 //!         tools: None,
+//!         disable_thinking: false,
 //!     };
 //!
 //!     // Get a completion

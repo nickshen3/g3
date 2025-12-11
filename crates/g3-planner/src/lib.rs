@@ -85,6 +85,7 @@ pub async fn get_initial_discovery_messages(
         temperature: Some(provider.temperature()),
         stream: false,
         tools: None,
+        disable_thinking: false,
     };
 
     status("🤖 Calling LLM for discovery commands...");

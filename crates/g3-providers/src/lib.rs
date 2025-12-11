@@ -42,6 +42,8 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     pub stream: bool,
     pub tools: Option<Vec<Tool>>,
+    /// Force disable thinking mode for this request (used when max_tokens is too low)
+    pub disable_thinking: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

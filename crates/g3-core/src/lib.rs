@@ -1408,14 +1408,237 @@ impl<W: UiWriter> Agent<W> {
 
     /// Resolve the max_tokens to use for a given provider, applying fallbacks
     fn resolve_max_tokens(&self, provider_name: &str) -> u32 {
-        match provider_name {
+        let base = match provider_name {
             "databricks" => Self::provider_max_tokens(&self.config, "databricks")
                 .or(Some(self.config.agent.fallback_default_max_tokens as u32))
                 .unwrap_or(32000),
             other => Self::provider_max_tokens(&self.config, other)
                 .or(Some(self.config.agent.fallback_default_max_tokens as u32))
                 .unwrap_or(16000),
+        };
+        
+        // For Anthropic with thinking enabled, ensure max_tokens is sufficient
+        // Anthropic requires: max_tokens > thinking.budget_tokens
+        if provider_name == "anthropic" {
+            if let Some(budget) = self.get_thinking_budget_tokens() {
+                let minimum_for_thinking = budget + 1024;
+                return base.max(minimum_for_thinking);
+            }
         }
+        
+        base
+    }
+
+    /// Get the thinking budget tokens for Anthropic provider, if configured
+    fn get_thinking_budget_tokens(&self) -> Option<u32> {
+        self.config
+            .providers
+            .anthropic
+            .as_ref()
+            .and_then(|c| c.thinking_budget_tokens)
+    }
+
+    /// Pre-flight check to validate and adjust max_tokens for the thinking.budget_tokens constraint.
+    /// Returns the adjusted max_tokens that satisfies: max_tokens > thinking.budget_tokens
+    /// Also returns whether we need to apply fallback actions (thinnify/skinnify).
+    ///
+    /// Returns: (adjusted_max_tokens, needs_context_reduction)
+    fn preflight_validate_max_tokens(
+        &self,
+        provider_name: &str,
+        proposed_max_tokens: u32,
+    ) -> (u32, bool) {
+        // Only applies to Anthropic provider with thinking enabled
+        if provider_name != "anthropic" {
+            return (proposed_max_tokens, false);
+        }
+
+        let budget_tokens = match self.get_thinking_budget_tokens() {
+            Some(budget) => budget,
+            None => return (proposed_max_tokens, false), // No thinking enabled
+        };
+
+        // Anthropic requires: max_tokens > budget_tokens
+        // We add a minimum output buffer of 1024 tokens for actual response content
+        let minimum_required = budget_tokens + 1024;
+
+        if proposed_max_tokens >= minimum_required {
+            // We have enough headroom
+            (proposed_max_tokens, false)
+        } else {
+            // max_tokens is too low - need to either adjust or reduce context
+            warn!(
+                "max_tokens ({}) is below required minimum ({}) for thinking.budget_tokens ({}). Context reduction needed.",
+                proposed_max_tokens, minimum_required, budget_tokens
+            );
+            // Return the minimum required, but flag that we need context reduction
+            (minimum_required, true)
+        }
+    }
+
+    /// Calculate max_tokens for a summary request, ensuring it satisfies the thinking constraint.
+    /// Applies fallback sequence: thinnify -> skinnify -> hard-coded minimum
+    /// Returns (max_tokens, whether_fallback_was_used)
+    fn calculate_summary_max_tokens(
+        &mut self,
+        provider_name: &str,
+    ) -> (u32, bool) {
+        let model_limit = self.context_window.total_tokens;
+        let current_usage = self.context_window.used_tokens;
+        
+        // Get the configured max_tokens for this provider
+        let configured_max_tokens = self.resolve_max_tokens(provider_name);
+        
+        // Calculate available tokens with buffer
+        let buffer = (model_limit / 40).clamp(1000, 10000); // 2.5% buffer
+        let available = model_limit
+            .saturating_sub(current_usage)
+            .saturating_sub(buffer);
+        // Use the smaller of available tokens or configured max_tokens,
+        // but ensure we don't go below thinking budget floor for Anthropic
+        let proposed_max_tokens = available.min(configured_max_tokens);
+        let proposed_max_tokens = if provider_name == "anthropic" {
+            if let Some(budget) = self.get_thinking_budget_tokens() {
+                proposed_max_tokens.max(budget + 1024)
+            } else {
+                proposed_max_tokens
+            }
+        } else {
+            proposed_max_tokens
+        };
+
+        // Validate against thinking budget constraint
+        let (adjusted, needs_reduction) = self.preflight_validate_max_tokens(provider_name, proposed_max_tokens);
+        
+        if !needs_reduction {
+            return (adjusted, false);
+        }
+
+        // We need more headroom - the context is too full
+        // Return the adjusted value but flag that fallbacks are needed
+        (adjusted, true)
+    }
+
+    /// Apply the fallback sequence to free up context space for thinking budget.
+    /// Sequence: thinnify (first third) → skinnify (all) → hard-coded minimum
+    /// Returns the validated max_tokens that satisfies thinking.budget_tokens constraint.
+    fn apply_max_tokens_fallback_sequence(
+        &mut self,
+        provider_name: &str,
+        initial_max_tokens: u32,
+        hard_coded_minimum: u32,
+    ) -> u32 {
+        let (mut max_tokens, needs_reduction) = self.preflight_validate_max_tokens(provider_name, initial_max_tokens);
+        
+        if !needs_reduction {
+            return max_tokens;
+        }
+
+        self.ui_writer.print_context_status(
+            "⚠️ Context window too full for thinking budget. Applying fallback sequence...\n",
+        );
+
+        // Step 1: Try thinnify (first third of context)
+        self.ui_writer.print_context_status("🥒 Step 1: Trying thinnify...\n");
+        let (thin_msg, thin_saved) = self.context_window.thin_context();
+        self.thinning_events.push(thin_saved);
+        self.ui_writer.print_context_thinning(&thin_msg);
+
+        // Recalculate max_tokens after thinnify
+        let recalc_max = self.resolve_max_tokens(provider_name);
+        let (new_max, still_needs_reduction) = self.preflight_validate_max_tokens(provider_name, recalc_max);
+        max_tokens = new_max;
+
+        if !still_needs_reduction {
+            self.ui_writer.print_context_status(
+                "✅ Thinnify resolved capacity issue. Continuing...\n",
+            );
+            return max_tokens;
+        }
+
+        // Step 2: Try skinnify (entire context)
+        self.ui_writer.print_context_status("🦴 Step 2: Trying skinnify...\n");
+        let (skinny_msg, skinny_saved) = self.context_window.thin_context_all();
+        self.thinning_events.push(skinny_saved);
+        self.ui_writer.print_context_thinning(&skinny_msg);
+
+        // Recalculate max_tokens after skinnify
+        let recalc_max = self.resolve_max_tokens(provider_name);
+        let (final_max, final_needs_reduction) = self.preflight_validate_max_tokens(provider_name, recalc_max);
+        max_tokens = final_max;
+
+        if !final_needs_reduction {
+            self.ui_writer.print_context_status(
+                "✅ Skinnify resolved capacity issue. Continuing...\n",
+            );
+            return max_tokens;
+        }
+
+        // Step 3: Nothing worked, use hard-coded minimum as last resort
+        self.ui_writer.print_context_status(&format!(
+            "⚠️ Step 3: Context reduction insufficient. Using hard-coded max_tokens={} as last resort...\n",
+            hard_coded_minimum
+        ));
+        
+        hard_coded_minimum
+    }
+
+    /// Apply the fallback sequence for summary requests to free up context space.
+    /// Uses calculate_summary_max_tokens for recalculation (based on available space).
+    /// Returns the validated max_tokens for summary requests.
+    fn apply_summary_fallback_sequence(
+        &mut self,
+        provider_name: &str,
+    ) -> u32 {
+        let (mut summary_max_tokens, needs_reduction) = self.calculate_summary_max_tokens(provider_name);
+        
+        if !needs_reduction {
+            return summary_max_tokens;
+        }
+
+        self.ui_writer.print_context_status(
+            "⚠️ Context window too full for thinking budget. Applying fallback sequence...\n",
+        );
+
+        // Step 1: Try thinnify (first third of context)
+        self.ui_writer.print_context_status("🥒 Step 1: Trying thinnify...\n");
+        let (thin_msg, thin_saved) = self.context_window.thin_context();
+        self.thinning_events.push(thin_saved);
+        self.ui_writer.print_context_thinning(&thin_msg);
+
+        // Recalculate max_tokens after thinnify
+        let (new_max, still_needs_reduction) = self.calculate_summary_max_tokens(provider_name);
+        summary_max_tokens = new_max;
+
+        if !still_needs_reduction {
+            self.ui_writer.print_context_status(
+                "✅ Thinnify resolved capacity issue. Continuing...\n",
+            );
+            return summary_max_tokens;
+        }
+
+        // Step 2: Try skinnify (entire context)
+        self.ui_writer.print_context_status("🦴 Step 2: Trying skinnify...\n");
+        let (skinny_msg, skinny_saved) = self.context_window.thin_context_all();
+        self.thinning_events.push(skinny_saved);
+        self.ui_writer.print_context_thinning(&skinny_msg);
+
+        // Recalculate max_tokens after skinnify
+        let (final_max, final_needs_reduction) = self.calculate_summary_max_tokens(provider_name);
+        summary_max_tokens = final_max;
+
+        if !final_needs_reduction {
+            self.ui_writer.print_context_status(
+                "✅ Skinnify resolved capacity issue. Continuing...\n",
+            );
+            return summary_max_tokens;
+        }
+
+        // Step 3: Nothing worked, use hard-coded minimum
+        self.ui_writer.print_context_status(
+            "⚠️ Step 3: Context reduction insufficient. Using hard-coded max_tokens=5000 as last resort...\n",
+        );
+        5000
     }
 
     /// Resolve the temperature to use for a given provider, applying fallbacks
@@ -1805,8 +2028,14 @@ impl<W: UiWriter> Agent<W> {
         };
         let _ = provider; // Drop the provider reference to avoid borrowing issues
 
-        // Get max_tokens from provider configuration, falling back to sensible defaults
-        let max_tokens = Some(self.resolve_max_tokens(&provider_name));
+        // Get max_tokens from provider configuration with preflight validation
+        // This ensures max_tokens > thinking.budget_tokens for Anthropic with extended thinking
+        let initial_max_tokens = self.resolve_max_tokens(&provider_name);
+        let max_tokens = Some(self.apply_max_tokens_fallback_sequence(
+            &provider_name,
+            initial_max_tokens,
+            16000, // Hard-coded minimum for main API calls (higher than summary's 5000)
+        ));
 
         let request = CompletionRequest {
             messages,
@@ -1814,6 +2043,7 @@ impl<W: UiWriter> Agent<W> {
             temperature: Some(self.resolve_temperature(&provider_name)),
             stream: true, // Enable streaming
             tools,
+            disable_thinking: false,
         };
 
         // Time the LLM call with cancellation support and streaming
@@ -2211,6 +2441,32 @@ impl<W: UiWriter> Agent<W> {
             self.context_window.percentage_used() as u32
         ));
 
+        let provider = self.providers.get(None)?;
+        let provider_name = provider.name().to_string();
+        let _ = provider; // Release borrow early
+
+        // Apply fallback sequence: thinnify -> skinnify -> hard-coded 5000
+        let mut summary_max_tokens = self.apply_summary_fallback_sequence(&provider_name);
+
+        // Apply provider-specific caps
+        // For Anthropic with thinking enabled, we need max_tokens > thinking.budget_tokens
+        // So we set a higher cap when thinking is configured
+        let anthropic_cap = match self.get_thinking_budget_tokens() {
+            Some(budget) => (budget + 2000).max(10_000), // At least budget + 2000 for response
+            None => 10_000,
+        };
+        summary_max_tokens = match provider_name.as_str() {
+            "anthropic" => summary_max_tokens.min(anthropic_cap),
+            "databricks" => summary_max_tokens.min(10_000),
+            "embedded" => summary_max_tokens.min(3000),
+            _ => summary_max_tokens.min(5000),
+        };
+
+        debug!(
+            "Requesting summary with max_tokens: {} (current usage: {} tokens)",
+            summary_max_tokens, self.context_window.used_tokens
+        );
+
         // Create summary request with FULL history
         let summary_prompt = self.context_window.create_summary_prompt();
 
@@ -2239,41 +2495,26 @@ impl<W: UiWriter> Agent<W> {
 
         let provider = self.providers.get(None)?;
 
-        // Dynamically calculate max_tokens for summary based on what's left
-        let summary_max_tokens = match provider.name() {
-            "databricks" | "anthropic" => {
-                let model_limit = self.context_window.total_tokens;
-                let current_usage = self.context_window.used_tokens;
-                let available = model_limit
-                    .saturating_sub(current_usage)
-                    .saturating_sub(5000);
-                Some(available.min(10_000))
+        // Determine if we need to disable thinking mode for this request
+        // Anthropic requires: max_tokens > thinking.budget_tokens + 1024
+        let disable_thinking = self.get_thinking_budget_tokens().map_or(false, |budget| {
+            let minimum_for_thinking = budget + 1024;
+            let should_disable = summary_max_tokens <= minimum_for_thinking;
+            if should_disable {
+                tracing::warn!("Disabling thinking mode for summary: max_tokens ({}) <= minimum_for_thinking ({})", summary_max_tokens, minimum_for_thinking);
             }
-            "embedded" => {
-                let model_limit = self.context_window.total_tokens;
-                let current_usage = self.context_window.used_tokens;
-                let available = model_limit
-                    .saturating_sub(current_usage)
-                    .saturating_sub(1000);
-                Some(available.min(3000))
-            }
-            _ => {
-                let available = self.context_window.remaining_tokens().saturating_sub(2000);
-                Some(available.min(5000))
-            }
-        };
+            should_disable
+        });
 
-        debug!(
-            "Requesting summary with max_tokens: {:?} (current usage: {} tokens)",
-            summary_max_tokens, self.context_window.used_tokens
-        );
+        tracing::debug!("Creating summary request: max_tokens={}, disable_thinking={}", summary_max_tokens, disable_thinking);
 
         let summary_request = CompletionRequest {
             messages: summary_messages,
-            max_tokens: summary_max_tokens,
+            max_tokens: Some(summary_max_tokens),
             temperature: Some(self.resolve_temperature(provider.name())),
             stream: false,
             tools: None,
+            disable_thinking,
         };
 
         // Get the summary
@@ -3234,6 +3475,32 @@ impl<W: UiWriter> Agent<W> {
                     self.context_window.percentage_used() as u32
                 ));
 
+                let provider = self.providers.get(None)?;
+                let provider_name = provider.name().to_string();
+                let _ = provider; // Release borrow early
+
+                // Apply fallback sequence: thinnify -> skinnify -> hard-coded 5000
+                let mut summary_max_tokens = self.apply_summary_fallback_sequence(&provider_name);
+
+                // Apply provider-specific caps
+                // For Anthropic with thinking enabled, we need max_tokens > thinking.budget_tokens
+                // So we set a higher cap when thinking is configured
+                let anthropic_cap = match self.get_thinking_budget_tokens() {
+                    Some(budget) => (budget + 2000).max(10_000), // At least budget + 2000 for response
+                    None => 10_000,
+                };
+                summary_max_tokens = match provider_name.as_str() {
+                    "anthropic" => summary_max_tokens.min(anthropic_cap),
+                    "databricks" => summary_max_tokens.min(10_000),
+                    "embedded" => summary_max_tokens.min(3000),
+                    _ => summary_max_tokens.min(5000),
+                };
+
+                debug!(
+                    "Requesting summary with max_tokens: {} (current usage: {} tokens)",
+                    summary_max_tokens, self.context_window.used_tokens
+                );
+
                 // Create summary request with FULL history
                 let summary_prompt = self.context_window.create_summary_prompt();
 
@@ -3262,85 +3529,26 @@ impl<W: UiWriter> Agent<W> {
 
                 let provider = self.providers.get(None)?;
 
-                // Dynamically calculate max_tokens for summary based on what's left
-                // We need to ensure: used_tokens + max_tokens <= total_context_limit
-                let summary_max_tokens = match provider.name() {
-                    "databricks" | "anthropic" => {
-                        // Use the actual configured context window size
-                        let model_limit = self.context_window.total_tokens;
-                        let current_usage = self.context_window.used_tokens;
-
-                        // Check if we have enough capacity for summarization
-                        if current_usage >= model_limit.saturating_sub(1000) {
-                            error!("Context window at capacity ({}%), cannot summarize. Current: {}, Limit: {}", 
-                               self.context_window.percentage_used(), current_usage, model_limit);
-                            return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify or /compact commands to reduce context size, or start a new session."));
-                        }
-
-                        // Leave buffer proportional to model size (min 1k, max 10k)
-                        let buffer = (model_limit / 40).clamp(1000, 10000); // 2.5% buffer
-                        let available = model_limit
-                            .saturating_sub(current_usage)
-                            .saturating_sub(buffer);
-                        // Cap at a reasonable summary size (10k tokens max)
-                        Some(available.min(10_000))
+                // Determine if we need to disable thinking mode for this request
+                // Anthropic requires: max_tokens > thinking.budget_tokens + 1024
+                let disable_thinking = self.get_thinking_budget_tokens().map_or(false, |budget| {
+                    let minimum_for_thinking = budget + 1024;
+                    let should_disable = summary_max_tokens <= minimum_for_thinking;
+                    if should_disable {
+                        tracing::warn!("Disabling thinking mode for summary: max_tokens ({}) <= minimum_for_thinking ({})", summary_max_tokens, minimum_for_thinking);
                     }
-                    "embedded" => {
-                        // For smaller context models, be more conservative
-                        let model_limit = self.context_window.total_tokens;
-                        let current_usage = self.context_window.used_tokens;
+                    should_disable
+                });
 
-                        // Check capacity for embedded models too
-                        if current_usage >= model_limit.saturating_sub(500) {
-                            error!(
-                                "Embedded model context window at capacity ({}%)",
-                                self.context_window.percentage_used()
-                            );
-                            return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify command to reduce context size, or start a new session."));
-                        }
-
-                        // Leave 1k buffer
-                        let available = model_limit
-                            .saturating_sub(current_usage)
-                            .saturating_sub(1000);
-                        // Cap at 3k for embedded models
-                        Some(available.min(3000))
-                    }
-                    _ => {
-                        // Default: conservative approach
-                        let model_limit = self.context_window.total_tokens;
-                        let current_usage = self.context_window.used_tokens;
-
-                        if current_usage >= model_limit.saturating_sub(1000) {
-                            error!(
-                                "Context window at capacity ({}%)",
-                                self.context_window.percentage_used()
-                            );
-                            return Err(anyhow::anyhow!("Context window at capacity. Try using /thinnify or /compact commands, or start a new session."));
-                        }
-
-                        let available = self.context_window.remaining_tokens().saturating_sub(2000);
-                        Some(available.min(5000))
-                    }
-                };
-
-                debug!(
-                    "Requesting summary with max_tokens: {:?} (current usage: {} tokens)",
-                    summary_max_tokens, self.context_window.used_tokens
-                );
-
-                // Final safety check
-                if summary_max_tokens.unwrap_or(0) == 0 {
-                    error!("No tokens available for summarization");
-                    return Err(anyhow::anyhow!("No context window capacity left for summarization. Use /thinnify to reduce context size or start a new session."));
-                }
+                tracing::debug!("Creating auto-summary request: max_tokens={}, disable_thinking={}", summary_max_tokens, disable_thinking);
 
                 let summary_request = CompletionRequest {
                     messages: summary_messages,
-                    max_tokens: summary_max_tokens,
+                    max_tokens: Some(summary_max_tokens),
                     temperature: Some(self.resolve_temperature(provider.name())),
                     stream: false,
                     tools: None,
+                    disable_thinking,
                 };
 
                 // Get the summary
