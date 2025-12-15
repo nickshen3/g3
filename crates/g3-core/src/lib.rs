@@ -5597,23 +5597,37 @@ impl<W: UiWriter> Agent<W> {
                             }
                         };
 
-                        // Wait for chromedriver to start up
-                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                        // Wait for chromedriver to be ready with retry loop
+                        let max_retries = 10;
+                        let mut last_error = None;
+                        
+                        for attempt in 0..max_retries {
+                            // Wait before each attempt (200ms between retries, total max ~2s)
+                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                            
+                            // Try to connect to ChromeDriver in headless mode
+                            match g3_computer_control::ChromeDriver::with_port_headless(port).await {
+                                Ok(driver) => {
+                                    let session = std::sync::Arc::new(tokio::sync::Mutex::new(WebDriverSession::Chrome(driver)));
+                                    *self.webdriver_session.write().await = Some(session);
+                                    *self.webdriver_process.write().await = Some(webdriver_process);
 
-                        // Connect to ChromeDriver in headless mode
-                        match g3_computer_control::ChromeDriver::with_port_headless(port).await {
-                            Ok(driver) => {
-                                let session = std::sync::Arc::new(tokio::sync::Mutex::new(WebDriverSession::Chrome(driver)));
-                                *self.webdriver_session.write().await = Some(session);
-                                *self.webdriver_process.write().await = Some(webdriver_process);
-
-                                Ok("✅ WebDriver session started successfully! Chrome is running in headless mode (no visible window).".to_string())
-                            }
-                            Err(e) => {
-                                let _ = webdriver_process.kill().await;
-                                Ok(format!("❌ Failed to connect to ChromeDriver: {}\n\nThis might be because:\n  - Chrome is not installed\n  - ChromeDriver version doesn't match Chrome version\n  - Port {} is already in use\n\nMake sure Chrome and ChromeDriver are installed and compatible.", e, port))
+                                    return Ok("✅ WebDriver session started successfully! Chrome is running in headless mode (no visible window).".to_string());
+                                }
+                                Err(e) => {
+                                    last_error = Some(e);
+                                    if attempt < max_retries - 1 {
+                                        // Continue retrying
+                                        continue;
+                                    }
+                                }
                             }
                         }
+
+                        // All retries failed
+                        let _ = webdriver_process.kill().await;
+                        let error_msg = last_error.map(|e| e.to_string()).unwrap_or_else(|| "Unknown error".to_string());
+                        Ok(format!("❌ Failed to connect to ChromeDriver after {} attempts: {}\n\nThis might be because:\n  - Chrome is not installed\n  - ChromeDriver version doesn't match Chrome version\n  - Port {} is already in use\n\nMake sure Chrome and ChromeDriver are installed and compatible.", max_retries, error_msg, port))
                     }
                 }
             }
