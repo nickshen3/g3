@@ -343,11 +343,11 @@ pub struct Cli {
     #[arg(long)]
     pub webdriver: bool,
 
-    /// Use Chrome in headless mode for WebDriver (this is the default)
+    /// Use Chrome in headless mode for WebDriver (instead of Safari)
     #[arg(long)]
     pub chrome_headless: bool,
 
-    /// Use Safari for WebDriver (instead of headless Chrome)
+    /// Use Safari for WebDriver (this is the default)
     #[arg(long)]
     pub safari: bool,
 

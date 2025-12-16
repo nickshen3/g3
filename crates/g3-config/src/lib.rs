@@ -119,9 +119,9 @@ pub struct ComputerControlConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum WebDriverBrowser {
+    #[default]
     Safari,
     #[serde(rename = "chrome-headless")]
-    #[default]
     ChromeHeadless,
 }
 
@@ -157,7 +157,7 @@ impl Default for WebDriverConfig {
             safari_port: 4444,
             chrome_port: 9515,
             chrome_binary: None,
-            browser: WebDriverBrowser::ChromeHeadless,
+            browser: WebDriverBrowser::Safari,
         }
     }
 }

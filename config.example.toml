@@ -106,10 +106,10 @@ max_actions_per_second = 5
 enabled = false
 safari_port = 4444
 chrome_port = 9515
-# Browser to use: "safari" or "chrome-headless" (default)
+# Browser to use: "safari" (default) or "chrome-headless"
 # Safari opens a visible browser window
 # Chrome headless runs in the background without a visible window
-browser = "chrome-headless"
+browser = "safari"
 # Optional: Path to Chrome binary (e.g., Chrome for Testing)
 # If not set, ChromeDriver will use the default Chrome installation
 # Use this to avoid version mismatch issues between Chrome and ChromeDriver

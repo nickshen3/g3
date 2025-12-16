@@ -245,7 +245,7 @@ See `config.example.toml` for a complete configuration example.
 
 ## WebDriver Browser Automation
 
-G3 includes WebDriver support for browser automation tasks. Chrome headless is the default (no visible browser window), with Safari available as an alternative.
+G3 includes WebDriver support for browser automation tasks. Safari is the default, with Chrome headless available as an alternative.
 
 **One-Time Setup** (macOS only):
 
@@ -266,11 +266,11 @@ safaridriver --enable  # Requires password
 **Usage**:
 
 ```bash
-# Use Chrome in headless mode (default, no visible window, runs in background)
+# Use Safari (default, opens a visible browser window)
 g3 --webdriver
 
-# Use Safari (opens a visible browser window)
-g3 --webdriver --safari
+# Use Chrome in headless mode (no visible window, runs in background)
+g3 --chrome-headless
 ```
 
 **Chrome Setup Options**:
