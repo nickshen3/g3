@@ -390,3 +390,23 @@ If you can complete it with 1-2 tool calls, skip TODO.
 
 pub const SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE: &'static str =
     concatcp!(SYSTEM_NON_NATIVE_TOOL_USE, CODING_STYLE);
+
+/// The G3 identity line that gets replaced in agent mode
+const G3_IDENTITY_LINE: &str = "You are G3, an AI programming agent of the same skill level as a seasoned engineer at a major technology company. You analyze given tasks and write code to achieve goals.";
+
+/// Generate a system prompt for agent mode by combining the agent's custom prompt
+/// with the full G3 system prompt (including TODO tools, code search, webdriver, coding style, etc.)
+///
+/// The agent_prompt replaces only the G3 identity line at the start of the prompt.
+/// Everything else (tool instructions, coding guidelines, etc.) is preserved.
+pub fn get_agent_system_prompt(agent_prompt: &str, allow_multiple_tool_calls: bool) -> String {
+    // Get the full system prompt (with or without parallel tool calls)
+    let full_prompt = if allow_multiple_tool_calls {
+        get_system_prompt_for_native(true)
+    } else {
+        SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE.to_string()
+    };
+
+    // Replace only the G3 identity line with the custom agent prompt
+    full_prompt.replace(G3_IDENTITY_LINE, agent_prompt.trim())
+}

@@ -10,6 +10,9 @@ pub use task_result::TaskResult;
 pub use retry::{RetryConfig, RetryResult, execute_with_retry, retry_operation};
 pub use feedback_extraction::{ExtractedFeedback, FeedbackSource, FeedbackExtractionConfig, extract_coach_feedback};
 
+// Export agent prompt generation for CLI use
+pub use prompts::get_agent_system_prompt;
+
 #[cfg(test)]
 mod task_result_comprehensive_tests;
 use crate::ui_writer::UiWriter;
@@ -1174,7 +1177,7 @@ impl<W: UiWriter> Agent<W> {
         ui_writer: W,
         readme_content: Option<String>,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, false).await
+        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, false, None).await
     }
 
     pub async fn new_autonomous_with_readme(
@@ -1182,7 +1185,7 @@ impl<W: UiWriter> Agent<W> {
         ui_writer: W,
         readme_content: Option<String>,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, true, readme_content, false).await
+        Self::new_with_mode_and_readme(config, ui_writer, true, readme_content, false, None).await
     }
 
     pub async fn new_autonomous(config: Config, ui_writer: W) -> Result<Self> {
@@ -1199,7 +1202,7 @@ impl<W: UiWriter> Agent<W> {
         readme_content: Option<String>,
         quiet: bool,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, quiet).await
+        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, quiet, None).await
     }
 
     pub async fn new_autonomous_with_readme_and_quiet(
@@ -1208,7 +1211,18 @@ impl<W: UiWriter> Agent<W> {
         readme_content: Option<String>,
         quiet: bool,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, true, readme_content, quiet).await
+        Self::new_with_mode_and_readme(config, ui_writer, true, readme_content, quiet, None).await
+    }
+
+    /// Create a new agent with a custom system prompt (for agent mode)
+    /// The custom_system_prompt replaces the default G3 system prompt entirely
+    pub async fn new_with_custom_prompt(
+        config: Config,
+        ui_writer: W,
+        custom_system_prompt: String,
+        readme_content: Option<String>,
+    ) -> Result<Self> {
+        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, false, Some(custom_system_prompt)).await
     }
 
     async fn new_with_mode(
@@ -1217,7 +1231,7 @@ impl<W: UiWriter> Agent<W> {
         is_autonomous: bool,
         quiet: bool,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, is_autonomous, None, quiet).await
+        Self::new_with_mode_and_readme(config, ui_writer, is_autonomous, None, quiet, None).await
     }
 
     async fn new_with_mode_and_readme(
@@ -1226,6 +1240,7 @@ impl<W: UiWriter> Agent<W> {
         is_autonomous: bool,
         readme_content: Option<String>,
         quiet: bool,
+        custom_system_prompt: Option<String>,
     ) -> Result<Self> {
         let mut providers = ProviderRegistry::new();
 
@@ -1374,12 +1389,18 @@ impl<W: UiWriter> Agent<W> {
         let provider_has_native_tool_calling = provider.has_native_tool_calling();
         let _ = provider; // Drop provider reference to avoid borrowing issues
 
-        let system_prompt = if provider_has_native_tool_calling {
-            // For native tool calling providers, use a more explicit system prompt
-            get_system_prompt_for_native(config.agent.allow_multiple_tool_calls)
+        let system_prompt = if let Some(custom_prompt) = custom_system_prompt {
+            // Use custom system prompt (for agent mode)
+            custom_prompt
         } else {
-            // For non-native providers (embedded models), use JSON format instructions
-            SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE.to_string()
+            // Use default system prompt based on provider capabilities
+            if provider_has_native_tool_calling {
+                // For native tool calling providers, use a more explicit system prompt
+                get_system_prompt_for_native(config.agent.allow_multiple_tool_calls)
+            } else {
+                // For non-native providers (embedded models), use JSON format instructions
+                SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE.to_string()
+            }
         };
 
         let system_message = Message::new(MessageRole::System, system_prompt);
@@ -1484,7 +1505,10 @@ impl<W: UiWriter> Agent<W> {
             );
         }
 
-        if !first_message.content.contains("You are G3") {
+        // Check for system prompt markers that are present in both standard and agent mode
+        // Agent mode replaces the identity line but keeps all other instructions
+        let has_tool_instructions = first_message.content.contains("IMPORTANT: You must call tools to achieve goals");
+        if !has_tool_instructions {
             panic!("FATAL: First system message does not contain the system prompt. This likely means the README was added before the system prompt.");
         }
     }
@@ -3630,6 +3654,7 @@ impl<W: UiWriter> Agent<W> {
         const MAX_AUTO_SUMMARY_ATTEMPTS: usize = 2; // Limit auto-summary retries
         let mut last_action_was_tool = false; // Track if the last action was a tool call (vs text response)
         let mut any_text_response = false; // Track if LLM ever provided a text response
+        let mut executed_tools_in_session: std::collections::HashSet<String> = std::collections::HashSet::new(); // Track executed tools to prevent duplicates
 
         // Check if we need to summarize before starting
         if self.context_window.should_summarize() {
@@ -4028,6 +4053,22 @@ impl<W: UiWriter> Agent<W> {
                         for (tool_call, duplicate_type) in deduplicated_tools {
                             debug!("Processing completed tool call: {:?}", tool_call);
 
+                            // Check if this tool was already executed in this session
+                            let tool_key = format!("{}:{}", tool_call.tool, serde_json::to_string(&tool_call.args).unwrap_or_default());
+                            if executed_tools_in_session.contains(&tool_key) {
+                                // Log the duplicate with red prefix
+                                let prefixed_tool_name = format!("🟥 {} DUP IN SESSION", tool_call.tool);
+                                let warning_msg = format!(
+                                    "⚠️ Duplicate tool call detected (already executed in session): Skipping {} with args {}",
+                                    tool_call.tool,
+                                    serde_json::to_string(&tool_call.args).unwrap_or_else(|_| "<unserializable>".to_string())
+                                );
+                                let mut modified_tool_call = tool_call.clone();
+                                modified_tool_call.tool = prefixed_tool_name;
+                                self.log_tool_call(&modified_tool_call, &warning_msg);
+                                continue; // Skip execution of duplicate
+                            }
+
                             // If it's a duplicate, log it and return a warning
                             if let Some(dup_type) = &duplicate_type {
                                 // Log the duplicate with red prefix
@@ -4363,6 +4404,9 @@ impl<W: UiWriter> Agent<W> {
                             tool_executed = true;
                             any_tool_executed = true; // Track across all iterations
                             last_action_was_tool = true; // Last action was a tool call
+
+                            // Add to executed tools set to prevent re-execution in this session
+                            executed_tools_in_session.insert(tool_key.clone());
 
                             // Reset the JSON tool call filter state after each tool execution
                             // This ensures the filter doesn't stay in suppression mode for subsequent streaming content

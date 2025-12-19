@@ -382,6 +382,10 @@ pub struct Cli {
     /// Enable fast codebase discovery before first LLM turn
     #[arg(long, value_name = "PATH")]
     pub codebase_fast_start: Option<PathBuf>,
+
+    /// Run as a specialized agent (loads prompt from agents/<name>.md)
+    #[arg(long, value_name = "NAME", conflicts_with_all = ["autonomous", "auto", "chat", "planning"])]
+    pub agent: Option<String>,
 }
 
 pub async fn run() -> Result<()> {
@@ -416,6 +420,28 @@ pub async fn run() -> Result<()> {
             cli.workspace.clone(),
             cli.no_git,
             cli.config.as_deref(),
+        )
+        .await;
+    }
+
+    // Check if agent mode is enabled
+    if let Some(agent_name) = &cli.agent {
+        return run_agent_mode(
+            agent_name,
+            cli.workspace.clone(),
+            cli.config.as_deref(),
+            cli.quiet,
+        )
+        .await;
+    }
+
+    // Check if agent mode is enabled
+    if let Some(agent_name) = &cli.agent {
+        return run_agent_mode(
+            agent_name,
+            cli.workspace.clone(),
+            cli.config.as_deref(),
+            cli.quiet,
         )
         .await;
     }
@@ -619,6 +645,99 @@ pub async fn run() -> Result<()> {
         run_with_console_mode(agent, cli, project, combined_content).await?;
     }
 
+    Ok(())
+}
+
+/// Run agent mode - loads a specialized agent prompt and executes a single task
+async fn run_agent_mode(
+    agent_name: &str,
+    workspace: Option<PathBuf>,
+    config_path: Option<&str>,
+    _quiet: bool,
+) -> Result<()> {
+    use g3_core::get_agent_system_prompt;
+    
+    // Initialize logging
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    let filter = EnvFilter::from_default_env()
+        .add_directive("g3_core=info".parse().unwrap())
+        .add_directive("g3_cli=info".parse().unwrap())
+        .add_directive("llama_cpp=off".parse().unwrap())
+        .add_directive("llama=off".parse().unwrap());
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
+        .init();
+
+    let output = SimpleOutput::new();
+    
+    // Determine workspace directory (current dir if not specified)
+    let workspace_dir = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    
+    // Load agent prompt from agents/<name>.md
+    let agent_prompt_path = workspace_dir.join("agents").join(format!("{}.md", agent_name));
+    
+    // Also check in the g3 installation directory
+    let agent_prompt = if agent_prompt_path.exists() {
+        std::fs::read_to_string(&agent_prompt_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read agent prompt from {:?}: {}", agent_prompt_path, e))?
+    } else {
+        // Try to find agents/ relative to the executable or in common locations
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+        
+        let possible_paths = [
+            exe_dir.as_ref().map(|d| d.join("agents").join(format!("{}.md", agent_name))),
+            Some(PathBuf::from(format!("agents/{}.md", agent_name))),
+        ];
+        
+        let mut found_prompt = None;
+        for path_opt in possible_paths.iter().flatten() {
+            if path_opt.exists() {
+                found_prompt = Some(std::fs::read_to_string(path_opt)
+                    .map_err(|e| anyhow::anyhow!("Failed to read agent prompt from {:?}: {}", path_opt, e))?);
+                break;
+            }
+        }
+        
+        found_prompt.ok_or_else(|| anyhow::anyhow!(
+            "Agent prompt not found: agents/{}.md\nSearched in: {:?} and current directory",
+            agent_name, agent_prompt_path
+        ))?
+    };
+    
+    output.print(&format!("🤖 Running as agent: {}", agent_name));
+    output.print(&format!("📁 Working directory: {:?}", workspace_dir));
+    
+    // Load config
+    let config = g3_config::Config::load(config_path)?;
+    
+    // Generate the combined system prompt (agent prompt + tool instructions)
+    let system_prompt = get_agent_system_prompt(&agent_prompt, config.agent.allow_multiple_tool_calls);
+    
+    // Read README if present
+    let readme_content = std::fs::read_to_string(workspace_dir.join("README.md")).ok();
+    let readme_for_prompt = readme_content.map(|content| {
+        format!("📚 Project README (from README.md):\n\n{}", content)
+    });
+    
+    // Create agent with custom system prompt
+    let ui_writer = ConsoleUiWriter::new();
+    let mut agent = Agent::new_with_custom_prompt(
+        config,
+        ui_writer,
+        system_prompt,
+        readme_for_prompt,
+    ).await?;
+    
+    // The agent prompt should contain instructions to start working immediately
+    // Send an initial message to trigger the agent
+    let initial_task = "Begin your analysis and work on the current project. Follow your mission and workflow as specified in your instructions.";
+    
+    let _result = agent.execute_task(initial_task, None, true).await?;
+    
+    output.print("\n✅ Agent mode completed");
     Ok(())
 }
 
