@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
-use tracing::Level;
+use tracing::{debug, Level};
 use tracing_subscriber;
 
 #[derive(Parser, Debug)]

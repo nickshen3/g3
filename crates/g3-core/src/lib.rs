@@ -4884,6 +4884,17 @@ impl<W: UiWriter> Agent<W> {
                                     ));
                                 }
 
+                                // If tools were executed in previous iterations but final_output wasn't called,
+                                // break to let the outer loop's auto-continue logic handle it
+                                if any_tool_executed && !final_output_called {
+                                    debug!("Tools were executed but final_output not called - breaking to auto-continue");
+                                    // Add the text response to context before breaking
+                                    if has_text_response && !current_response.trim().is_empty() {
+                                        full_response = current_response.clone();
+                                    }
+                                    break;
+                                }
+
                                 // Set full_response to current_response (don't append)
                                 // current_response already contains everything that was displayed
                                 // Don't set full_response here - it would duplicate the output
