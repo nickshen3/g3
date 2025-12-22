@@ -246,6 +246,15 @@ pub enum StreamState {
     Resuming,
 }
 
+/// Patterns used to detect JSON tool calls in text
+/// These cover common whitespace variations in JSON formatting
+const TOOL_CALL_PATTERNS: [&str; 4] = [
+    r#"{"tool":"#,
+    r#"{ "tool":"#,
+    r#"{"tool" :"#,
+    r#"{ "tool" :"#,
+];
+
 /// Modern streaming tool parser that properly handles native tool calls and SSE chunks
 #[derive(Debug)]
 pub struct StreamingToolParser {
@@ -276,6 +285,37 @@ impl StreamingToolParser {
             in_json_tool_call: false,
             json_tool_start: None,
         }
+    }
+
+    /// Find the starting position of the last tool call pattern in the given text
+    /// Returns None if no tool call pattern is found
+    fn find_last_tool_call_start(text: &str) -> Option<usize> {
+        let mut best_start: Option<usize> = None;
+        for pattern in &TOOL_CALL_PATTERNS {
+            if let Some(pos) = text.rfind(pattern) {
+                if best_start.map_or(true, |best| pos > best) {
+                    best_start = Some(pos);
+                }
+            }
+        }
+        best_start
+    }
+
+    /// Validate that tool call args don't contain message-like content
+    /// This detects malformed tool calls where agent messages got mixed into args
+    fn has_message_like_keys(args: &serde_json::Map<String, serde_json::Value>) -> bool {
+        args.keys().any(|key| {
+            key.len() > 100
+                || key.contains('\n')
+                || key.contains("I'll")
+                || key.contains("Let me")
+                || key.contains("Here's")
+                || key.contains("I can")
+                || key.contains("I need")
+                || key.contains("First")
+                || key.contains("Now")
+                || key.contains("The ")
+        })
     }
 
     /// Process a streaming chunk and return completed tool calls if any
@@ -328,26 +368,12 @@ impl StreamingToolParser {
 
     /// Fallback method to parse JSON tool calls from text content
     fn try_parse_json_tool_call(&mut self, _content: &str) -> Option<ToolCall> {
-        // Look for JSON tool call patterns
-        let patterns = [
-            r#"{"tool":"#,
-            r#"{ "tool":"#,
-            r#"{"tool" :"#,
-            r#"{ "tool" :"#,
-        ];
-
         // If we're not currently in a JSON tool call, look for the start
         if !self.in_json_tool_call {
-            for pattern in &patterns {
-                if let Some(pos) = self.text_buffer.rfind(pattern) {
-                    debug!(
-                        "Found JSON tool call pattern '{}' at position {}",
-                        pattern, pos
-                    );
-                    self.in_json_tool_call = true;
-                    self.json_tool_start = Some(pos);
-                    break;
-                }
+            if let Some(pos) = Self::find_last_tool_call_start(&self.text_buffer) {
+                debug!("Found JSON tool call pattern at position {}", pos);
+                self.in_json_tool_call = true;
+                self.json_tool_start = Some(pos);
             }
         }
 
@@ -356,83 +382,34 @@ impl StreamingToolParser {
             if let Some(start_pos) = self.json_tool_start {
                 let json_text = &self.text_buffer[start_pos..];
 
-                // Try to find a complete JSON object
-                let mut brace_count = 0;
-                let mut in_string = false;
-                let mut escape_next = false;
+                // Try to find a complete JSON object using the shared helper
+                if let Some(end_pos) = Self::find_complete_json_object_end(json_text) {
+                    let json_str = &json_text[..=end_pos];
+                    debug!("Attempting to parse JSON tool call: {}", json_str);
 
-                for (i, ch) in json_text.char_indices() {
-                    if escape_next {
-                        escape_next = false;
-                        continue;
-                    }
-
-                    match ch {
-                        '\\' => escape_next = true,
-                        '"' if !escape_next => in_string = !in_string,
-                        '{' if !in_string => brace_count += 1,
-                        '}' if !in_string => {
-                            brace_count -= 1;
-                            if brace_count == 0 {
-                                // Found complete JSON object
-                                let json_str = &json_text[..=i];
-                                debug!("Attempting to parse JSON tool call: {}", json_str);
-
-                                // First try to parse as a ToolCall
-                                if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json_str) {
-                                    // Validate that this is actually a proper tool call
-                                    // The args should be a JSON object with reasonable keys
-                                    if let Some(args_obj) = tool_call.args.as_object() {
-                                        // Check if any key looks like it contains agent message content
-                                        // This would indicate a malformed tool call where the message
-                                        // got mixed into the args
-                                        let has_message_like_key = args_obj.keys().any(|key| {
-                                            key.len() > 100
-                                                || key.contains('\n')
-                                                || key.contains("I'll")
-                                                || key.contains("Let me")
-                                                || key.contains("Here's")
-                                                || key.contains("I can")
-                                                || key.contains("I need")
-                                                || key.contains("First")
-                                                || key.contains("Now")
-                                                || key.contains("The ")
-                                        });
-
-                                        if has_message_like_key {
-                                            debug!("Detected malformed tool call with message-like keys, skipping");
-                                            // This looks like a malformed tool call, skip it
-                                            self.in_json_tool_call = false;
-                                            self.json_tool_start = None;
-                                            break;
-                                        }
-
-                                        // Also check if the values look reasonable
-                                        // Tool arguments should typically be file paths, commands, or content
-                                        // Not entire agent messages
-
-                                        debug!(
-                                            "Successfully parsed valid JSON tool call: {:?}",
-                                            tool_call
-                                        );
-                                        // Reset JSON parsing state
-                                        self.in_json_tool_call = false;
-                                        self.json_tool_start = None;
-                                        return Some(tool_call);
-                                    }
-                                    // If args is not an object, skip this as invalid
-                                    debug!("Tool call args is not an object, skipping");
-                                } else {
-                                    debug!("Failed to parse JSON tool call: {}", json_str);
-                                    // Reset and continue looking
-                                    self.in_json_tool_call = false;
-                                    self.json_tool_start = None;
-                                }
-                                break;
+                    // Try to parse as a ToolCall
+                    if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json_str) {
+                        // Validate that args is an object with reasonable keys
+                        if let Some(args_obj) = tool_call.args.as_object() {
+                            if Self::has_message_like_keys(args_obj) {
+                                debug!("Detected malformed tool call with message-like keys, skipping");
+                                self.in_json_tool_call = false;
+                                self.json_tool_start = None;
+                                return None;
                             }
+
+                            debug!("Successfully parsed valid JSON tool call: {:?}", tool_call);
+                            self.in_json_tool_call = false;
+                            self.json_tool_start = None;
+                            return Some(tool_call);
                         }
-                        _ => {}
+                        debug!("Tool call args is not an object, skipping");
+                    } else {
+                        debug!("Failed to parse JSON tool call: {}", json_str);
                     }
+                    // Reset and continue looking
+                    self.in_json_tool_call = false;
+                    self.json_tool_start = None;
                 }
             }
         }
@@ -443,68 +420,24 @@ impl StreamingToolParser {
     /// Parse JSON tool call from the accumulated text buffer (called when stream finishes)
     /// This is similar to try_parse_json_tool_call but operates on the full buffer
     fn try_parse_json_tool_call_from_buffer(&mut self) -> Option<ToolCall> {
-        // Look for JSON tool call patterns in the accumulated buffer
-        let patterns = [
-            r#"{"tool":"#,
-            r#"{ "tool":"#,
-            r#"{"tool" :"#,
-            r#"{ "tool" :"#,
-        ];
-
-        // Find the last occurrence of a tool call pattern (most likely to be complete)
-        let mut best_start: Option<usize> = None;
-        for pattern in &patterns {
-            if let Some(pos) = self.text_buffer.rfind(pattern) {
-                if best_start.map_or(true, |best| pos > best) {
-                    best_start = Some(pos);
-                }
-            }
-        }
-
-        if let Some(start_pos) = best_start {
+        if let Some(start_pos) = Self::find_last_tool_call_start(&self.text_buffer) {
             let json_text = &self.text_buffer[start_pos..];
             debug!("Found potential JSON tool call at position {}: {:?}", start_pos, 
                    if json_text.len() > 200 { &json_text[..200] } else { json_text });
 
-            // Try to find a complete JSON object
-            let mut brace_count = 0;
-            let mut in_string = false;
-            let mut escape_next = false;
+            // Try to find a complete JSON object using the shared helper
+            if let Some(end_pos) = Self::find_complete_json_object_end(json_text) {
+                let json_str = &json_text[..=end_pos];
+                debug!("Attempting to parse JSON tool call from buffer: {}", json_str);
 
-            for (i, ch) in json_text.char_indices() {
-                if escape_next {
-                    escape_next = false;
-                    continue;
-                }
-
-                match ch {
-                    '\\' => escape_next = true,
-                    '"' if !escape_next => in_string = !in_string,
-                    '{' if !in_string => brace_count += 1,
-                    '}' if !in_string => {
-                        brace_count -= 1;
-                        if brace_count == 0 {
-                            // Found complete JSON object
-                            let json_str = &json_text[..=i];
-                            debug!("Attempting to parse JSON tool call from buffer: {}", json_str);
-
-                            if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json_str) {
-                                if let Some(args_obj) = tool_call.args.as_object() {
-                                    // Validate - check for message-like keys
-                                    let has_message_like_key = args_obj.keys().any(|key| {
-                                        key.len() > 100 || key.contains('\n')
-                                    });
-
-                                    if !has_message_like_key {
-                                        debug!("Successfully parsed JSON tool call from buffer: {:?}", tool_call);
-                                        return Some(tool_call);
-                                    }
-                                }
-                            }
-                            break;
+                if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json_str) {
+                    if let Some(args_obj) = tool_call.args.as_object() {
+                        // Use the same validation as try_parse_json_tool_call
+                        if !Self::has_message_like_keys(args_obj) {
+                            debug!("Successfully parsed JSON tool call from buffer: {:?}", tool_call);
+                            return Some(tool_call);
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -535,28 +468,10 @@ impl StreamingToolParser {
     /// This detects cases where the LLM started emitting a tool call but the stream ended
     /// before the JSON was complete (truncated output)
     pub fn has_incomplete_tool_call(&self) -> bool {
-        let patterns = [
-            r#"{"tool":"#,
-            r#"{ "tool":"#,
-            r#"{"tool" :"#,
-            r#"{ "tool" :"#,
-        ];
-
-        // Find the last occurrence of a tool call pattern
-        let mut best_start: Option<usize> = None;
-        for pattern in &patterns {
-            if let Some(pos) = self.text_buffer.rfind(pattern) {
-                if best_start.map_or(true, |best| pos > best) {
-                    best_start = Some(pos);
-                }
-            }
-        }
-
-        if let Some(start_pos) = best_start {
-            // Check if we can parse a complete JSON object from this position
-            // If NOT complete, it's an incomplete tool call
+        if let Some(start_pos) = Self::find_last_tool_call_start(&self.text_buffer) {
             let json_text = &self.text_buffer[start_pos..];
-            !Self::is_complete_json_object(json_text)
+            // If NOT complete, it's an incomplete tool call
+            Self::find_complete_json_object_end(json_text).is_none()
         } else {
             false
         }
@@ -566,42 +481,15 @@ impl StreamingToolParser {
     /// This detects cases where the LLM emitted a complete tool call JSON
     /// but it wasn't parsed/executed (e.g., due to parsing issues)
     pub fn has_unexecuted_tool_call(&self) -> bool {
-        let patterns = [
-            r#"{"tool":"#,
-            r#"{ "tool":"#,
-            r#"{"tool" :"#,
-            r#"{ "tool" :"#,
-        ];
-
-        // Find the last occurrence of a tool call pattern
-        let mut best_start: Option<usize> = None;
-        for pattern in &patterns {
-            if let Some(pos) = self.text_buffer.rfind(pattern) {
-                if best_start.map_or(true, |best| pos > best) {
-                    best_start = Some(pos);
-                }
-            }
-        }
-
-        if let Some(start_pos) = best_start {
-            // Check if we can parse a complete JSON object from this position
+        if let Some(start_pos) = Self::find_last_tool_call_start(&self.text_buffer) {
             let json_text = &self.text_buffer[start_pos..];
             // If the JSON IS complete, it means there's an unexecuted tool call
             if let Some(json_end) = Self::find_complete_json_object_end(json_text) {
-                // Extract just the JSON object (not any trailing text)
                 let json_only = &json_text[..=json_end];
-                // Try to parse it as a tool call to confirm it's valid JSON
                 return serde_json::from_str::<serde_json::Value>(json_only).is_ok();
             }
-            false
-        } else {
-            false
         }
-    }
-
-    /// Check if a string contains a complete JSON object
-    fn is_complete_json_object(text: &str) -> bool {
-        Self::find_complete_json_object_end(text).is_some()
+        false
     }
 
     /// Find the end position (byte index) of a complete JSON object in the text
@@ -3993,7 +3881,7 @@ impl<W: UiWriter> Agent<W> {
         let mut response_started = false;
         let mut any_tool_executed = false; // Track if ANY tool was executed across all iterations
         let mut auto_summary_attempts = 0; // Track auto-summary prompt attempts
-        const MAX_AUTO_SUMMARY_ATTEMPTS: usize = 2; // Limit auto-summary retries
+        const MAX_AUTO_SUMMARY_ATTEMPTS: usize = 5; // Limit auto-summary retries (increased from 2 for better recovery)
         let mut final_output_called = false; // Track if final_output was called
         let mut executed_tools_in_session: std::collections::HashSet<String> = std::collections::HashSet::new(); // Track executed tools to prevent duplicates
 
@@ -4746,6 +4634,10 @@ impl<W: UiWriter> Agent<W> {
                             tool_executed = true;
                             any_tool_executed = true; // Track across all iterations
 
+                            // Reset auto-continue attempts after successful tool execution
+                            // This gives the LLM fresh attempts since it's making progress
+                            auto_summary_attempts = 0;
+
                             // Add to executed tools set to prevent re-execution in this session
                             executed_tools_in_session.insert(tool_key.clone());
 
@@ -5048,6 +4940,16 @@ impl<W: UiWriter> Agent<W> {
 
                 let has_response = !current_response.is_empty() || !full_response.is_empty();
 
+                // Check if the response is essentially empty (just whitespace or timing lines)
+                // This detects cases where the LLM outputs nothing substantive
+                let response_text = if !current_response.is_empty() {
+                    &current_response
+                } else {
+                    &full_response
+                };
+                let is_empty_response = response_text.trim().is_empty() 
+                    || response_text.lines().all(|line| line.trim().is_empty() || line.trim().starts_with("⏱️"));
+
                 // Check if there's an incomplete tool call in the buffer
                 let has_incomplete_tool_call = parser.has_incomplete_tool_call();
 
@@ -5057,27 +4959,40 @@ impl<W: UiWriter> Agent<W> {
                 // Auto-continue if tools were executed but final_output was never called
                 // OR if the LLM emitted an incomplete tool call (truncated JSON)
                 // OR if the LLM emitted a complete tool call that wasn't executed
+                // OR if the LLM emitted an empty/trivial response (just timing lines)
                 // This ensures we don't return control when the LLM clearly intended to call a tool
-                if (any_tool_executed && !final_output_called) || has_incomplete_tool_call || has_unexecuted_tool_call {
+                let should_auto_continue = (any_tool_executed && !final_output_called) || has_incomplete_tool_call || has_unexecuted_tool_call || (any_tool_executed && is_empty_response);
+                if should_auto_continue {
                     if auto_summary_attempts < MAX_AUTO_SUMMARY_ATTEMPTS {
                         auto_summary_attempts += 1;
-                        if has_incomplete_tool_call || has_unexecuted_tool_call {
+                        if has_incomplete_tool_call {
                             warn!(
-                                "LLM emitted {} tool call ({} iterations, auto-continue attempt {})",
-                                if has_incomplete_tool_call { "incomplete" } else { "unexecuted" },
-                                iteration_count, auto_summary_attempts
+                                "LLM emitted incomplete tool call ({} iterations, auto-continue attempt {}/{})",
+                                iteration_count, auto_summary_attempts, MAX_AUTO_SUMMARY_ATTEMPTS
                             );
                             self.ui_writer.print_context_status(
-                                if has_incomplete_tool_call {
-                                    "\n🔄 Model emitted incomplete tool call. Auto-continuing...\n"
-                                } else {
-                                    "\n🔄 Model emitted tool call that wasn't executed. Auto-continuing...\n"
-                                }
+                                "\n🔄 Model emitted incomplete tool call. Auto-continuing...\n"
+                            );
+                        } else if has_unexecuted_tool_call {
+                            warn!(
+                                "LLM emitted unexecuted tool call ({} iterations, auto-continue attempt {}/{})",
+                                iteration_count, auto_summary_attempts, MAX_AUTO_SUMMARY_ATTEMPTS
+                            );
+                            self.ui_writer.print_context_status(
+                                "\n🔄 Model emitted tool call that wasn't executed. Auto-continuing...\n"
+                            );
+                        } else if is_empty_response {
+                            warn!(
+                                "LLM emitted empty/trivial response ({} iterations, auto-continue attempt {}/{})",
+                                iteration_count, auto_summary_attempts, MAX_AUTO_SUMMARY_ATTEMPTS
+                            );
+                            self.ui_writer.print_context_status(
+                                "\n🔄 Model emitted empty response. Auto-continuing...\n"
                             );
                         } else {
                             warn!(
-                                "LLM stopped without calling final_output after executing tools ({} iterations, auto-continue attempt {})",
-                                iteration_count, auto_summary_attempts
+                                "LLM stopped without calling final_output after executing tools ({} iterations, auto-continue attempt {}/{})",
+                                iteration_count, auto_summary_attempts, MAX_AUTO_SUMMARY_ATTEMPTS
                             );
                             self.ui_writer.print_context_status(
                                 "\n🔄 Model stopped without calling final_output. Auto-continuing...\n"
@@ -5120,11 +5035,17 @@ impl<W: UiWriter> Agent<W> {
                     } else {
                         // Max attempts reached, give up gracefully
                         warn!(
-                            "Max auto-continue attempts ({}) reached, returning without final_output",
-                            MAX_AUTO_SUMMARY_ATTEMPTS
+                            "Max auto-continue attempts ({}) reached after {} iterations. Conditions: any_tool_executed={}, final_output_called={}, has_incomplete={}, has_unexecuted={}, is_empty_response={}",
+                            MAX_AUTO_SUMMARY_ATTEMPTS,
+                            iteration_count,
+                            any_tool_executed,
+                            final_output_called,
+                            has_incomplete_tool_call,
+                            has_unexecuted_tool_call,
+                            is_empty_response
                         );
                         self.ui_writer.print_agent_response(
-                            "\n⚠️ The model stopped without calling final_output after multiple attempts.\n"
+                            &format!("\n⚠️ The model stopped without calling final_output after {} auto-continue attempts.\n", MAX_AUTO_SUMMARY_ATTEMPTS)
                         );
                     }
                 } else if has_response {
