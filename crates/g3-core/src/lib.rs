@@ -4848,10 +4848,11 @@ impl<W: UiWriter> Agent<W> {
                                 // break to let the outer loop's auto-continue logic handle it
                                 if any_tool_executed && !final_output_called {
                                     debug!("Tools were executed but final_output not called - breaking to auto-continue");
-                                    // Add the text response to context before breaking
-                                    if has_text_response && !current_response.trim().is_empty() {
-                                        full_response = current_response.clone();
-                                    }
+                                    // NOTE: We intentionally do NOT set full_response here.
+                                    // The content was already displayed during streaming.
+                                    // Setting full_response would cause duplication when the
+                                    // function eventually returns.
+                                    // Context window is updated separately via add_message().
                                     break;
                                 }
 
@@ -5095,13 +5096,14 @@ impl<W: UiWriter> Agent<W> {
                 } else if has_response {
                     // Only set full_response if it's empty (first iteration without tools)
                     // This prevents duplication when the agent responds without calling final_output
-                    if full_response.is_empty() && !current_response.is_empty() {
-                        full_response = current_response.clone();
-                        debug!(
-                            "Set full_response from current_response: {} chars",
-                            full_response.len()
-                        );
-                    }
+                    // NOTE: We intentionally do NOT set full_response here anymore.
+                    // The content was already displayed during streaming via print_agent_response().
+                    // Setting full_response would cause the CLI to print it again.
+                    // We only need full_response for the context window (handled separately).
+                    debug!(
+                        "Response already streamed, not setting full_response. current_response: {} chars",
+                        current_response.len()
+                    );
                 }
 
                 let _ttft = first_token_time.unwrap_or_else(|| stream_start.elapsed());
