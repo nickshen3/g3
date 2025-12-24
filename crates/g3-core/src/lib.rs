@@ -4550,20 +4550,20 @@ impl<W: UiWriter> Agent<W> {
                         }
                         
                         // Add any text response to context before prompting for continuation
-                        // IMPORTANT: We must always add an assistant message to maintain User/Assistant alternation
-                        // Without this, consecutive User messages confuse the LLM and cause empty responses
-                        let response_text = if !current_response.is_empty() {
-                            current_response.clone()
-                        } else if !full_response.is_empty() {
-                            full_response.clone()
-                        } else {
-                            "[empty response]".to_string()
-                        };
-                        let assistant_msg = Message::new(
-                            MessageRole::Assistant,
-                            if response_text.trim().is_empty() { "[empty response]".to_string() } else { response_text.trim().to_string() },
-                        );
-                        self.context_window.add_message(assistant_msg);
+                        if has_response {
+                            let response_text = if !current_response.is_empty() {
+                                current_response.clone()
+                            } else {
+                                full_response.clone()
+                            };
+                            if !response_text.trim().is_empty() {
+                                let assistant_msg = Message::new(
+                                    MessageRole::Assistant,
+                                    response_text.trim().to_string(),
+                                );
+                                self.context_window.add_message(assistant_msg);
+                            }
+                        }
                         
                         // Add a follow-up message asking for continuation
                         let continue_prompt = if has_incomplete_tool_call {
