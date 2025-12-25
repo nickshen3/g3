@@ -206,6 +206,7 @@ impl PlannerUiWriter {
     }
     
     /// Clear the current line and print a status message
+    #[allow(dead_code)]
     fn print_status_line(&self, message: &str) {
         // Print status message without overwriting previous content
         // Use println to ensure each status is on its own line

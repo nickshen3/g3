@@ -3434,7 +3434,7 @@ impl<W: UiWriter> Agent<W> {
         let mut any_tool_executed = false; // Track if ANY tool was executed across all iterations
         let mut auto_summary_attempts = 0; // Track auto-summary prompt attempts
         const MAX_AUTO_SUMMARY_ATTEMPTS: usize = 5; // Limit auto-summary retries (increased from 2 for better recovery)
-        let mut final_output_called = false; // Track if final_output was called
+        let final_output_called = false; // Track if final_output was called
         // Note: Session-level duplicate tracking was removed - we only prevent sequential duplicates (DUP IN CHUNK, DUP IN MSG)
         let mut turn_accumulated_usage: Option<g3_providers::Usage> = None; // Track token usage for timing footer
 
@@ -4092,7 +4092,6 @@ impl<W: UiWriter> Agent<W> {
                             // Check if this was a final_output tool call
                             if tool_call.tool == "final_output" {
                                 // Save context window BEFORE returning so the session log includes final_output
-                                final_output_called = true;
                                 self.save_context_window("completed");
                                 
                                 // The summary was already displayed via print_final_output

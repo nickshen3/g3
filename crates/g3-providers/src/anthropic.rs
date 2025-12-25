@@ -125,6 +125,7 @@ pub struct AnthropicProvider {
     model: String,
     max_tokens: u32,
     temperature: f32,
+    #[allow(dead_code)]
     cache_config: Option<String>,
     enable_1m_context: bool,
     thinking_budget_tokens: Option<u32>,
