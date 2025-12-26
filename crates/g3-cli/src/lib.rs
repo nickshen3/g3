@@ -720,6 +720,9 @@ async fn run_agent_mode(
     output.print(&format!("🤖 Running as agent: {}", agent_name));
     output.print(&format!("📁 Working directory: {:?}", workspace_dir));
     
+    // Change to the workspace directory so all file operations happen there
+    std::env::set_current_dir(&workspace_dir)?;
+    
     // Load config
     let config = g3_config::Config::load(config_path)?;
     

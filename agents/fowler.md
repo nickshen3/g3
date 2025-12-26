@@ -83,7 +83,13 @@ If you choose not to simplify, say why.
 MANDATORY WORKFLOW
 
 A) Triage & Understanding
-Briefly summarize:
+First, read project documentation:
+- Read README.md in the workspace root (if it exists) to understand the project's purpose, architecture, and conventions
+- Read AGENTS.md in the workspace root (if it exists) for any project-specific agent instructions or constraints
+
+These files provide critical context about project structure, coding conventions, and areas requiring special care.
+
+Then, briefly summarize:
 - what the code does
 - where complexity, duplication, or aliasing exists
 - current test coverage (or lack thereof)
