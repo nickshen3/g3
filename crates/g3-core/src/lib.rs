@@ -4016,6 +4016,25 @@ impl<W: UiWriter> Agent<W> {
             "final_output" => {
                 if let Some(summary) = tool_call.args.get("summary") {
                     if let Some(summary_str) = summary.as_str() {
+                        // In autonomous mode, check for incomplete TODO items before allowing completion
+                        // This prevents the agent from stopping prematurely when there's more work to do
+                        if self.is_autonomous {
+                            let todo_content = self.todo_content.read().await;
+                            let has_incomplete_todos = todo_content.lines().any(|line| {
+                                let trimmed = line.trim();
+                                trimmed.starts_with("- [ ]")
+                            });
+                            drop(todo_content); // Release the lock
+                            
+                            if has_incomplete_todos {
+                                return Ok(
+                                    "There are still incomplete TODO items. Please continue until \
+                                    *ALL* TODO items in *ALL* phases are marked complete, and \
+                                    *ONLY* then call `final_output`.".to_string()
+                                );
+                            }
+                        }
+                        
                         // Save session continuation artifact
                         self.save_session_continuation(Some(summary_str.to_string()));
                         Ok(summary_str.to_string())
