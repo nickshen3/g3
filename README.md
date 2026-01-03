@@ -338,6 +338,28 @@ G3 automatically saves session logs for each interaction in the `logs/` director
 
 The `logs/` directory is created automatically on first use and is excluded from version control.
 
+## Documentation Map
+
+Detailed documentation is available in the `docs/` directory:
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | System design, crate responsibilities, data flow |
+| [Configuration](docs/configuration.md) | Config file format, provider setup, all options |
+| [Tools Reference](docs/tools.md) | Complete reference for all available tools |
+| [Providers Guide](docs/providers.md) | LLM provider setup and selection guide |
+| [Control Commands](docs/CONTROL_COMMANDS.md) | Interactive `/` commands for context management |
+| [Code Search](docs/CODE_SEARCH.md) | Tree-sitter code search query patterns |
+| [Flock Mode](docs/FLOCK_MODE.md) | Parallel multi-agent development |
+| [macOS Accessibility](docs/macax-tools.md) | macOS Accessibility API automation |
+
+For AI agents working with this codebase, see [AGENTS.md](AGENTS.md).
+
+Additional resources:
+- `DESIGN.md` - Original design document and rationale
+- `config.example.toml` - Complete configuration example
+- `config.coach-player.example.toml` - Multi-role configuration example
+
 ## License
 
 MIT License - see LICENSE file for details
