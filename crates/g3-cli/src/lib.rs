@@ -689,7 +689,9 @@ async fn run_agent_mode(
     std::env::set_current_dir(&workspace_dir)?;
     
     // Check for incomplete agent sessions before starting a new one
-    if let Ok(Some(incomplete_session)) = find_incomplete_agent_session(agent_name) {
+    let resuming_session = find_incomplete_agent_session(agent_name).ok().flatten();
+    
+    if let Some(ref incomplete_session) = resuming_session {
         output.print(&format!(
             "\n🔄 Found incomplete session for agent '{}'",
             agent_name
@@ -710,9 +712,6 @@ async fn run_agent_mode(
         output.print("");
         output.print("   Resuming incomplete session...");
         output.print("");
-        
-        // TODO: Actually resume the session - for now we just notify and continue
-        // In a future iteration, we could restore the context and continue
     }
     
     // Load agent prompt from agents/<name>.md
@@ -775,9 +774,55 @@ async fn run_agent_mode(
     // Set agent mode for session tracking
     agent.set_agent_mode(agent_name);
     
-    // The agent prompt should contain instructions to start working immediately
-    // Send an initial message to trigger the agent
-    let initial_task = "Begin your analysis and work on the current project. Follow your mission and workflow as specified in your instructions.";
+    // If resuming a session, restore context and TODO
+    let initial_task = if let Some(ref incomplete_session) = resuming_session {
+        // Restore the session context
+        match agent.restore_from_continuation(incomplete_session) {
+            Ok(full_restore) => {
+                if full_restore {
+                    output.print("   ✅ Full context restored from previous session");
+                } else {
+                    output.print("   ⚠️ Restored from summary (context was > 80%)");
+                }
+            }
+            Err(e) => {
+                output.print(&format!("   ⚠️ Could not restore context: {}", e));
+            }
+        }
+        
+        // Copy TODO from old session to new session directory
+        let todo_content = if let Some(ref content) = incomplete_session.todo_snapshot {
+            Some(content.clone())
+        } else {
+            // Fallback: read from the actual todo.g3.md file in the old session directory
+            let old_session_dir = std::path::Path::new(".g3/sessions").join(&incomplete_session.session_id);
+            let old_todo_path = old_session_dir.join("todo.g3.md");
+            if old_todo_path.exists() {
+                std::fs::read_to_string(&old_todo_path).ok()
+            } else {
+                None
+            }
+        };
+        
+        if let Some(ref content) = todo_content {
+            if let Some(session_id) = agent.get_session_id() {
+                let new_todo_path = g3_core::paths::get_session_todo_path(session_id);
+                let _ = g3_core::paths::ensure_session_dir(session_id);
+                if let Err(e) = std::fs::write(&new_todo_path, content) {
+                    output.print(&format!("   ⚠️ Could not restore TODO: {}", e));
+                } else {
+                    output.print("   ✅ TODO list restored");
+                }
+            }
+        }
+        output.print("");
+        
+        // Resume message instead of fresh start
+        "Continue working on the incomplete tasks. Use todo_read to see the current TODO list and resume from where you left off."
+    } else {
+        // Fresh start - the agent prompt should contain instructions to start working immediately
+        "Begin your analysis and work on the current project. Follow your mission and workflow as specified in your instructions."
+    };
     
     let _result = agent.execute_task(initial_task, None, true).await?;
     

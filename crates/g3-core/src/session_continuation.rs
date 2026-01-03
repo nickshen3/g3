@@ -347,8 +347,25 @@ pub fn find_incomplete_agent_session(agent_name: &str) -> Result<Option<SessionC
             continue;
         }
         
-        // Check if has incomplete TODOs
-        if continuation.has_incomplete_todos() {
+        // Check if has incomplete TODOs (either in snapshot or in the actual file)
+        let has_incomplete = if continuation.has_incomplete_todos() {
+            true
+        } else if continuation.todo_snapshot.is_none() {
+            // Fallback: check the actual todo.g3.md file in the session directory
+            // This handles sessions created before todo_snapshot was properly saved
+            let todo_file_path = path.join("todo.g3.md");
+            if todo_file_path.exists() {
+                std::fs::read_to_string(&todo_file_path)
+                    .map(|content| content.contains("- [ ]"))
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        
+        if has_incomplete {
             candidates.push(continuation);
         }
     }

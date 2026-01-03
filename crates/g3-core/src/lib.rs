@@ -5,6 +5,7 @@ pub mod error_handling;
 pub mod feedback_extraction;
 pub mod paths;
 pub mod project;
+pub mod provider_config;
 pub mod retry;
 pub mod session_continuation;
 pub mod streaming_parser;
@@ -52,7 +53,7 @@ use tracing::{debug, error, warn};
 // Re-export path utilities for backward compatibility
 pub use paths::{
     G3_WORKSPACE_PATH_ENV, ensure_session_dir, get_context_summary_file, get_g3_dir, get_logs_dir,
-    get_session_file, get_session_logs_dir, get_thinned_dir, logs_dir,
+    get_session_file, get_session_logs_dir, get_session_todo_path, get_thinned_dir, logs_dir,
 };
 use paths::get_todo_path;
 
@@ -487,191 +488,56 @@ impl<W: UiWriter> Agent<W> {
             .count()
     }
 
-    /// Get the configured max_tokens for a provider from top-level config
-    fn provider_max_tokens(config: &Config, provider_name: &str) -> Option<u32> {
-        // Parse provider reference (format: "provider_type.config_name")
-        let parts: Vec<&str> = provider_name.split('.').collect();
-        let (provider_type, config_name) = if parts.len() == 2 {
-            (parts[0], parts[1])
-        } else {
-            // Fallback for simple provider names - assume "default" config
-            (provider_name, "default")
-        };
-        
-        match provider_type {
-            "anthropic" => config.providers.anthropic.get(config_name)?.max_tokens,
-            "openai" => config.providers.openai.get(config_name)?.max_tokens,
-            "databricks" => config.providers.databricks.get(config_name)?.max_tokens,
-            "embedded" => config.providers.embedded.get(config_name)?.max_tokens,
-            _ => None,
-        }
-    }
-
-    /// Get the configured temperature for a provider from top-level config
-    fn provider_temperature(config: &Config, provider_name: &str) -> Option<f32> {
-        // Parse provider reference (format: "provider_type.config_name")
-        let parts: Vec<&str> = provider_name.split('.').collect();
-        let (provider_type, config_name) = if parts.len() == 2 {
-            (parts[0], parts[1])
-        } else {
-            // Fallback for simple provider names - assume "default" config
-            (provider_name, "default")
-        };
-        
-        match provider_type {
-            "anthropic" => config.providers.anthropic.get(config_name)?.temperature,
-            "openai" => config.providers.openai.get(config_name)?.temperature,
-            "databricks" => config.providers.databricks.get(config_name)?.temperature,
-            "embedded" => config.providers.embedded.get(config_name)?.temperature,
-            _ => None,
-        }
-    }
-
-    /// Resolve the max_tokens to use for a given provider, applying fallbacks
+    /// Resolve the max_tokens to use for a given provider, applying fallbacks.
     fn resolve_max_tokens(&self, provider_name: &str) -> u32 {
-        let base = match provider_name {
-            "databricks" => Self::provider_max_tokens(&self.config, "databricks")
-                .or(Some(self.config.agent.fallback_default_max_tokens as u32))
-                .unwrap_or(32000),
-            other => Self::provider_max_tokens(&self.config, other)
-                .or(Some(self.config.agent.fallback_default_max_tokens as u32))
-                .unwrap_or(16000),
-        };
-        
-        // For Anthropic with thinking enabled, ensure max_tokens is sufficient
-        // Anthropic requires: max_tokens > thinking.budget_tokens
-        if provider_name == "anthropic" {
-            if let Some(budget) = self.get_thinking_budget_tokens(provider_name) {
-                let minimum_for_thinking = budget + 1024;
-                return base.max(minimum_for_thinking);
-            }
-        }
-        
-        base
+        provider_config::resolve_max_tokens(&self.config, provider_name)
     }
 
-    /// Get the thinking budget tokens for Anthropic provider, if configured
+    /// Get the thinking budget tokens for Anthropic provider, if configured.
     fn get_thinking_budget_tokens(&self, provider_name: &str) -> Option<u32> {
-        // Parse provider reference (format: "provider_type.config_name")
-        let parts: Vec<&str> = provider_name.split('.').collect();
-        let (provider_type, config_name) = if parts.len() == 2 {
-            (parts[0], parts[1])
-        } else {
-            // Fallback for simple provider names - assume "default" config
-            (provider_name, "default")
-        };
-        
-        // Only Anthropic has thinking_budget_tokens
-        if provider_type != "anthropic" {
-            return None;
-        }
-        
-        self.config.providers.anthropic
-            .get(config_name)
-            .and_then(|c| c.thinking_budget_tokens)
+        provider_config::get_thinking_budget_tokens(&self.config, provider_name)
     }
 
-    /// Pre-flight check to validate and adjust max_tokens for the thinking.budget_tokens constraint.
-    /// Returns the adjusted max_tokens that satisfies: max_tokens > thinking.budget_tokens
-    /// Also returns whether we need to apply fallback actions (thinnify/skinnify).
-    ///
-    /// Returns: (adjusted_max_tokens, needs_context_reduction)
-    fn preflight_validate_max_tokens(
-        &self,
-        provider_name: &str,
-        proposed_max_tokens: u32,
-    ) -> (u32, bool) {
-        // Parse provider type from provider_name (format: "provider_type.config_name")
-        let provider_type = provider_name.split('.').next().unwrap_or(provider_name);
-        
-        // Only applies to Anthropic provider
-        if provider_type != "anthropic" {
-            return (proposed_max_tokens, false);
-        }
-
-        let budget_tokens = match self.get_thinking_budget_tokens(provider_name) {
-            Some(budget) => budget,
-            None => return (proposed_max_tokens, false), // No thinking enabled
-        };
-
-        // Anthropic requires: max_tokens > budget_tokens
-        // We add a minimum output buffer of 1024 tokens for actual response content
-        let minimum_required = budget_tokens + 1024;
-
-        if proposed_max_tokens >= minimum_required {
-            // We have enough headroom
-            (proposed_max_tokens, false)
-        } else {
-            // max_tokens is too low - need to either adjust or reduce context
-            warn!(
-                "max_tokens ({}) is below required minimum ({}) for thinking.budget_tokens ({}). Context reduction needed.",
-                proposed_max_tokens, minimum_required, budget_tokens
-            );
-            // Return the minimum required, but flag that we need context reduction
-            (minimum_required, true)
-        }
+    /// Pre-flight check to validate max_tokens for thinking.budget_tokens constraint.
+    fn preflight_validate_max_tokens(&self, provider_name: &str, proposed_max_tokens: u32) -> (u32, bool) {
+        provider_config::preflight_validate_max_tokens(&self.config, provider_name, proposed_max_tokens)
     }
 
-    /// Calculate max_tokens for a summary request, ensuring it satisfies the thinking constraint.
-    /// Applies fallback sequence: thinnify -> skinnify -> hard-coded minimum
-    /// Returns (max_tokens, whether_fallback_was_used)
-    /// 
-    /// IMPORTANT: Always returns at least SUMMARY_MIN_TOKENS to avoid API errors
-    /// when context is nearly full (90%+).
-    fn calculate_summary_max_tokens(
-        &mut self,
-        provider_name: &str,
-    ) -> (u32, bool) {
-        let model_limit = self.context_window.total_tokens;
-        let current_usage = self.context_window.used_tokens;
-        
-        // Get the configured max_tokens for this provider
-        let configured_max_tokens = self.resolve_max_tokens(provider_name);
-        
-        // Calculate available tokens with buffer
-        let buffer = (model_limit / 40).clamp(1000, 10000); // 2.5% buffer
-        let available = model_limit
-            .saturating_sub(current_usage)
-            .saturating_sub(buffer);
-        // Ensure we have at least a minimum floor for summary requests
-        // This prevents max_tokens=0 errors when context is 90%+ full
-        let available = available.max(Self::SUMMARY_MIN_TOKENS);
-        // Use the smaller of available tokens (with floor) or configured max_tokens,
-        // but ensure we don't go below thinking budget floor for Anthropic
-        let proposed_max_tokens = available.min(configured_max_tokens);
-        let proposed_max_tokens = if provider_name == "anthropic" {
-            if let Some(budget) = self.get_thinking_budget_tokens(provider_name) {
-                proposed_max_tokens.max(budget + 1024)
-            } else {
-                proposed_max_tokens
-            }
-        } else {
-            proposed_max_tokens
-        };
-
-        // Validate against thinking budget constraint
-        let (adjusted, needs_reduction) = self.preflight_validate_max_tokens(provider_name, proposed_max_tokens);
-        
-        if !needs_reduction {
-            return (adjusted, false);
-        }
-
-        // We need more headroom - the context is too full
-        // Return the adjusted value but flag that fallbacks are needed
-        (adjusted, true)
+    /// Calculate max_tokens for a summary request.
+    fn calculate_summary_max_tokens(&self, provider_name: &str) -> (u32, bool) {
+        provider_config::calculate_summary_max_tokens(
+            &self.config,
+            provider_name,
+            self.context_window.total_tokens,
+            self.context_window.used_tokens,
+        )
     }
 
     /// Apply the fallback sequence to free up context space for thinking budget.
-    /// Sequence: thinnify (first third) → skinnify (all) → hard-coded minimum
-    /// Returns the validated max_tokens that satisfies thinking.budget_tokens constraint.
-    fn apply_max_tokens_fallback_sequence(
+    fn apply_max_tokens_fallback_sequence(&mut self, provider_name: &str, initial_max_tokens: u32, hard_coded_minimum: u32) -> u32 {
+        self.apply_fallback_sequence_impl(provider_name, Some(initial_max_tokens), hard_coded_minimum)
+    }
+
+    /// Apply the fallback sequence for summary requests to free up context space.
+    fn apply_summary_fallback_sequence(&mut self, provider_name: &str) -> u32 {
+        self.apply_fallback_sequence_impl(provider_name, None, 5000)
+    }
+
+    /// Unified implementation of the fallback sequence for freeing context space.
+    /// If `initial_max_tokens` is Some, uses preflight_validate_max_tokens for validation.
+    /// If `initial_max_tokens` is None, uses calculate_summary_max_tokens for validation.
+    fn apply_fallback_sequence_impl(
         &mut self,
         provider_name: &str,
-        initial_max_tokens: u32,
+        initial_max_tokens: Option<u32>,
         hard_coded_minimum: u32,
     ) -> u32 {
-        let (mut max_tokens, needs_reduction) = self.preflight_validate_max_tokens(provider_name, initial_max_tokens);
-        
+        // Initial validation
+        let (mut max_tokens, needs_reduction) = match initial_max_tokens {
+            Some(initial) => self.preflight_validate_max_tokens(provider_name, initial),
+            None => self.calculate_summary_max_tokens(provider_name),
+        };
+
         if !needs_reduction {
             return max_tokens;
         }
@@ -682,115 +548,50 @@ impl<W: UiWriter> Agent<W> {
 
         // Step 1: Try thinnify (first third of context)
         self.ui_writer.print_context_status("🥒 Step 1: Trying thinnify...\n");
-        let (thin_msg, thin_saved) = self.context_window.thin_context(self.session_id.as_deref());
-        self.thinning_events.push(thin_saved);
+        let thin_msg = self.do_thin_context();
         self.ui_writer.print_context_thinning(&thin_msg);
 
-        // Recalculate max_tokens after thinnify
-        let recalc_max = self.resolve_max_tokens(provider_name);
-        let (new_max, still_needs_reduction) = self.preflight_validate_max_tokens(provider_name, recalc_max);
+        // Recalculate after thinnify
+        let (new_max, still_needs_reduction) = self.recalculate_max_tokens(provider_name, initial_max_tokens.is_some());
         max_tokens = new_max;
-
         if !still_needs_reduction {
-            self.ui_writer.print_context_status(
-                "✅ Thinnify resolved capacity issue. Continuing...\n",
-            );
+            self.ui_writer.print_context_status("✅ Thinnify resolved capacity issue. Continuing...\n");
             return max_tokens;
         }
 
         // Step 2: Try skinnify (entire context)
         self.ui_writer.print_context_status("🦴 Step 2: Trying skinnify...\n");
-        let (skinny_msg, skinny_saved) = self.context_window.thin_context_all(self.session_id.as_deref());
-        self.thinning_events.push(skinny_saved);
+        let skinny_msg = self.do_thin_context_all();
         self.ui_writer.print_context_thinning(&skinny_msg);
 
-        // Recalculate max_tokens after skinnify
-        let recalc_max = self.resolve_max_tokens(provider_name);
-        let (final_max, final_needs_reduction) = self.preflight_validate_max_tokens(provider_name, recalc_max);
-        max_tokens = final_max;
-
+        // Recalculate after skinnify
+        let (final_max, final_needs_reduction) = self.recalculate_max_tokens(provider_name, initial_max_tokens.is_some());
         if !final_needs_reduction {
-            self.ui_writer.print_context_status(
-                "✅ Skinnify resolved capacity issue. Continuing...\n",
-            );
-            return max_tokens;
+            self.ui_writer.print_context_status("✅ Skinnify resolved capacity issue. Continuing...\n");
+            return final_max;
         }
 
-        // Step 3: Nothing worked, use hard-coded minimum as last resort
+        // Step 3: Nothing worked, use hard-coded minimum
         self.ui_writer.print_context_status(&format!(
             "⚠️ Step 3: Context reduction insufficient. Using hard-coded max_tokens={} as last resort...\n",
             hard_coded_minimum
         ));
-        
         hard_coded_minimum
     }
 
-    /// Apply the fallback sequence for summary requests to free up context space.
-    /// Uses calculate_summary_max_tokens for recalculation (based on available space).
-    /// Returns the validated max_tokens for summary requests.
-    fn apply_summary_fallback_sequence(
-        &mut self,
-        provider_name: &str,
-    ) -> u32 {
-        let (mut summary_max_tokens, needs_reduction) = self.calculate_summary_max_tokens(provider_name);
-        
-        if !needs_reduction {
-            return summary_max_tokens;
+    /// Helper to recalculate max_tokens after context reduction.
+    fn recalculate_max_tokens(&self, provider_name: &str, use_preflight: bool) -> (u32, bool) {
+        if use_preflight {
+            let recalc_max = self.resolve_max_tokens(provider_name);
+            self.preflight_validate_max_tokens(provider_name, recalc_max)
+        } else {
+            self.calculate_summary_max_tokens(provider_name)
         }
-
-        self.ui_writer.print_context_status(
-            "⚠️ Context window too full for thinking budget. Applying fallback sequence...\n",
-        );
-
-        // Step 1: Try thinnify (first third of context)
-        self.ui_writer.print_context_status("🥒 Step 1: Trying thinnify...\n");
-        let (thin_msg, thin_saved) = self.context_window.thin_context(self.session_id.as_deref());
-        self.thinning_events.push(thin_saved);
-        self.ui_writer.print_context_thinning(&thin_msg);
-
-        // Recalculate max_tokens after thinnify
-        let (new_max, still_needs_reduction) = self.calculate_summary_max_tokens(provider_name);
-        summary_max_tokens = new_max;
-
-        if !still_needs_reduction {
-            self.ui_writer.print_context_status(
-                "✅ Thinnify resolved capacity issue. Continuing...\n",
-            );
-            return summary_max_tokens;
-        }
-
-        // Step 2: Try skinnify (entire context)
-        self.ui_writer.print_context_status("🦴 Step 2: Trying skinnify...\n");
-        let (skinny_msg, skinny_saved) = self.context_window.thin_context_all(self.session_id.as_deref());
-        self.thinning_events.push(skinny_saved);
-        self.ui_writer.print_context_thinning(&skinny_msg);
-
-        // Recalculate max_tokens after skinnify
-        let (final_max, final_needs_reduction) = self.calculate_summary_max_tokens(provider_name);
-        summary_max_tokens = final_max;
-
-        if !final_needs_reduction {
-            self.ui_writer.print_context_status(
-                "✅ Skinnify resolved capacity issue. Continuing...\n",
-            );
-            return summary_max_tokens;
-        }
-
-        // Step 3: Nothing worked, use hard-coded minimum
-        self.ui_writer.print_context_status(
-            "⚠️ Step 3: Context reduction insufficient. Using hard-coded max_tokens=5000 as last resort...\n",
-        );
-        5000
     }
 
-    /// Resolve the temperature to use for a given provider, applying fallbacks
+    /// Resolve the temperature to use for a given provider, applying fallbacks.
     fn resolve_temperature(&self, provider_name: &str) -> f32 {
-        match provider_name {
-            "databricks" => Self::provider_temperature(&self.config, "databricks")
-                .unwrap_or(0.1),
-            other => Self::provider_temperature(&self.config, other)
-                .unwrap_or(0.1),
-        }
+        provider_config::resolve_temperature(&self.config, provider_name)
     }
 
     /// Print provider diagnostics through the UiWriter for visibility
@@ -845,13 +646,7 @@ impl<W: UiWriter> Agent<W> {
         let model_name = provider.model();
 
         // Parse provider name to get type and config name
-        let parts: Vec<&str> = provider_name.split('.').collect();
-        let (provider_type, config_name) = if parts.len() == 2 {
-            (parts[0], parts[1])
-        } else {
-            // Fallback for simple provider names
-            (provider_name, "default")
-        };
+        let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
 
         // Use provider-specific context length if available
         let context_length = match provider_type {
@@ -874,7 +669,7 @@ impl<W: UiWriter> Agent<W> {
             }
             "openai" => {
                 // OpenAI models have varying context windows
-                if let Some(max_tokens) = Self::provider_max_tokens(config, provider_name) {
+                if let Some(max_tokens) = provider_config::get_max_tokens(config, provider_name) {
                     warnings.push(format!(
                         "Context length falling back to max_tokens ({}) for provider={}",
                         max_tokens, provider_name
@@ -886,7 +681,7 @@ impl<W: UiWriter> Agent<W> {
             }
             "anthropic" => {
                 // Claude models have large context windows
-                if let Some(max_tokens) = Self::provider_max_tokens(config, provider_name) {
+                if let Some(max_tokens) = provider_config::get_max_tokens(config, provider_name) {
                     warnings.push(format!(
                         "Context length falling back to max_tokens ({}) for provider={}",
                         max_tokens, provider_name
@@ -898,7 +693,7 @@ impl<W: UiWriter> Agent<W> {
             }
             "databricks" => {
                 // Databricks models have varying context windows depending on the model
-                if let Some(max_tokens) = Self::provider_max_tokens(config, provider_name) {
+                if let Some(max_tokens) = provider_config::get_max_tokens(config, provider_name) {
                     warnings.push(format!(
                         "Context length falling back to max_tokens ({}) for provider={}",
                         max_tokens, provider_name
@@ -1045,8 +840,7 @@ impl<W: UiWriter> Agent<W> {
             // But only if we haven't already added 4 cache_control annotations
             let provider = self.providers.get(None)?;
             let provider_name = provider.name();
-            let provider_type = provider_name.split('.').next().unwrap_or("");
-            let config_name = provider_name.split('.').nth(1).unwrap_or("default");
+            let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
             if let Some(cache_config) = match provider_type {
                 "anthropic" => {
                     self.config
@@ -1663,15 +1457,25 @@ impl<W: UiWriter> Agent<W> {
     /// Manually trigger context thinning regardless of thresholds
     pub fn force_thin(&mut self) -> String {
         debug!("Manual context thinning triggered");
-        let (message, chars_saved) = self.context_window.thin_context(self.session_id.as_deref());
-        self.thinning_events.push(chars_saved);
-        message
+        self.do_thin_context()
     }
 
     /// Manually trigger context thinning for the ENTIRE context window
     /// Unlike force_thin which only processes the first third, this processes all messages
     pub fn force_thin_all(&mut self) -> String {
         debug!("Manual full context skinnifying triggered");
+        self.do_thin_context_all()
+    }
+
+    /// Internal helper: thin context and track the event
+    fn do_thin_context(&mut self) -> String {
+        let (message, chars_saved) = self.context_window.thin_context(self.session_id.as_deref());
+        self.thinning_events.push(chars_saved);
+        message
+    }
+
+    /// Internal helper: thin all context and track the event
+    fn do_thin_context_all(&mut self) -> String {
         let (message, chars_saved) = self.context_window.thin_context_all(self.session_id.as_deref());
         self.thinning_events.push(chars_saved);
         message
@@ -1921,8 +1725,14 @@ impl<W: UiWriter> Agent<W> {
         // Get the session log path (now in .g3/sessions/<session_id>/session.json)
         let session_log_path = get_session_file(&session_id);
         
-        // Get current TODO content
-        let todo_snapshot = std::fs::read_to_string(get_todo_path()).ok();
+        // Get current TODO content - try session-specific path first, then workspace path
+        let session_todo_path = crate::paths::get_session_todo_path(&session_id);
+        let todo_snapshot = if session_todo_path.exists() {
+            std::fs::read_to_string(&session_todo_path).ok()
+        } else {
+            // Fall back to workspace TODO path for backwards compatibility
+            std::fs::read_to_string(get_todo_path()).ok()
+        };
         
         // Get working directory
         let working_directory = std::env::current_dir()
@@ -2140,8 +1950,7 @@ impl<W: UiWriter> Agent<W> {
                     self.context_window.percentage_used() as u32
                 ));
 
-                let (thin_summary, chars_saved) = self.context_window.thin_context(self.session_id.as_deref());
-                self.thinning_events.push(chars_saved);
+                let thin_summary = self.do_thin_context();
                 self.ui_writer.print_context_thinning(&thin_summary);
 
                 // Check if thinning was sufficient
@@ -2541,10 +2350,8 @@ impl<W: UiWriter> Agent<W> {
 
                             // Check if we should thin the context BEFORE executing the tool
                             if self.context_window.should_thin() {
-                                let (thin_summary, chars_saved) =
-                                    self.context_window.thin_context(self.session_id.as_deref());
-                                self.thinning_events.push(chars_saved);
-                                // Print the thinning summary to the user
+                                let thin_summary = self.do_thin_context();
+                                // Print the thinning summary
                                 self.ui_writer.print_context_thinning(&thin_summary);
                             }
 
@@ -2752,8 +2559,7 @@ impl<W: UiWriter> Agent<W> {
                                 {
                                     let provider = self.providers.get(None)?;
                                     let provider_name = provider.name();
-                                    let provider_type = provider_name.split('.').next().unwrap_or("");
-                                    let config_name = provider_name.split('.').nth(1).unwrap_or("default");
+                                    let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
                                     if let Some(cache_config) = match provider_type {
                                         "anthropic" => {
                                             self.config
