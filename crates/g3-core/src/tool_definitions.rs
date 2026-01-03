@@ -11,15 +11,13 @@ use serde_json::json;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ToolConfig {
     pub webdriver: bool,
-    pub macax: bool,
     pub computer_control: bool,
 }
 
 impl ToolConfig {
-    pub fn new(webdriver: bool, macax: bool, computer_control: bool) -> Self {
+    pub fn new(webdriver: bool, computer_control: bool) -> Self {
         Self {
             webdriver,
-            macax,
             computer_control,
         }
     }
@@ -34,14 +32,6 @@ pub fn create_tool_definitions(config: ToolConfig) -> Vec<Tool> {
 
     if config.webdriver {
         tools.extend(create_webdriver_tools());
-    }
-
-    if config.macax {
-        tools.extend(create_macax_tools());
-    }
-
-    if config.computer_control {
-        tools.extend(create_computer_control_tools());
     }
 
     tools
@@ -88,7 +78,7 @@ fn create_core_tools() -> Vec<Tool> {
         },
         Tool {
             name: "read_file".to_string(),
-            description: "Read the contents of a file. For image files (png, jpg, jpeg, gif, bmp, tiff, webp), automatically extracts text using OCR. For text files, optionally read a specific character range.".to_string(),
+            description: "Read the contents of a file. Optionally read a specific character range.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -206,19 +196,6 @@ fn create_core_tools() -> Vec<Tool> {
                     }
                 },
                 "required": ["path", "window_id"]
-            }),
-        },
-        Tool {
-            name: "extract_text".to_string(),
-            description: "Extract text from an image file using OCR. For extracting text from a specific window, use vision_find_text instead which automatically handles window capture.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to image file (optional if region is provided)"
-                    },
-                }
             }),
         },
         Tool {
@@ -476,174 +453,6 @@ fn create_webdriver_tools() -> Vec<Tool> {
     ]
 }
 
-/// Create macOS Accessibility tools
-fn create_macax_tools() -> Vec<Tool> {
-    vec![
-        Tool {
-            name: "macax_list_apps".to_string(),
-            description: "List all running applications that can be controlled via macOS Accessibility API".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        Tool {
-            name: "macax_get_frontmost_app".to_string(),
-            description: "Get the name of the currently active (frontmost) application".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        Tool {
-            name: "macax_activate_app".to_string(),
-            description: "Bring an application to the front (activate it)".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "Name of the application to activate (e.g., 'Safari', 'TextEdit')"
-                    }
-                },
-                "required": ["app_name"]
-            }),
-        },
-        Tool {
-            name: "macax_press_key".to_string(),
-            description: "Press a keyboard key or shortcut in an application (e.g., Cmd+S to save)".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "Name of the application"
-                    },
-                    "key": {
-                        "type": "string",
-                        "description": "Key to press (e.g., 's', 'return', 'tab')"
-                    },
-                    "modifiers": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "description": "Modifier keys (e.g., ['command', 'shift'])"
-                    }
-                },
-                "required": ["app_name", "key"]
-            }),
-        },
-        Tool {
-            name: "macax_type_text".to_string(),
-            description: "Type arbitrary text into the currently focused element in an application (supports unicode, emojis, etc.)".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "Name of the application"
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "Text to type (can include unicode, emojis, special characters)"
-                    }
-                },
-                "required": ["app_name", "text"]
-            }),
-        },
-        Tool {
-            name: "extract_text_with_boxes".to_string(),
-            description: "Extract all text from an image file with bounding box coordinates for each text element. Returns JSON array with text, position (x, y), size (width, height), and confidence for each detected text. Uses Apple Vision Framework for precise sub-pixel accuracy.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to image file to extract text from"
-                    },
-                    "app_name": {
-                        "type": "string",
-                        "description": "Optional: Name of application to screenshot first (e.g., 'Safari', 'Things3'). If provided, takes screenshot of app before extracting text."
-                    }
-                },
-                "required": ["path"]
-            }),
-        },
-    ]
-}
-
-/// Create computer control / vision-guided tools
-fn create_computer_control_tools() -> Vec<Tool> {
-    vec![
-        Tool {
-            name: "vision_find_text".to_string(),
-            description: "Find text in a specific application window and return its location with bounding box coordinates (x, y, width, height) and confidence score. Useful for locating UI elements. Uses Apple Vision Framework for precise sub-pixel accuracy.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "Name of the application to search in (e.g., 'Things3', 'Safari', 'TextEdit')"
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "The text to search for on screen"
-                    }
-                },
-                "required": ["app_name", "text"]
-            }),
-        },
-        Tool {
-            name: "vision_click_text".to_string(),
-            description: "Find text in a specific application window and click on it (useful for clicking buttons, links, menu items)".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "Name of the application (e.g., 'Things3', 'Safari', 'TextEdit')"
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "The text to click on (e.g., 'Submit', 'OK', 'Cancel', '+')"
-                    }
-                },
-                "required": ["app_name", "text"]
-            }),
-        },
-        Tool {
-            name: "vision_click_near_text".to_string(),
-            description: "Find text in a specific application window and click near it (useful for clicking text fields next to labels)".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "Name of the application (e.g., 'Things3', 'Safari', 'TextEdit')"
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "The label text to find (e.g., 'Name:', 'Email:', 'Task:')"
-                    },
-                    "direction": {
-                        "type": "string",
-                        "enum": ["right", "below", "left", "above"],
-                        "description": "Direction to click relative to the text (default: right)"
-                    },
-                    "distance": {
-                        "type": "integer",
-                        "description": "Distance in pixels from the text (default: 50)"
-                    }
-                },
-                "required": ["app_name", "text"]
-            }),
-        },
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,9 +461,9 @@ mod tests {
     fn test_core_tools_count() {
         let tools = create_core_tools();
         // Should have the core tools: shell, background_process, read_file, read_image,
-        // write_file, str_replace, final_output, take_screenshot, extract_text,
-        // todo_read, todo_write, code_coverage, code_search
-        assert_eq!(tools.len(), 13);
+        // write_file, str_replace, final_output, take_screenshot,
+        // todo_read, todo_write, code_coverage, code_search (12 total)
+        assert_eq!(tools.len(), 12);
     }
 
     #[test]
@@ -665,32 +474,18 @@ mod tests {
     }
 
     #[test]
-    fn test_macax_tools_count() {
-        let tools = create_macax_tools();
-        // 6 macax tools
-        assert_eq!(tools.len(), 6);
-    }
-
-    #[test]
-    fn test_computer_control_tools_count() {
-        let tools = create_computer_control_tools();
-        // 3 vision tools
-        assert_eq!(tools.len(), 3);
-    }
-
-    #[test]
     fn test_create_tool_definitions_core_only() {
         let config = ToolConfig::default();
         let tools = create_tool_definitions(config);
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 12);
     }
 
     #[test]
     fn test_create_tool_definitions_all_enabled() {
-        let config = ToolConfig::new(true, true, true);
+        let config = ToolConfig::new(true, true);
         let tools = create_tool_definitions(config);
-        // 13 core + 15 webdriver + 6 macax + 3 computer_control = 37
-        assert_eq!(tools.len(), 37);
+        // 12 core + 15 webdriver = 27
+        assert_eq!(tools.len(), 27);
     }
 
     #[test]

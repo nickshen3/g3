@@ -27,7 +27,6 @@ G3 uses TOML format. The configuration is organized into sections:
 [agent]               # Agent behavior settings
 [computer_control]    # Mouse/keyboard automation
 [webdriver]           # Browser automation
-[macax]               # macOS Accessibility API
 ```
 
 ## Provider Configuration
@@ -236,13 +235,11 @@ apt install chromium-chromedriver
 ## macOS Accessibility API Configuration
 
 ```toml
-[macax]
 enabled = false              # Set to true to enable
 ```
 
 **Required permissions**: System Preferences → Security & Privacy → Privacy → Accessibility → Add your terminal app
 
-See [macOS Accessibility Tools Guide](macax-tools.md) for detailed usage.
 
 ## Multi-Role Configuration
 
@@ -295,7 +292,6 @@ g3 --model claude-opus-4-5
 # Enable features
 g3 --webdriver           # Enable WebDriver (Safari)
 g3 --chrome-headless     # Enable WebDriver (Chrome headless)
-g3 --macax               # Enable macOS Accessibility API
 
 # Specify config file
 g3 --config /path/to/config.toml
@@ -340,7 +336,6 @@ enabled = true
 browser = "safari"
 safari_port = 4444
 
-[macax]
 enabled = false
 ```
 

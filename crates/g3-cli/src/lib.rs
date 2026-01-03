@@ -345,10 +345,6 @@ pub struct Cli {
     #[arg(long)]
     pub quiet: bool,
 
-    /// Enable macOS Accessibility API tools for native app automation
-    #[arg(long)]
-    pub macax: bool,
-
     /// Enable WebDriver browser automation tools
     #[arg(long)]
     pub webdriver: bool,
@@ -539,11 +535,6 @@ pub async fn run() -> Result<()> {
         cli.provider.clone(),
         cli.model.clone(),
     )?;
-
-    // Apply macax flag override
-    if cli.macax {
-        config.macax.enabled = true;
-    }
 
     // Apply webdriver flag override
     if cli.webdriver {
@@ -992,11 +983,6 @@ async fn run_accumulative_mode(
                                 cli.model.clone(),
                             )?;
 
-                            // Apply macax flag override
-                            if cli.macax {
-                                config.macax.enabled = true;
-                            }
-
                             // Apply webdriver flag override
                             if cli.webdriver {
                                 config.webdriver.enabled = true;
@@ -1098,11 +1084,6 @@ async fn run_accumulative_mode(
                     cli.provider.clone(),
                     cli.model.clone(),
                 )?;
-
-                // Apply macax flag override
-                if cli.macax {
-                    config.macax.enabled = true;
-                }
 
                 // Apply webdriver flag override
                 if cli.webdriver {
@@ -2604,7 +2585,7 @@ Review the current state of the project and provide a concise critique focusing 
 2. Whether the project compiles successfully
 3. What requirements are missing or incorrect
 4. Specific improvements needed to satisfy requirements
-5. Use UI tools such as webdriver or macax to test functionality thoroughly
+5. Use UI tools such as webdriver to test functionality thoroughly
 
 CRITICAL INSTRUCTIONS:
 1. You MUST use the final_output tool to provide your feedback

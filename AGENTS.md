@@ -202,4 +202,3 @@ g3/
 - [Control Commands](docs/CONTROL_COMMANDS.md) - Interactive commands
 - [Code Search](docs/CODE_SEARCH.md) - Tree-sitter search guide
 - [Flock Mode](docs/FLOCK_MODE.md) - Multi-agent development
-- [macOS Accessibility](docs/macax-tools.md) - macOS automation

@@ -191,7 +191,6 @@ Key modules:
 - `platform/` - Platform-specific implementations (macOS, Linux, Windows)
 - `webdriver/` - Safari and Chrome WebDriver integration
 - `ocr/` - Text extraction (Tesseract, Apple Vision)
-- `macax/` - macOS Accessibility API controller
 
 **Platform support**:
 - **macOS**: Core Graphics, Cocoa, screencapture, Vision framework

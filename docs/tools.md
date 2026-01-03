@@ -12,12 +12,10 @@ This document describes all tools available to the G3 agent. Tools are the prima
 | Category | Tools | Enabled By |
 |----------|-------|------------|
 | **Core** | shell, read_file, write_file, str_replace, final_output, background_process | Always |
-| **Images** | read_image, take_screenshot, extract_text | Always |
+| **Images** | read_image, take_screenshot | Always |
 | **Task Management** | todo_read, todo_write | Always |
 | **Code Intelligence** | code_search, code_coverage | Always |
 | **WebDriver** | webdriver_* (12 tools) | `--webdriver` or `--chrome-headless` |
-| **Vision** | vision_find_text, vision_click_text, vision_click_near_text | Always (macOS) |
-| **macOS Accessibility** | macax_* (9 tools) | `--macax` |
 | **Computer Control** | mouse_click, type_text, find_element, list_windows | `computer_control.enabled = true` |
 
 ---
@@ -82,7 +80,6 @@ Read file contents with optional character range.
 ```
 
 **Notes**:
-- For image files (png, jpg, gif, etc.), automatically extracts text using OCR
 - Supports tilde expansion (`~`)
 - Reports file size and line count
 
@@ -105,7 +102,6 @@ Read image files for visual analysis by the LLM.
 **Notes**:
 - Images are sent to the LLM for visual analysis
 - Use for inspecting sprites, UI screenshots, diagrams, etc.
-- Different from `extract_text` which only does OCR
 
 ---
 
@@ -197,23 +193,6 @@ Capture a screenshot of an application window.
 
 ---
 
-### extract_text
-
-Extract text from an image using OCR.
-
-**Parameters**:
-- `path` (string, optional): Path to image file
-
-**Example**:
-```json
-{"tool": "extract_text", "args": {"path": "screenshot.png"}}
-```
-
-**Notes**:
-- Uses Tesseract OCR or Apple Vision framework
-- For window-based OCR, use `vision_find_text` instead
-
----
 
 ## Task Management Tools
 
@@ -386,98 +365,7 @@ Close browser and end session.
 
 ---
 
-## Vision Tools (macOS)
 
-Use Apple Vision framework for text recognition.
-
-### vision_find_text
-
-Find text in an application window.
-
-**Parameters**:
-- `app_name` (string, required): Application name
-- `text` (string, required): Text to search for
-
-**Returns**: Bounding box coordinates and confidence score
-
-### vision_click_text
-
-Find and click on text.
-
-**Parameters**:
-- `app_name` (string, required): Application name
-- `text` (string, required): Text to click
-
-### vision_click_near_text
-
-Click near a text label (useful for form fields).
-
-**Parameters**:
-- `app_name` (string, required): Application name
-- `text` (string, required): Label text to find
-- `direction` (string, optional): "right", "below", "left", "above" (default: "right")
-- `distance` (integer, optional): Pixels from text (default: 50)
-
----
-
-## macOS Accessibility Tools
-
-Enabled with `--macax`. See [macOS Accessibility Tools Guide](macax-tools.md).
-
-### macax_list_apps
-
-List running applications.
-
-### macax_get_frontmost_app
-
-Get the frontmost application.
-
-### macax_activate_app
-
-Bring an application to front.
-
-**Parameters**:
-- `app_name` (string, required): Application name
-
-### macax_get_ui_tree
-
-Get UI element hierarchy.
-
-**Parameters**:
-- `app_name` (string, required): Application name
-- `max_depth` (integer, optional): Tree depth limit
-
-### macax_find_elements
-
-Find UI elements by criteria.
-
-**Parameters**:
-- `app_name` (string, required): Application name
-- `role` (string, optional): Element role (button, textField, etc.)
-- `title` (string, optional): Element title
-- `identifier` (string, optional): Accessibility identifier
-
-### macax_click
-
-Click a UI element.
-
-**Parameters**:
-- `app_name` (string, required): Application name
-- `identifier` or `title` or `role`: Element selector
-
-### macax_set_value / macax_get_value
-
-Set or get element value.
-
-### macax_press_key
-
-Simulate key press.
-
-**Parameters**:
-- `key` (string, required): Key to press
-- `modifiers` (array, optional): ["command", "shift", "option", "control"]
-
----
 
 ## Computer Control Tools
 

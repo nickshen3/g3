@@ -106,7 +106,6 @@ g3/
 - `type_text`: Type text at the current cursor position
 - `find_element`: Find UI elements by text, role, or attributes
 - `take_screenshot`: Capture screenshots of screen, region, or window
-- `extract_text`: Extract text from images or screen regions using OCR
 - `find_text_on_screen`: Find text visually on screen and return coordinates
 - `list_windows`: List all open windows with IDs and titles
 

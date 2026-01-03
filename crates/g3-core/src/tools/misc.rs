@@ -1,4 +1,4 @@
-//! Miscellaneous tools: final_output, take_screenshot, extract_text, code_coverage, code_search.
+//! Miscellaneous tools: final_output, take_screenshot, code_coverage, code_search.
 
 use anyhow::Result;
 use tracing::debug;
@@ -115,35 +115,6 @@ pub async fn execute_take_screenshot<W: UiWriter>(
             ))
         }
         Err(e) => Ok(format!("❌ Failed to take screenshot: {}", e)),
-    }
-}
-
-/// Execute the `extract_text` tool.
-pub async fn execute_extract_text<W: UiWriter>(
-    tool_call: &ToolCall,
-    ctx: &ToolContext<'_, W>,
-) -> Result<String> {
-    debug!("Processing extract_text tool call");
-    
-    let controller = match ctx.computer_controller {
-        Some(c) => c,
-        None => {
-            return Ok(
-                "❌ Computer control not enabled. Set computer_control.enabled = true in config."
-                    .to_string(),
-            )
-        }
-    };
-
-    let path = tool_call
-        .args
-        .get("path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing path argument"))?;
-
-    match controller.extract_text_from_image(path).await {
-        Ok(text) => Ok(format!("✅ Extracted text:\n{}", text)),
-        Err(e) => Ok(format!("❌ Failed to extract text: {}", e)),
     }
 }
 

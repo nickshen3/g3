@@ -14,9 +14,6 @@ max_actions_per_second = 10
 [webdriver]
 enabled = false
 safari_port = 4444
-
-[macax]
-enabled = false
 "#
     }
 

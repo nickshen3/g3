@@ -103,10 +103,8 @@ These commands give you fine-grained control over context management, allowing y
 - **TODO Management**: Read and write TODO lists with markdown checkbox format
 - **Computer Control** (Experimental): Automate desktop applications
   - Mouse and keyboard control
-  - macOS Accessibility API for native app automation (via `--macax` flag)
   - UI element inspection
   - Screenshot capture and window management
-  - OCR text extraction from images and screen regions
   - Window listing and identification
 - **Code Search**: Embedded tree-sitter for syntax-aware code search (Rust, Python, JavaScript, TypeScript, Go, Java, C, C++) - see [Code Search Guide](docs/CODE_SEARCH.md)
 - **Final Output**: Formatted result presentation
@@ -305,24 +303,11 @@ chrome_binary = "/Users/yourname/.chrome-for-testing/chrome-mac-arm64/Google Chr
 
 **Note**: If you see "ChromeDriver version doesn't match Chrome version" errors, use Option 1 (Chrome for Testing) which bundles matching versions.
 
-## macOS Accessibility API Tools
-
-G3 includes support for controlling macOS applications via the Accessibility API, allowing you to automate native macOS apps.
-
-**Available Tools**: `macax_list_apps`, `macax_get_frontmost_app`, `macax_activate_app`, `macax_get_ui_tree`, `macax_find_elements`, `macax_click`, `macax_set_value`, `macax_get_value`, `macax_press_key`
-
-**Setup**: Enable with the `--macax` flag or in config with `macax.enabled = true`. Grant accessibility permissions:
-- **macOS**: System Preferences → Security & Privacy → Privacy → Accessibility → Add your terminal app
-
-**For detailed documentation**, see [macOS Accessibility Tools Guide](docs/macax-tools.md).
-
-**Note**: This is particularly useful for testing and automating apps you're building with G3, as you can add accessibility identifiers to your UI elements.
-
 ## Computer Control (Experimental)
 
 G3 can interact with your computer's GUI for automation tasks:
 
-**Available Tools**: `mouse_click`, `type_text`, `find_element`, `take_screenshot`, `extract_text`, `find_text_on_screen`, `list_windows`
+**Available Tools**: `mouse_click`, `type_text`, `find_element`, `take_screenshot`, `list_windows`
 
 **Setup**: Enable in config with `computer_control.enabled = true` and grant OS accessibility permissions:
 - **macOS**: System Preferences → Security & Privacy → Accessibility  
@@ -351,7 +336,6 @@ Detailed documentation is available in the `docs/` directory:
 | [Control Commands](docs/CONTROL_COMMANDS.md) | Interactive `/` commands for context management |
 | [Code Search](docs/CODE_SEARCH.md) | Tree-sitter code search query patterns |
 | [Flock Mode](docs/FLOCK_MODE.md) | Parallel multi-agent development |
-| [macOS Accessibility](docs/macax-tools.md) | macOS Accessibility API automation |
 
 For AI agents working with this codebase, see [AGENTS.md](AGENTS.md).
 

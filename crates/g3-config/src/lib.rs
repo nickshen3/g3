@@ -10,7 +10,6 @@ pub struct Config {
     pub agent: AgentConfig,
     pub computer_control: ComputerControlConfig,
     pub webdriver: WebDriverConfig,
-    pub macax: MacAxConfig,
 }
 
 /// Provider configuration with named configs per provider type
@@ -139,17 +138,6 @@ pub struct WebDriverConfig {
     pub browser: WebDriverBrowser,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MacAxConfig {
-    pub enabled: bool,
-}
-
-impl Default for MacAxConfig {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
-}
-
 impl Default for WebDriverConfig {
     fn default() -> Self {
         Self {
@@ -212,7 +200,6 @@ impl Default for Config {
             },
             computer_control: ComputerControlConfig::default(),
             webdriver: WebDriverConfig::default(),
-            macax: MacAxConfig::default(),
         }
     }
 }

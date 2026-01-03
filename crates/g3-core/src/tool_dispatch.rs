@@ -7,7 +7,7 @@ use anyhow::Result;
 use tracing::{debug, warn};
 
 use crate::tools::executor::ToolContext;
-use crate::tools::{file_ops, macax, misc, shell, todo, vision, webdriver};
+use crate::tools::{file_ops, misc, shell, todo, webdriver};
 use crate::ui_writer::UiWriter;
 use crate::ToolCall;
 
@@ -43,7 +43,6 @@ pub async fn dispatch_tool<W: UiWriter>(
             Ok(result)
         }
         "take_screenshot" => misc::execute_take_screenshot(tool_call, ctx).await,
-        "extract_text" => misc::execute_extract_text(tool_call, ctx).await,
         "code_coverage" => misc::execute_code_coverage(tool_call, ctx).await,
         "code_search" => misc::execute_code_search(tool_call, ctx).await,
 
@@ -63,19 +62,6 @@ pub async fn dispatch_tool<W: UiWriter>(
         "webdriver_forward" => webdriver::execute_webdriver_forward(tool_call, ctx).await,
         "webdriver_refresh" => webdriver::execute_webdriver_refresh(tool_call, ctx).await,
         "webdriver_quit" => webdriver::execute_webdriver_quit(tool_call, ctx).await,
-
-        // macOS Accessibility tools
-        "macax_list_apps" => macax::execute_macax_list_apps(tool_call, ctx).await,
-        "macax_get_frontmost_app" => macax::execute_macax_get_frontmost_app(tool_call, ctx).await,
-        "macax_activate_app" => macax::execute_macax_activate_app(tool_call, ctx).await,
-        "macax_press_key" => macax::execute_macax_press_key(tool_call, ctx).await,
-        "macax_type_text" => macax::execute_macax_type_text(tool_call, ctx).await,
-
-        // Vision tools
-        "vision_find_text" => vision::execute_vision_find_text(tool_call, ctx).await,
-        "vision_click_text" => vision::execute_vision_click_text(tool_call, ctx).await,
-        "vision_click_near_text" => vision::execute_vision_click_near_text(tool_call, ctx).await,
-        "extract_text_with_boxes" => vision::execute_extract_text_with_boxes(tool_call, ctx).await,
 
         // Unknown tool
         _ => {

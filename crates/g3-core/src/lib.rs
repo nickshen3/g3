@@ -108,8 +108,6 @@ pub struct Agent<W: UiWriter> {
         >,
     >,
     webdriver_process: std::sync::Arc<tokio::sync::RwLock<Option<tokio::process::Child>>>,
-    macax_controller:
-        std::sync::Arc<tokio::sync::RwLock<Option<g3_computer_control::MacAxController>>>,
     tool_call_count: usize,
     requirements_sha: Option<String>,
     /// Working directory for tool execution (set by --codebase-fast-start)
@@ -389,9 +387,6 @@ impl<W: UiWriter> Agent<W> {
             None
         };
 
-        // Capture macax_enabled before moving config
-        let macax_enabled = config.macax.enabled;
-
         Ok(Self {
             providers,
             context_window,
@@ -411,13 +406,6 @@ impl<W: UiWriter> Agent<W> {
             computer_controller,
             webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            macax_controller: {
-                std::sync::Arc::new(tokio::sync::RwLock::new(if macax_enabled {
-                    Some(g3_computer_control::MacAxController::new()?)
-                } else {
-                    None
-                }))
-            },
             tool_call_count: 0,
             requirements_sha: None,
             working_dir: None,
@@ -921,7 +909,6 @@ impl<W: UiWriter> Agent<W> {
             Some(tool_definitions::create_tool_definitions(
                 tool_definitions::ToolConfig::new(
                     self.config.webdriver.enabled,
-                    self.config.macax.enabled,
                     self.config.computer_control.enabled,
                 )))
         } else {
@@ -2674,7 +2661,6 @@ impl<W: UiWriter> Agent<W> {
                                 request.tools = Some(tool_definitions::create_tool_definitions(
                                     tool_definitions::ToolConfig::new(
                                         self.config.webdriver.enabled,
-                                        self.config.macax.enabled,
                                         self.config.computer_control.enabled,
                                     )));
                             }
@@ -3289,7 +3275,6 @@ impl<W: UiWriter> Agent<W> {
             computer_controller: self.computer_controller.as_ref(),
             webdriver_session: &self.webdriver_session,
             webdriver_process: &self.webdriver_process,
-            macax_controller: &self.macax_controller,
             background_process_manager: &self.background_process_manager,
             todo_content: &self.todo_content,
             pending_images: &mut self.pending_images,

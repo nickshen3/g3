@@ -13,7 +13,7 @@ use super::executor::ToolContext;
 /// Execute the `read_file` tool.
 pub async fn execute_read_file<W: UiWriter>(
     tool_call: &ToolCall,
-    ctx: &ToolContext<'_, W>,
+    _ctx: &ToolContext<'_, W>,
 ) -> Result<String> {
     debug!("Processing read_file tool call");
     
@@ -27,35 +27,6 @@ pub async fn execute_read_file<W: UiWriter>(
     // Try to resolve with Unicode space fallback (macOS uses U+202F in screenshot names)
     let resolved_path = resolve_path_with_unicode_fallback(expanded_path.as_ref());
     let path_str = resolved_path.as_ref();
-
-    // Check if this is an image file
-    let is_image = path_str.to_lowercase().ends_with(".png")
-        || path_str.to_lowercase().ends_with(".jpg")
-        || path_str.to_lowercase().ends_with(".jpeg")
-        || path_str.to_lowercase().ends_with(".gif")
-        || path_str.to_lowercase().ends_with(".bmp")
-        || path_str.to_lowercase().ends_with(".tiff")
-        || path_str.to_lowercase().ends_with(".tif")
-        || path_str.to_lowercase().ends_with(".webp");
-
-    // If it's an image file, use OCR via extract_text
-    if is_image {
-        if let Some(controller) = ctx.computer_controller {
-            match controller.extract_text_from_image(path_str).await {
-                Ok(text) => {
-                    return Ok(format!("📄 Image file (OCR extracted):\n{}", text));
-                }
-                Err(e) => {
-                    return Ok(format!(
-                        "❌ Failed to extract text from image '{}': {}",
-                        path_str, e
-                    ));
-                }
-            }
-        } else {
-            return Ok("❌ Computer control not enabled. Cannot perform OCR on image files. Set computer_control.enabled = true in config.".to_string());
-        }
-    }
 
     // Extract optional start and end positions
     let start_char = tool_call

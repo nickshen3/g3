@@ -20,7 +20,6 @@ pub struct ToolContext<'a, W: UiWriter> {
     pub computer_controller: Option<&'a Box<dyn g3_computer_control::ComputerController>>,
     pub webdriver_session: &'a Arc<RwLock<Option<Arc<tokio::sync::Mutex<WebDriverSession>>>>>,
     pub webdriver_process: &'a Arc<RwLock<Option<tokio::process::Child>>>,
-    pub macax_controller: &'a Arc<RwLock<Option<g3_computer_control::MacAxController>>>,
     pub background_process_manager: &'a Arc<BackgroundProcessManager>,
     pub todo_content: &'a Arc<RwLock<String>>,
     pub pending_images: &'a mut Vec<g3_providers::ImageContent>,
