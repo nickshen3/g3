@@ -280,8 +280,8 @@ AGENTS.md should start with:
 REQUIRED sections (include ONLY these):
 
 1. **Critical Invariants**
-   - MUST hold constraints (e.g., "Tool calls must be valid JSON")
-   - MUST NOT do constraints (e.g., "Never block the async runtime")
+   - MUST hold constraints (e.g., "API responses must be valid JSON", "Database connections must be closed")
+   - MUST NOT do constraints (e.g., "Never block the event loop", "Never store secrets in logs")
    - Performance constraints that affect correctness
 
 2. **Recommended Entry Points**
@@ -305,10 +305,10 @@ REQUIRED sections (include ONLY these):
 
 DO NOT include in AGENTS.md:
 - Architecture overview (use README)
-- Crate/module descriptions (use README)
+- Module/package descriptions (use README)
 - File structure diagrams (derivable from codebase)
 - Documentation links (use README's Documentation Map)
-- Testing instructions beyond "run cargo test" (trivial)
+- Testing instructions beyond basic commands (trivial)
 - How to use the project (use README)
 
 ------------------------------------------------------------
