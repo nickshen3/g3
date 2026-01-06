@@ -2658,9 +2658,11 @@ impl<W: UiWriter> Agent<W> {
                 // This ensures we don't return control when the LLM clearly intended to call a tool
                 // Note: We removed the redundant condition (any_tool_executed && is_empty_response)
                 // because it's already covered by (any_tool_executed && !final_output_called)
-                let should_auto_continue = (any_tool_executed && !final_output_called) 
+                // Auto-continue is only enabled in autonomous mode - in interactive mode,
+                // the user may be asking questions and we should return control to them
+                let should_auto_continue = self.is_autonomous && ((any_tool_executed && !final_output_called) 
                     || has_incomplete_tool_call 
-                    || has_unexecuted_tool_call;
+                    || has_unexecuted_tool_call);
                 if should_auto_continue {
                     if auto_summary_attempts < MAX_AUTO_SUMMARY_ATTEMPTS {
                         auto_summary_attempts += 1;
