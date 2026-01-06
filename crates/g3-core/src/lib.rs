@@ -1482,6 +1482,52 @@ impl<W: UiWriter> Agent<W> {
         message
     }
 
+    /// Check if a tool call is a duplicate of the last tool call in the previous assistant message.
+    /// Returns Some("DUP IN MSG") if it's a duplicate, None otherwise.
+    fn check_duplicate_in_previous_message(&self, tool_call: &ToolCall) -> Option<String> {
+        // Helper to check if two tool calls are duplicates
+        let are_duplicates = |tc1: &ToolCall, tc2: &ToolCall| -> bool {
+            tc1.tool == tc2.tool && tc1.args == tc2.args
+        };
+
+        // Find the most recent assistant message
+        for msg in self.context_window.conversation_history.iter().rev() {
+            if !matches!(msg.role, MessageRole::Assistant) {
+                continue;
+            }
+
+            let content = &msg.content;
+
+            // Look for the last occurrence of a tool call pattern
+            let last_tool_start = content.rfind(r#"{"tool""#)
+                .or_else(|| content.rfind(r#"{ "tool""#))?;
+
+            // Find the end of this JSON object
+            let end_offset = StreamingToolParser::find_complete_json_object_end(&content[last_tool_start..])?;
+            let end_idx = last_tool_start + end_offset + 1;
+            let tool_json = &content[last_tool_start..end_idx];
+
+            // Check if there's any non-whitespace text after this tool call
+            let text_after = content[end_idx..].trim();
+            if !text_after.is_empty() {
+                // There's text after the tool call, so it's not a trailing duplicate
+                return None;
+            }
+
+            // Parse and compare the tool call
+            if let Ok(prev_tool) = serde_json::from_str::<ToolCall>(tool_json) {
+                if are_duplicates(&prev_tool, tool_call) {
+                    return Some("DUP IN MSG".to_string());
+                }
+            }
+
+            // Only check the most recent assistant message
+            break;
+        }
+
+        None
+    }
+
     /// Reload README.md and AGENTS.md and replace the first system message
     /// Returns Ok(true) if README was found and reloaded, Ok(false) if no README was present initially
     pub fn reload_readme(&mut self) -> Result<bool> {
@@ -2266,48 +2312,8 @@ impl<W: UiWriter> Agent<W> {
                                 duplicate_type = Some("DUP IN CHUNK".to_string());
                                 }
                             } else {
-                                // Check for IMMEDIATELY SEQUENTIAL duplicate against previous message
-                                // Only mark as duplicate if the LAST tool call in the previous message
-                                // matches AND there's no significant text after it
-                                let mut found_in_prev = false;
-                                for msg in self.context_window.conversation_history.iter().rev() {
-                                    if matches!(msg.role, MessageRole::Assistant) {
-                                        // Find the LAST tool call in the message
-                                        let content = &msg.content;
-                                        
-                                        // Look for the last occurrence of a tool call pattern
-                                        if let Some(last_tool_start) = content.rfind(r#"{"tool""#)
-                                            .or_else(|| content.rfind(r#"{ "tool""#))
-                                        {
-                                            // Find the end of this JSON object
-                                            if let Some(end_offset) = StreamingToolParser::find_complete_json_object_end(&content[last_tool_start..]) {
-                                                let end_idx = last_tool_start + end_offset + 1;
-                                                let tool_json = &content[last_tool_start..end_idx];
-                                                
-                                                // Check if there's any non-whitespace text after this tool call
-                                                let text_after = content[end_idx..].trim();
-                                                let has_text_after = !text_after.is_empty();
-                                                
-                                                // Only consider it a duplicate if:
-                                                // 1. The tool call matches
-                                                // 2. There's no text after it (it was the last thing in the message)
-                                                if !has_text_after {
-                                                    if let Ok(prev_tool) = serde_json::from_str::<ToolCall>(tool_json) {
-                                                        if are_duplicates(&prev_tool, &tool_call) {
-                                                            found_in_prev = true;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // Only check the most recent assistant message
-                                        break;
-                                    }
-                                }
-
-                                if found_in_prev {
-                                    duplicate_type = Some("DUP IN MSG".to_string());
-                                }
+                                // Check for duplicate against previous message
+                                duplicate_type = self.check_duplicate_in_previous_message(&tool_call);
                             }
 
                             // Track the last tool call for sequential duplicate detection
