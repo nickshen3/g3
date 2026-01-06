@@ -392,6 +392,10 @@ pub struct Cli {
     /// Run as a specialized agent (loads prompt from agents/<name>.md)
     #[arg(long, value_name = "NAME", conflicts_with_all = ["autonomous", "auto", "chat", "planning"])]
     pub agent: Option<String>,
+
+    /// Skip session resumption and force a new session (for agent mode)
+    #[arg(long)]
+    pub new_session: bool,
 }
 
 pub async fn run() -> Result<()> {
@@ -437,6 +441,7 @@ pub async fn run() -> Result<()> {
             cli.workspace.clone(),
             cli.config.as_deref(),
             cli.quiet,
+            cli.new_session,
         )
         .await;
     }
@@ -448,6 +453,7 @@ pub async fn run() -> Result<()> {
             cli.workspace.clone(),
             cli.config.as_deref(),
             cli.quiet,
+            cli.new_session,
         )
         .await;
     }
@@ -655,6 +661,7 @@ async fn run_agent_mode(
     workspace: Option<PathBuf>,
     config_path: Option<&str>,
     _quiet: bool,
+    new_session: bool,
 ) -> Result<()> {
     use g3_core::get_agent_system_prompt;
     use g3_core::find_incomplete_agent_session;
@@ -679,8 +686,14 @@ async fn run_agent_mode(
     // Change to the workspace directory first so session scanning works correctly
     std::env::set_current_dir(&workspace_dir)?;
     
-    // Check for incomplete agent sessions before starting a new one
-    let resuming_session = find_incomplete_agent_session(agent_name).ok().flatten();
+    // Check for incomplete agent sessions before starting a new one (unless --new-session is set)
+    let resuming_session = if new_session {
+        output.print("\n🆕 Starting new session (--new-session flag set)");
+        output.print("");
+        None
+    } else {
+        find_incomplete_agent_session(agent_name).ok().flatten()
+    };
     
     if let Some(ref incomplete_session) = resuming_session {
         output.print(&format!(
