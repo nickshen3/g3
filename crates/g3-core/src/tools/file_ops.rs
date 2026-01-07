@@ -345,48 +345,35 @@ pub async fn execute_str_replace<W: UiWriter>(
 
 // Helper functions
 
+/// Known argument key pairs for path and content.
+const PATH_CONTENT_KEYS: &[(&str, &str)] = &[
+    ("file_path", "content"),  // Standard format
+    ("path", "content"),       // Anthropic-style
+    ("filename", "text"),      // Alternative naming
+    ("file", "data"),          // Alternative naming
+];
+
 /// Extract path and content from various argument formats.
 fn extract_path_and_content(args: &serde_json::Value) -> (Option<&str>, Option<&str>) {
-    if let Some(args_obj) = args.as_object() {
-        // Format 1: Standard format with file_path and content
-        if let (Some(path_val), Some(content_val)) =
-            (args_obj.get("file_path"), args_obj.get("content"))
-        {
-            if let (Some(path), Some(content)) = (path_val.as_str(), content_val.as_str()) {
-                return (Some(path), Some(content));
+    match args {
+        serde_json::Value::Object(obj) => {
+            for &(path_key, content_key) in PATH_CONTENT_KEYS {
+                if let (Some(p), Some(c)) = (obj.get(path_key), obj.get(content_key)) {
+                    if let (Some(path), Some(content)) = (p.as_str(), c.as_str()) {
+                        return (Some(path), Some(content));
+                    }
+                }
+            }
+            (None, None)
+        }
+        serde_json::Value::Array(arr) if arr.len() >= 2 => {
+            match (arr[0].as_str(), arr[1].as_str()) {
+                (Some(path), Some(content)) => (Some(path), Some(content)),
+                _ => (None, None),
             }
         }
-        // Format 2: Anthropic-style with path and content
-        if let (Some(path_val), Some(content_val)) =
-            (args_obj.get("path"), args_obj.get("content"))
-        {
-            if let (Some(path), Some(content)) = (path_val.as_str(), content_val.as_str()) {
-                return (Some(path), Some(content));
-            }
-        }
-        // Format 3: Alternative naming with filename and text
-        if let (Some(path_val), Some(content_val)) =
-            (args_obj.get("filename"), args_obj.get("text"))
-        {
-            if let (Some(path), Some(content)) = (path_val.as_str(), content_val.as_str()) {
-                return (Some(path), Some(content));
-            }
-        }
-        // Format 4: Alternative naming with file and data
-        if let (Some(path_val), Some(content_val)) = (args_obj.get("file"), args_obj.get("data")) {
-            if let (Some(path), Some(content)) = (path_val.as_str(), content_val.as_str()) {
-                return (Some(path), Some(content));
-            }
-        }
-    } else if let Some(args_array) = args.as_array() {
-        // Format 5: Args might be an array [path, content]
-        if args_array.len() >= 2 {
-            if let (Some(path), Some(content)) = (args_array[0].as_str(), args_array[1].as_str()) {
-                return (Some(path), Some(content));
-            }
-        }
+        _ => (None, None),
     }
-    (None, None)
 }
 
 /// Get image dimensions from raw bytes.
