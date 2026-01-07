@@ -646,46 +646,33 @@ Format this as a detailed but concise summary that can be used to resume the con
         tool_call_leaned_count: usize,
         chars_saved: usize,
     ) -> (String, usize) {
-        let emoji = scope.emoji();
-        let label = scope.label();
         let scope_desc = match scope {
             ThinScope::FirstThird => "",
             ThinScope::All => " across entire history",
         };
 
-        if leaned_count > 0 && tool_call_leaned_count > 0 {
-            (
-                format!(
-                    "{} Context {} at {}%: {} tool results + {} tool calls{}, ~{} chars saved",
-                    emoji, label, current_percentage, leaned_count, tool_call_leaned_count, scope_desc, chars_saved
-                ),
-                chars_saved,
-            )
-        } else if leaned_count > 0 {
-            (
-                format!(
-                    "{} Context {} at {}%: {} tool results{}, ~{} chars saved",
-                    emoji, label, current_percentage, leaned_count, scope_desc, chars_saved
-                ),
-                chars_saved,
-            )
-        } else if tool_call_leaned_count > 0 {
-            (
-                format!(
-                    "{} Context {} at {}%: {} tool calls{}, ~{} chars saved",
-                    emoji, label, current_percentage, tool_call_leaned_count, scope_desc, chars_saved
-                ),
-                chars_saved,
-            )
-        } else {
-            (
-                format!(
-                    "ℹ Context {} triggered at {}% but no large tool results or tool calls found{}",
-                    scope.error_action(), current_percentage, scope_desc
-                ),
-                0,
-            )
+        // Nothing was thinned
+        if leaned_count == 0 && tool_call_leaned_count == 0 {
+            let msg = format!(
+                "ℹ Context {} triggered at {}% but no large tool results or tool calls found{}",
+                scope.error_action(), current_percentage, scope_desc
+            );
+            return (msg, 0);
         }
+
+        // Build description of what was thinned
+        let what_thinned = match (leaned_count > 0, tool_call_leaned_count > 0) {
+            (true, true) => format!("{} tool results + {} tool calls", leaned_count, tool_call_leaned_count),
+            (true, false) => format!("{} tool results", leaned_count),
+            (false, true) => format!("{} tool calls", tool_call_leaned_count),
+            (false, false) => unreachable!(), // handled above
+        };
+
+        let msg = format!(
+            "{} Context {} at {}%: {}{}, ~{} chars saved",
+            scope.emoji(), scope.label(), current_percentage, what_thinned, scope_desc, chars_saved
+        );
+        (msg, chars_saved)
     }
 
     /// Recalculate token usage based on current conversation history

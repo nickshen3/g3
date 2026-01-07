@@ -77,20 +77,23 @@ impl StreamingToolParser {
         best_start
     }
 
-    /// Validate that tool call args don't contain message-like content.
-    /// This detects malformed tool calls where agent messages got mixed into args.
-    fn has_message_like_keys(args: &serde_json::Map<String, serde_json::Value>) -> bool {
+    /// Detect malformed tool calls where LLM prose leaked into JSON keys.
+    ///
+    /// When the LLM "stutters" or mixes formats, it sometimes emits JSON where
+    /// the keys are actually fragments of conversational text rather than valid
+    /// parameter names. This heuristic catches such cases by looking for:
+    /// - Unusually long keys (>100 chars)
+    /// - Newlines in keys (never valid in JSON keys)
+    /// - Common LLM response phrases that indicate prose, not parameters
+    fn args_contain_prose_fragments(args: &serde_json::Map<String, serde_json::Value>) -> bool {
+        const PROSE_MARKERS: &[&str] = &[
+            "I'll", "Let me", "Here's", "I can", "I need", "First", "Now", "The ",
+        ];
+
         args.keys().any(|key| {
             key.len() > 100
                 || key.contains('\n')
-                || key.contains("I'll")
-                || key.contains("Let me")
-                || key.contains("Here's")
-                || key.contains("I can")
-                || key.contains("I need")
-                || key.contains("First")
-                || key.contains("Now")
-                || key.contains("The ")
+                || PROSE_MARKERS.iter().any(|marker| key.contains(marker))
         })
     }
 
@@ -172,7 +175,7 @@ impl StreamingToolParser {
                     if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json_str) {
                         // Validate that args is an object with reasonable keys
                         if let Some(args_obj) = tool_call.args.as_object() {
-                            if Self::has_message_like_keys(args_obj) {
+                            if Self::args_contain_prose_fragments(args_obj) {
                                 debug!(
                                     "Detected malformed tool call with message-like keys, skipping"
                                 );
@@ -220,7 +223,7 @@ impl StreamingToolParser {
 
                     if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json_str) {
                         if let Some(args_obj) = tool_call.args.as_object() {
-                            if !Self::has_message_like_keys(args_obj) {
+                            if !Self::args_contain_prose_fragments(args_obj) {
                                 debug!(
                                     "Found tool call at position {}: {:?}",
                                     abs_start, tool_call.tool
