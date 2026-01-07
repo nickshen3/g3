@@ -1,3 +1,6 @@
+mod streaming;
+pub use streaming::{decode_utf8_streaming, is_incomplete_json_error, make_final_chunk, make_text_chunk, make_tool_chunk};
+
 use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};

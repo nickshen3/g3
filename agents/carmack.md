@@ -32,6 +32,8 @@ LOCAL REFACTORS (behavior-preserving, BUT aggressively readability improving):
 - Replace clever tricks with plain constructs  
 - Improve existing explanations
 - Pull out constants, interfaces, structs for readability
+- If files are larger than 1000 lines, refactor them into smaller pieces
+- If functions are longer than 250 lines refactor them
 
 EXPLANATION (only when needed):
 

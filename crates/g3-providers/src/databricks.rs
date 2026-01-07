@@ -58,7 +58,7 @@
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use std::collections::HashMap;
+use crate::streaming::{decode_utf8_streaming, is_incomplete_json_error, make_final_chunk};
 use futures_util::stream::StreamExt;
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, warn};
+use std::collections::HashMap;
 
 use crate::{
     CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, LLMProvider, Message,
@@ -118,53 +119,6 @@ fn finalize_tool_calls(accumulators: HashMap<usize, ToolCallAccumulator>) -> Vec
         .into_values()
         .filter_map(|acc| acc.into_tool_call())
         .collect()
-}
-
-/// Try to decode bytes as UTF-8, handling incomplete sequences at the end.
-/// Returns the decoded string and leaves any incomplete bytes in the buffer.
-fn decode_utf8_streaming(byte_buffer: &mut Vec<u8>) -> Option<String> {
-    match std::str::from_utf8(byte_buffer) {
-        Ok(s) => {
-            let result = s.to_string();
-            byte_buffer.clear();
-            Some(result)
-        }
-        Err(e) => {
-            let valid_up_to = e.valid_up_to();
-            if valid_up_to > 0 {
-                let valid_bytes: Vec<u8> = byte_buffer.drain(..valid_up_to).collect();
-                // Safe: we just validated these bytes
-                Some(String::from_utf8(valid_bytes).unwrap())
-            } else {
-                None // No valid UTF-8 yet, wait for more bytes
-            }
-        }
-    }
-}
-
-/// Check if a JSON parse error indicates incomplete data (vs. malformed JSON).
-fn is_incomplete_json_error(error: &serde_json::Error, data: &str) -> bool {
-    let msg = error.to_string().to_lowercase();
-    let looks_incomplete = msg.contains("eof")
-        || msg.contains("unterminated")
-        || msg.contains("unexpected end")
-        || msg.contains("trailing");
-    let missing_terminator = !data.trim_end().ends_with('}') && !data.trim_end().ends_with(']');
-    looks_incomplete || missing_terminator
-}
-
-/// Create a final completion chunk with tool calls and usage.
-fn make_final_chunk(tool_calls: Vec<ToolCall>, usage: Option<Usage>) -> CompletionChunk {
-    CompletionChunk {
-        content: String::new(),
-        finished: true,
-        usage,
-        tool_calls: if tool_calls.is_empty() {
-            None
-        } else {
-            Some(tool_calls)
-        },
-    }
 }
 
 const DEFAULT_CLIENT_ID: &str = "databricks-cli";

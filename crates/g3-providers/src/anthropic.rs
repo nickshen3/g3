@@ -112,6 +112,7 @@ use tracing::{debug, error};
 use crate::{
     CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, LLMProvider, Message,
     MessageRole, Tool, ToolCall, Usage,
+    streaming::{decode_utf8_streaming, make_final_chunk, make_text_chunk, make_tool_chunk},
 };
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -398,30 +399,10 @@ impl AnthropicProvider {
         while let Some(chunk_result) = stream.next().await {
             match chunk_result {
                 Ok(chunk) => {
-                    // Append new bytes to our buffer
                     byte_buffer.extend_from_slice(&chunk);
 
-                    // Try to convert the entire buffer to UTF-8
-                    let chunk_str = match std::str::from_utf8(&byte_buffer) {
-                        Ok(s) => {
-                            // Successfully converted entire buffer, clear it and use the string
-                            let result = s.to_string();
-                            byte_buffer.clear();
-                            result
-                        }
-                        Err(e) => {
-                            // Check if this is an incomplete sequence at the end
-                            let valid_up_to = e.valid_up_to();
-                            if valid_up_to > 0 {
-                                // We have some valid UTF-8, extract it and keep the rest for next iteration
-                                let valid_bytes =
-                                    byte_buffer.drain(..valid_up_to).collect::<Vec<_>>();
-                                std::str::from_utf8(&valid_bytes).unwrap().to_string()
-                            } else {
-                                // No valid UTF-8 at all, skip this chunk and continue
-                                continue;
-                            }
-                        }
+                    let Some(chunk_str) = decode_utf8_streaming(&mut byte_buffer) else {
+                        continue;
                     };
 
                     buffer.push_str(&chunk_str);
@@ -445,16 +426,7 @@ impl AnthropicProvider {
                         if let Some(data) = line.strip_prefix("data: ") {
                             if data == "[DONE]" {
                                 debug!("Received stream completion marker");
-                                let final_chunk = CompletionChunk {
-                                    content: String::new(),
-                                    finished: true,
-                                    usage: accumulated_usage.clone(),
-                                    tool_calls: if current_tool_calls.is_empty() {
-                                        None
-                                    } else {
-                                        Some(current_tool_calls.clone())
-                                    },
-                                };
+                                let final_chunk = make_final_chunk(current_tool_calls.clone(), accumulated_usage.clone());
                                 if tx.send(Ok(final_chunk)).await.is_err() {
                                     debug!("Receiver dropped, stopping stream");
                                 }
@@ -518,12 +490,7 @@ impl AnthropicProvider {
                                                         {
                                                             // We have complete arguments, send the tool call immediately
                                                             debug!("Tool call has complete args, sending immediately: {:?}", tool_call);
-                                                            let chunk = CompletionChunk {
-                                                                content: String::new(),
-                                                                finished: false,
-                                                                usage: None,
-                                                                tool_calls: Some(vec![tool_call]),
-                                                            };
+                                                            let chunk = make_tool_chunk(vec![tool_call]);
                                                             if tx.send(Ok(chunk)).await.is_err() {
                                                                 debug!("Receiver dropped, stopping stream");
                                                                 return accumulated_usage;
@@ -552,12 +519,7 @@ impl AnthropicProvider {
                                                         text.len(),
                                                         text
                                                     );
-                                                    let chunk = CompletionChunk {
-                                                        content: text,
-                                                        finished: false,
-                                                        usage: None,
-                                                        tool_calls: None,
-                                                    };
+                                                    let chunk = make_text_chunk(text);
                                                     if tx.send(Ok(chunk)).await.is_err() {
                                                         debug!("Receiver dropped, stopping stream");
                                                         return accumulated_usage;
@@ -612,12 +574,7 @@ impl AnthropicProvider {
 
                                             // Send the complete tool call
                                             if !current_tool_calls.is_empty() {
-                                                let chunk = CompletionChunk {
-                                                    content: String::new(),
-                                                    finished: false,
-                                                    usage: None,
-                                                    tool_calls: Some(current_tool_calls.clone()),
-                                                };
+                                                let chunk = make_tool_chunk(current_tool_calls.clone());
                                                 if tx.send(Ok(chunk)).await.is_err() {
                                                     debug!("Receiver dropped, stopping stream");
                                                     return accumulated_usage;
@@ -629,16 +586,7 @@ impl AnthropicProvider {
                                         "message_stop" => {
                                             debug!("Received message stop event");
                                             message_stopped = true;
-                                            let final_chunk = CompletionChunk {
-                                                content: String::new(),
-                                                finished: true,
-                                                usage: accumulated_usage.clone(),
-                                                tool_calls: if current_tool_calls.is_empty() {
-                                                    None
-                                                } else {
-                                                    Some(current_tool_calls.clone())
-                                                },
-                                            };
+                                            let final_chunk = make_final_chunk(current_tool_calls.clone(), accumulated_usage.clone());
                                             if tx.send(Ok(final_chunk)).await.is_err() {
                                                 debug!("Receiver dropped, stopping stream");
                                             }
@@ -682,16 +630,7 @@ impl AnthropicProvider {
         }
 
         // Send final chunk if we haven't already
-        let final_chunk = CompletionChunk {
-            content: String::new(),
-            finished: true,
-            usage: accumulated_usage.clone(),
-            tool_calls: if current_tool_calls.is_empty() {
-                None
-            } else {
-                Some(current_tool_calls)
-            },
-        };
+        let final_chunk = make_final_chunk(current_tool_calls, accumulated_usage.clone());
         let _ = tx.send(Ok(final_chunk)).await;
         accumulated_usage
     }
