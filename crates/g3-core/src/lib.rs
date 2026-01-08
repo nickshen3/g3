@@ -92,9 +92,9 @@ pub struct Agent<W: UiWriter> {
     providers: ProviderRegistry,
     context_window: ContextWindow,
     thinning_events: Vec<usize>,      // chars saved per thinning event
-    pending_90_summarization: bool,   // flag to trigger summarization at 90%
+    pending_90_compaction: bool,      // flag to trigger compaction at 90%
     auto_compact: bool,               // whether to auto-compact at 90% before tool calls
-    summarization_events: Vec<usize>, // chars saved per summarization event
+    compaction_events: Vec<usize>,    // chars saved per compaction event
     first_token_times: Vec<Duration>, // time to first token for each completion
     config: Config,
     session_id: Option<String>,
@@ -267,9 +267,9 @@ impl<W: UiWriter> Agent<W> {
             providers,
             context_window,
             auto_compact: config.agent.auto_compact,
-            pending_90_summarization: false,
+            pending_90_compaction: false,
             thinning_events: Vec::new(),
-            summarization_events: Vec::new(),
+            compaction_events: Vec::new(),
             first_token_times: Vec::new(),
             config,
             session_id: None,
@@ -856,15 +856,15 @@ impl<W: UiWriter> Agent<W> {
         self.save_context_window("completed");
 
         // Check if we need to do 90% auto-compaction
-        if self.pending_90_summarization {
+        if self.pending_90_compaction {
             self.ui_writer
                 .print_context_status("\n⚡ Context window reached 90% - auto-compacting...\n");
-            if let Err(e) = self.force_summarize().await {
+            if let Err(e) = self.force_compact().await {
                 warn!("Failed to auto-compact at 90%: {}", e);
             } else {
                 self.ui_writer.println("");
             }
-            self.pending_90_summarization = false;
+            self.pending_90_compaction = false;
         }
 
         // Return the task result which already includes timing if needed
@@ -940,13 +940,13 @@ impl<W: UiWriter> Agent<W> {
         }
     }
 
-    /// Manually trigger context summarization regardless of context window size
-    /// Returns Ok(true) if summarization was successful, Ok(false) if it failed
-    pub async fn force_summarize(&mut self) -> Result<bool> {
-        debug!("Manual summarization triggered");
+    /// Manually trigger context compaction regardless of context window size
+    /// Returns Ok(true) if compaction was successful, Ok(false) if it failed
+    pub async fn force_compact(&mut self) -> Result<bool> {
+        debug!("Manual compaction triggered");
 
         self.ui_writer.print_context_status(&format!(
-            "\n🗜️ Manual summarization requested (current usage: {}%)...",
+            "\n🗜️ Manual compaction requested (current usage: {}%)...",
             self.context_window.percentage_used() as u32
         ));
 
@@ -1048,7 +1048,7 @@ impl<W: UiWriter> Agent<W> {
                 let chars_saved = self
                     .context_window
                     .reset_with_summary(summary_response.content, latest_user_msg);
-                self.summarization_events.push(chars_saved);
+                self.compaction_events.push(chars_saved);
 
                 Ok(true)
             }
@@ -1238,17 +1238,17 @@ impl<W: UiWriter> Agent<W> {
         }
 
         stats.push_str(&format!(
-            "   • Summarizations:    {:>10}\n",
-            self.summarization_events.len()
+            "   • Compactions:       {:>10}\n",
+            self.compaction_events.len()
         ));
-        if !self.summarization_events.is_empty() {
-            let total_summarized: usize = self.summarization_events.iter().sum();
-            let avg_summarized = total_summarized / self.summarization_events.len();
+        if !self.compaction_events.is_empty() {
+            let total_compacted: usize = self.compaction_events.iter().sum();
+            let avg_compacted = total_compacted / self.compaction_events.len();
             stats.push_str(&format!(
                 "   • Total Chars Saved: {:>10}\n",
-                total_summarized
+                total_compacted
             ));
-            stats.push_str(&format!("   • Avg Chars/Event:   {:>10}\n", avg_summarized));
+            stats.push_str(&format!("   • Avg Chars/Event:   {:>10}\n", avg_compacted));
         }
         stats.push('\n');
 
@@ -1604,9 +1604,9 @@ impl<W: UiWriter> Agent<W> {
         // Note: Session-level duplicate tracking was removed - we only prevent sequential duplicates (DUP IN CHUNK, DUP IN MSG)
         let mut turn_accumulated_usage: Option<g3_providers::Usage> = None; // Track token usage for timing footer
 
-        // Check if we need to summarize before starting
-        if self.context_window.should_summarize() {
-            // First try thinning if we are at capacity, don't call the LLM for a summary (might fail)
+        // Check if we need to compact before starting
+        if self.context_window.should_compact() {
+            // First try thinning if we are at capacity, don't call the LLM for compaction (might fail)
             if self.context_window.percentage_used() > 90.0 && self.context_window.should_thin() {
                 self.ui_writer.print_context_status(&format!(
                     "\n🥒 Context window at {}%. Trying thinning first...",
@@ -1617,23 +1617,23 @@ impl<W: UiWriter> Agent<W> {
                 self.ui_writer.print_context_thinning(&thin_summary);
 
                 // Check if thinning was sufficient
-                if !self.context_window.should_summarize() {
+                if !self.context_window.should_compact() {
                     self.ui_writer.print_context_status(
                         "✅ Thinning resolved capacity issue. Continuing...\n",
                     );
-                    // Continue with the original request without summarization
+                    // Continue with the original request without compaction
                 } else {
                     self.ui_writer.print_context_status(
-                        "⚠️ Thinning insufficient. Proceeding with summarization...\n",
+                        "⚠️ Thinning insufficient. Proceeding with compaction...\n",
                     );
                 }
             }
 
-            // Only proceed with summarization if still needed after thinning
-            if self.context_window.should_summarize() {
-                // Notify user about summarization
+            // Only proceed with compaction if still needed after thinning
+            if self.context_window.should_compact() {
+                // Notify user about compaction
                 self.ui_writer.print_context_status(&format!(
-                    "\n🗜️ Context window reaching capacity ({}%). Creating summary...",
+                    "\n🗜️ Context window reaching capacity ({}%). Compacting...",
                     self.context_window.percentage_used() as u32
                 ));
 
@@ -1735,17 +1735,17 @@ impl<W: UiWriter> Agent<W> {
                         let chars_saved = self
                             .context_window
                             .reset_with_summary(summary_response.content, latest_user_msg);
-                        self.summarization_events.push(chars_saved);
+                        self.compaction_events.push(chars_saved);
 
                         // Update the request with new context
                         request.messages = self.context_window.conversation_history.clone();
                     }
                     Err(e) => {
                         error!("Failed to create summary: {}", e);
-                        self.ui_writer.print_context_status("⚠️ Unable to create summary. Consider starting a new session if you continue to see errors.\n");
-                        // Don't continue with the original request if summarization failed
+                        self.ui_writer.print_context_status("⚠️ Unable to compact context. Consider starting a new session if you continue to see errors.\n");
+                        // Don't continue with the original request if compaction failed
                         // as we're likely at token limit
-                        return Err(anyhow::anyhow!("Context window at capacity and summarization failed. Please start a new session."));
+                        return Err(anyhow::anyhow!("Context window at capacity and compaction failed. Please start a new session."));
                     }
                 }
             }
@@ -1963,9 +1963,9 @@ impl<W: UiWriter> Agent<W> {
                             // Check if we should auto-compact at 90% BEFORE executing the tool
                             // We need to do this before any borrows of self
                             if self.auto_compact && self.context_window.percentage_used() >= 90.0 {
-                                // Set flag to trigger summarization after this turn completes
+                                // Set flag to trigger compaction after this turn completes
                                 // We can't do it now due to borrow checker constraints
-                                self.pending_90_summarization = true;
+                                self.pending_90_compaction = true;
                             }
 
                             // Check if we should thin the context BEFORE executing the tool

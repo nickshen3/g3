@@ -1666,7 +1666,7 @@ async fn run_interactive<W: UiWriter>(
                             "/help" => {
                                 output.print("");
                                 output.print("📖 Control Commands:");
-                                output.print("  /compact   - Trigger auto-summarization (compacts conversation history)");
+                                output.print("  /compact   - Trigger compaction (compacts conversation history)");
                                 output.print("  /thinnify  - Trigger context thinning (replaces large tool results with file references)");
                                 output.print("  /skinnify  - Trigger full context thinning (like /thinnify but for entire context, not just first third)");
                                 output.print("  /clear     - Clear session and start fresh (discards continuation artifacts)");
@@ -1680,17 +1680,17 @@ async fn run_interactive<W: UiWriter>(
                                 continue;
                             }
                             "/compact" => {
-                                output.print("🗜️ Triggering manual summarization...");
-                                match agent.force_summarize().await {
+                                output.print("🗜️ Triggering manual compaction...");
+                                match agent.force_compact().await {
                                     Ok(true) => {
-                                        output.print("✅ Summarization completed successfully");
+                                        output.print("✅ Compaction completed successfully");
                                     }
                                     Ok(false) => {
-                                        output.print("⚠️ Summarization failed");
+                                        output.print("⚠️ Compaction failed");
                                     }
                                     Err(e) => {
                                         output.print(&format!(
-                                            "❌ Error during summarization: {}",
+                                            "❌ Error during compaction: {}",
                                             e
                                         ));
                                     }
@@ -1909,9 +1909,9 @@ async fn run_interactive_machine(
                     match input.as_str() {
                         "/compact" => {
                             println!("COMMAND: compact");
-                            match agent.force_summarize().await {
-                                Ok(true) => println!("RESULT: Summarization completed"),
-                                Ok(false) => println!("RESULT: Summarization failed"),
+                            match agent.force_compact().await {
+                                Ok(true) => println!("RESULT: Compaction completed"),
+                                Ok(false) => println!("RESULT: Compaction failed"),
                                 Err(e) => println!("ERROR: {}", e),
                             }
                             continue;

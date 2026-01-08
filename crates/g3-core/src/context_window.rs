@@ -183,8 +183,8 @@ impl ContextWindow {
         self.total_tokens.saturating_sub(self.used_tokens)
     }
 
-    /// Check if we should trigger summarization (at 80% capacity)
-    pub fn should_summarize(&self) -> bool {
+    /// Check if we should trigger compaction (at 80% capacity)
+    pub fn should_compact(&self) -> bool {
         // Trigger at 80% OR if we're getting close to absolute limits
         // This prevents issues with models that have large contexts but still hit limits
         let percentage_trigger = self.percentage_used() >= 80.0;
@@ -744,19 +744,19 @@ mod tests {
     }
 
     #[test]
-    fn test_should_summarize_at_80_percent() {
+    fn test_should_compact_at_80_percent() {
         let mut cw = ContextWindow::new(100);
         cw.used_tokens = 79;
-        assert!(!cw.should_summarize());
+        assert!(!cw.should_compact());
         cw.used_tokens = 80;
-        assert!(cw.should_summarize());
+        assert!(cw.should_compact());
     }
 
     #[test]
-    fn test_should_summarize_at_absolute_limit() {
+    fn test_should_compact_at_absolute_limit() {
         let mut cw = ContextWindow::new(1_000_000);
         cw.used_tokens = 150_001;
-        assert!(cw.should_summarize());
+        assert!(cw.should_compact());
     }
 
     #[test]

@@ -11,7 +11,7 @@ Control commands are special commands you can use during an interactive G3 sessi
 
 | Command | Description |
 |---------|-------------|
-| `/compact` | Manually trigger conversation summarization |
+| `/compact` | Manually trigger conversation compaction |
 | `/thinnify` | Replace large tool results with file references (first third) |
 | `/skinnify` | Full context thinning (entire context window) |
 | `/readme` | Reload README.md and AGENTS.md from disk |
@@ -22,7 +22,7 @@ Control commands are special commands you can use during an interactive G3 sessi
 
 ## /compact
 
-Manually trigger conversation summarization to reduce context size.
+Manually trigger conversation compaction to reduce context size.
 
 **When to use**:
 - Context usage is getting high (70%+)
@@ -30,7 +30,7 @@ Manually trigger conversation summarization to reduce context size.
 - Conversation has accumulated irrelevant history
 
 **What it does**:
-1. Sends conversation history to LLM for summarization
+1. Sends conversation history to LLM for compaction
 2. Replaces detailed history with concise summary
 3. Preserves key decisions and context
 4. Significantly reduces token usage
@@ -144,7 +144,7 @@ Show detailed context and performance statistics.
 - Session duration
 - Token usage breakdown
 - Tool call metrics
-- Thinning and summarization events
+- Thinning and compaction events
 - First-token latency statistics
 
 **Example**:
@@ -198,7 +198,7 @@ When context gets high:
 1. **50-70%**: Consider `/thinnify`
 2. **70-80%**: Use `/compact`
 3. **80-90%**: Use `/skinnify` then `/compact`
-4. **90%+**: Auto-summarization triggers
+4. **90%+**: Auto-compaction triggers
 
 ### Best Practices
 
@@ -218,7 +218,7 @@ G3 performs automatic context management:
 | 50% | Thin oldest third of context |
 | 60% | Thin oldest third of context |
 | 70% | Thin oldest third of context |
-| 80% | Auto-summarization (if `auto_compact = true`) |
+| 80% | Auto-compaction (if `auto_compact = true`) |
 | 90% | Aggressive thinning before tool calls |
 
 Manual commands give you finer control over when and how this happens.

@@ -11,7 +11,7 @@ G3 follows a modular architecture organized as a Rust workspace with multiple cr
 #### **g3-core**
 The heart of the agent system, containing:
 - **Agent Engine**: Main orchestration logic for handling conversations, tool execution, and task management
-- **Context Window Management**: Intelligent tracking of token usage with context thinning (50-80%) and auto-summarization at 80% capacity
+- **Context Window Management**: Intelligent tracking of token usage with context thinning (50-80%) and auto-compaction at 80% capacity
 - **Tool System**: Built-in tools for file operations, shell commands, computer control, TODO management, and structured output
 - **Streaming Response Parser**: Real-time parsing of LLM responses with tool call detection and execution
 - **Task Execution**: Support for single and iterative task execution with automatic retry logic
@@ -80,14 +80,14 @@ After each response, G3 displays a timing footer showing elapsed time, time to f
 
 ### Intelligent Context Management
 - Automatic context window monitoring with percentage-based tracking
-- Smart auto-summarization when approaching token limits
+- Smart auto-compaction when approaching token limits
 - **Context thinning** at 50%, 60%, 70%, 80% thresholds - automatically replaces large tool results with file references
 - Conversation history preservation through summaries
 - Dynamic token allocation for different providers (4k to 200k+ tokens)
 
 ### Interactive Control Commands
 G3's interactive CLI includes control commands for manual context management:
-- **`/compact`**: Manually trigger summarization to compact conversation history
+- **`/compact`**: Manually trigger compaction to compact conversation history
 - **`/thinnify`**: Manually trigger context thinning to replace large tool results with file references
 - **`/skinnify`**: Manually trigger full context thinning (like `/thinnify` but processes the entire context window, not just the first third)
 - **`/readme`**: Reload README.md and AGENTS.md from disk without restarting

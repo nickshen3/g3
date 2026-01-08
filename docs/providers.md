@@ -386,7 +386,7 @@ To reduce rate limit issues:
 ### Context Window Errors
 
 If you see "context too long" errors:
-1. Use `/compact` to summarize conversation
+1. Use `/compact` to compact conversation
 2. Use `/thinnify` to replace large tool results
 3. Increase `max_context_length` in config
 4. Switch to a provider with larger context

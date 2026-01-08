@@ -376,5 +376,5 @@ For Databricks OAuth:
 
 If you see context overflow errors:
 1. Check `max_context_length` in `[agent]`
-2. Use `/compact` command to manually summarize
+2. Use `/compact` command to manually compact
 3. Use `/thinnify` to replace large tool results with file references

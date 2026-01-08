@@ -321,7 +321,7 @@ impl UiWriter for ConsoleUiWriter {
     fn print_final_output(&self, summary: &str) {
         // Show spinner while "formatting"
         let spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-        let message = "summarizing work done...";
+        let message = "compacting work done...";
 
         // Brief spinner animation (about 0.5 seconds)
         for i in 0..5 {

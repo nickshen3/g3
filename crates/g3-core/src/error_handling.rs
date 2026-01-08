@@ -181,7 +181,7 @@ pub enum RecoverableError {
     ModelBusy,
     /// Timeout
     Timeout,
-    /// Token limit exceeded (might be recoverable with summarization)
+    /// Token limit exceeded (might be recoverable with compaction)
     TokenLimit,
     /// Context length exceeded (prompt too long) - should end current turn in autonomous mode
     ContextLengthExceeded,
@@ -357,7 +357,7 @@ where
 
                         // Special handling for token limit errors
                         if matches!(recoverable_type, RecoverableError::TokenLimit) {
-                            debug!("Token limit error detected. Consider triggering summarization.");
+                            debug!("Token limit error detected. Consider triggering compaction.");
                         }
 
                         tokio::time::sleep(delay).await;

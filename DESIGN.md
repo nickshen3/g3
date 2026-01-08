@@ -14,7 +14,7 @@ The agent follows a **tool-first philosophy**: instead of just providing advice,
 4. **Modularity**: Clear separation of concerns
 5. **Composability**: Components can be combined in different ways
 6. **Performance**: Built in Rust for speed and reliability
-7. **Context Intelligence**: Smart context window management with auto-summarization
+7. **Context Intelligence**: Smart context window management with auto-compaction
 8. **Error Resilience**: Robust error handling with automatic retry logic
 
 ## Project Structure
@@ -87,7 +87,7 @@ g3/
 - Error handling with automatic retry logic
 
 **Key Features:**
-- **Context Window Intelligence**: Automatic monitoring with percentage-based tracking (80% capacity triggers auto-summarization)
+- **Context Window Intelligence**: Automatic monitoring with percentage-based tracking (80% capacity triggers auto-compaction)
 - **Tool System**: Built-in tools for file operations (read, write, edit), shell commands, and structured output
 - **Streaming Parser**: Real-time parsing of LLM responses with tool call detection and execution
 - **Session Management**: Automatic session logging with detailed conversation history and token usage
@@ -402,7 +402,7 @@ This design document reflects the current state of G3 as a mature, production-re
 - ✅ **Configuration**: TOML-based config with environment overrides
 - ✅ **Error Handling**: Comprehensive retry logic and error classification
 - ✅ **Session Logging**: Automatic session tracking and JSON logs
-- ✅ **Context Management**: Context thinning (50-80%) and auto-summarization at 80% capacity
+- ✅ **Context Management**: Context thinning (50-80%) and auto-compaction at 80% capacity
 - ✅ **Computer Control**: Cross-platform automation with OCR support
 - ✅ **TODO Management**: In-memory TODO list with read/write tools
 

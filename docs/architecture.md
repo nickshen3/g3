@@ -289,7 +289,7 @@ The `ContextWindow` struct manages conversation history with intelligent token t
 
 1. **Token Tracking**: Monitors usage as percentage of provider's context limit
 2. **Context Thinning**: At 50%, 60%, 70%, 80% thresholds, replaces large tool results with file references
-3. **Auto-Summarization**: At 80% capacity, triggers conversation summarization
+3. **Auto-Compaction**: At 80% capacity, triggers conversation compaction
 4. **Provider Adaptation**: Adjusts to different model context windows (4k to 200k+ tokens)
 
 ## Error Handling

@@ -2,7 +2,7 @@ use g3_core::ContextWindow;
 use g3_providers::{Message, MessageRole, Usage};
 
 /// Test that used_tokens is tracked via add_message, not update_usage_from_response.
-/// This is critical for the 80% summarization threshold to work correctly.
+/// This is critical for the 80% compaction threshold to work correctly.
 #[test]
 fn test_used_tokens_tracked_via_messages() {
     let mut window = ContextWindow::new(10000);
@@ -106,10 +106,10 @@ fn test_percentage_based_on_used_tokens() {
     assert!(window.remaining_tokens() < 1000, "remaining tokens should decrease");
 }
 
-/// Test that the 80% summarization threshold works correctly.
+/// Test that the 80% compaction threshold works correctly.
 /// This was the original bug - used_tokens was being double/triple counted.
 #[test]
-fn test_should_summarize_threshold() {
+fn test_should_compact_threshold() {
     let mut window = ContextWindow::new(1000);
 
     // Add messages until we approach 80%
@@ -131,9 +131,9 @@ fn test_should_summarize_threshold() {
     let percentage_after = window.percentage_used();
     println!("After 10 messages: {}% used ({} tokens)", percentage_after, window.used_tokens);
 
-    // Now should_summarize should return true if we're at 80%+
+    // Now should_compact should return true if we're at 80%+
     if percentage_after >= 80.0 {
-        assert!(window.should_summarize(), "should_summarize should be true at 80%+");
+        assert!(window.should_compact(), "should_compact should be true at 80%+");
     }
 }
 
