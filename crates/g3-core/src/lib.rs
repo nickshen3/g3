@@ -2339,6 +2339,17 @@ impl<W: UiWriter> Agent<W> {
                                 // break to let the outer loop's auto-continue logic handle it
                                 if any_tool_executed  {
                                     debug!("Tools were executed, continuing - breaking to auto-continue");
+                                    // IMPORTANT: Save any text response to context window before breaking
+                                    // This ensures text displayed after tool execution is not lost
+                                    if !current_response.trim().is_empty() {
+                                        debug!("Saving current_response ({} chars) to context before auto-continue", current_response.len());
+                                        let assistant_msg = Message::new(
+                                            MessageRole::Assistant,
+                                            current_response.clone(),
+                                        );
+                                        self.context_window.add_message(assistant_msg);
+                                    }
+                                    
                                     // NOTE: We intentionally do NOT set full_response here.
                                     // The content was already displayed during streaming.
                                     // Setting full_response would cause duplication when the
