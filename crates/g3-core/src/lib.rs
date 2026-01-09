@@ -231,7 +231,7 @@ impl<W: UiWriter> Agent<W> {
             // Use default system prompt based on provider capabilities
             if provider_has_native_tool_calling {
                 // For native tool calling providers, use a more explicit system prompt
-                get_system_prompt_for_native(config.agent.allow_multiple_tool_calls)
+                get_system_prompt_for_native()
             } else {
                 // For non-native providers (embedded models), use JSON format instructions
                 SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE.to_string()
@@ -1893,13 +1893,8 @@ impl<W: UiWriter> Agent<W> {
                         let completed_tools = parser.process_chunk(&chunk);
 
                         // Handle completed tool calls - process all if multiple calls enabled
-                        let tools_to_process: Vec<ToolCall> =
-                            if self.config.agent.allow_multiple_tool_calls {
-                                completed_tools
-                            } else {
-                                // Original behavior - only take the first tool
-                                completed_tools.into_iter().take(1).collect()
-                            };
+                        // Always process all tool calls - they will be executed after stream ends
+                        let tools_to_process: Vec<ToolCall> = completed_tools;
 
                         // Helper function to check if two tool calls are duplicates
                         let are_duplicates = |tc1: &ToolCall, tc2: &ToolCall| -> bool {
@@ -1953,11 +1948,10 @@ impl<W: UiWriter> Agent<W> {
                                 modified_tool_call.tool = prefixed_tool_name;
                                 debug!("{}", warning_msg);
 
-                                // Reset the parser to clear any partial/polluted state.
-                                // This prevents "example" tool calls in markdown or LLM stuttering
-                                // from polluting subsequent parsing.
-                                parser.reset();
-
+                                // NOTE: Do NOT call parser.reset() here!
+                                // Resetting the parser clears the entire text buffer, which would
+                                // lose any subsequent (non-duplicate) tool calls that haven't been
+                                // processed yet.
                                 continue; // Skip execution of duplicate
                             }
 
@@ -2289,22 +2283,11 @@ impl<W: UiWriter> Agent<W> {
                             // Reset response_started flag for next iteration
                             response_started = false;
 
-                            // For single tool mode, break immediately
-                            if !self.config.agent.allow_multiple_tool_calls {
-                                break; // Break out of current stream to start a new one
-                            }
+                            // Continue processing - don't break mid-stream
                         } // End of for loop processing each tool call
 
-                        // If we processed any tools in multiple mode, break out to start new stream
-                        // BUT only if there are no more unexecuted tool calls in the buffer
-                        if tool_executed && self.config.agent.allow_multiple_tool_calls {
-                            if parser.has_unexecuted_tool_call() {
-                                debug!("Tool executed but parser still has unexecuted tool calls, continuing to process");
-                                // Don't break - continue processing to pick up remaining tool calls
-                            } else {
-                                break;
-                            }
-                        }
+                        // Note: We no longer break mid-stream after tool execution.
+                        // All tool calls are collected and executed after the stream ends.
 
                         // If no tool calls were completed, continue streaming normally
                         if !tool_executed {
@@ -2782,6 +2765,8 @@ impl<W: UiWriter> Agent<W> {
             pending_images: &mut self.pending_images,
             is_autonomous: self.is_autonomous,
             requirements_sha: self.requirements_sha.as_deref(),
+            context_total_tokens: self.context_window.total_tokens,
+            context_used_tokens: self.context_window.used_tokens,
         };
 
         // Dispatch to the appropriate tool handler

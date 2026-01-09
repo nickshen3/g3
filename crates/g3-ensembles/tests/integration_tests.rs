@@ -23,7 +23,6 @@ fallback_default_max_tokens = 8192
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true
-allow_multiple_tool_calls = false
 max_retry_attempts = 3
 autonomous_max_retry_attempts = 6
 

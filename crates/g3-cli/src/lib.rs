@@ -759,7 +759,8 @@ async fn run_agent_mode(
     let config = g3_config::Config::load(config_path)?;
     
     // Generate the combined system prompt (agent prompt + tool instructions)
-    let system_prompt = get_agent_system_prompt(&agent_prompt, config.agent.allow_multiple_tool_calls);
+    // Note: allow_multiple_tool_calls parameter is deprecated but kept for API compatibility
+    let system_prompt = get_agent_system_prompt(&agent_prompt, true);
     
     // Read README if present
     let readme_content = std::fs::read_to_string(workspace_dir.join("README.md")).ok();

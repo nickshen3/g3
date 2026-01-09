@@ -210,21 +210,17 @@ pub const SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE: &'static str =
     concatcp!(SYSTEM_NATIVE_TOOL_CALLS, CODING_STYLE);
 
 /// Generate system prompt based on whether multiple tool calls are allowed
-pub fn get_system_prompt_for_native(allow_multiple: bool) -> String {
-    if allow_multiple {
-        // Replace the "ONE tool" instruction with multiple tools instruction
-        let base = SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE.to_string();
-        base.replace(
-            "2. Call the appropriate tool with the required parameters",
-            "2. Call the appropriate tool(s) with the required parameters - you may call multiple tools in parallel when appropriate. 
+pub fn get_system_prompt_for_native() -> String {
+    // Always allow multiple tool calls - they are processed sequentially after stream ends
+    let base = SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE.to_string();
+    base.replace(
+        "2. Call the appropriate tool with the required parameters",
+        "2. Call the appropriate tool(s) with the required parameters - you may call multiple tools in parallel when appropriate. 
               <use_parallel_tool_calls>
   For maximum efficiency, whenever you perform multiple independent operations, invoke all relevant tools simultaneously rather than sequentially. Prioritize calling tools in parallel whenever possible. For example, when reading 3 files, run 3 tool calls in parallel to read all 3 files into context at the same time. When running multiple read-only commands like `ls` or `list_dir`, always run all of the commands in parallel. Err on the side of maximizing parallel tool calls rather than running too many tools sequentially.
   </use_parallel_tool_calls>
 "
-        )
-    } else {
-        SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE.to_string()
-    }
+    )
 }
 
 const SYSTEM_NON_NATIVE_TOOL_USE: &'static str =
@@ -410,12 +406,9 @@ const G3_IDENTITY_LINE: &str = "You are G3, an AI programming agent of the same 
 /// The agent_prompt replaces only the G3 identity line at the start of the prompt.
 /// Everything else (tool instructions, coding guidelines, etc.) is preserved.
 pub fn get_agent_system_prompt(agent_prompt: &str, allow_multiple_tool_calls: bool) -> String {
-    // Get the full system prompt (with or without parallel tool calls)
-    let full_prompt = if allow_multiple_tool_calls {
-        get_system_prompt_for_native(true)
-    } else {
-        SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE.to_string()
-    };
+    // Get the full system prompt (always allows multiple tool calls now)
+    let _ = allow_multiple_tool_calls; // Parameter kept for API compatibility but ignored
+    let full_prompt = get_system_prompt_for_native();
 
     // Replace only the G3 identity line with the custom agent prompt
     full_prompt.replace(G3_IDENTITY_LINE, agent_prompt.trim())

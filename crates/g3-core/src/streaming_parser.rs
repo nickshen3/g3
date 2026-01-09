@@ -154,8 +154,14 @@ impl StreamingToolParser {
     fn try_parse_json_tool_call(&mut self, _content: &str) -> Option<ToolCall> {
         // If we're not currently in a JSON tool call, look for the start
         if !self.in_json_tool_call {
-            if let Some(pos) = Self::find_last_tool_call_start(&self.text_buffer) {
-                debug!("Found JSON tool call pattern at position {}", pos);
+            // Only search in the unconsumed portion of the buffer to avoid
+            // re-parsing already-executed tool calls
+            let unchecked_buffer = &self.text_buffer[self.last_consumed_position..];
+            // Use find_first_tool_call_start to find the FIRST tool call, not the last.
+            // This ensures we process tool calls in order when multiple arrive together.
+            if let Some(relative_pos) = Self::find_first_tool_call_start(unchecked_buffer) {
+                let pos = self.last_consumed_position + relative_pos;
+                debug!("Found JSON tool call pattern at position {} (relative: {})", pos, relative_pos);
                 self.in_json_tool_call = true;
                 self.json_tool_start = Some(pos);
             }
@@ -412,5 +418,56 @@ mod tests {
         assert!(parser.text_buffer.is_empty());
         assert!(!parser.message_stopped);
         assert_eq!(parser.last_consumed_position, 0);
+    }
+
+    #[test]
+    fn test_multiple_tool_calls_processed_in_order() {
+        // Test that when multiple tool calls arrive together, they are processed
+        // in order (first one first, not last one first)
+        let mut parser = StreamingToolParser::new();
+        
+        // Simulate two tool calls arriving in the same chunk
+        let content = r#"Some text before
+
+{"tool": "shell", "args": {"command": "first"}}
+
+{"tool": "shell", "args": {"command": "second"}}
+
+Some text after"#;
+        
+        let chunk = g3_providers::CompletionChunk {
+            content: content.to_string(),
+            finished: true,
+            tool_calls: None,
+            usage: None,
+        };
+        
+        let tools = parser.process_chunk(&chunk);
+        
+        // Should find both tool calls
+        assert_eq!(tools.len(), 2, "Expected 2 tool calls, got {}", tools.len());
+        
+        // First tool call should be "first", not "second"
+        assert_eq!(tools[0].tool, "shell");
+        assert_eq!(tools[0].args["command"], "first", 
+            "First tool call should have command 'first', got {:?}", tools[0].args);
+        
+        // Second tool call should be "second"
+        assert_eq!(tools[1].tool, "shell");
+        assert_eq!(tools[1].args["command"], "second",
+            "Second tool call should have command 'second', got {:?}", tools[1].args);
+    }
+
+    #[test]
+    fn test_find_first_vs_last_tool_call() {
+        let text = r#"{"tool": "first"} and {"tool": "second"}"#;
+        
+        let first_pos = StreamingToolParser::find_first_tool_call_start(text);
+        let last_pos = StreamingToolParser::find_last_tool_call_start(text);
+        
+        assert!(first_pos.is_some());
+        assert!(last_pos.is_some());
+        assert!(first_pos.unwrap() < last_pos.unwrap(), 
+            "First position ({:?}) should be less than last position ({:?})", first_pos, last_pos);
     }
 }

@@ -10,10 +10,50 @@ use crate::ToolCall;
 
 use super::executor::ToolContext;
 
+/// Bytes per token heuristic (conservative estimate for code/text mix)
+const BYTES_PER_TOKEN: f32 = 3.5;
+
+/// Maximum percentage of context window a single file read can consume
+const MAX_FILE_READ_PERCENT: f32 = 0.20; // 20%
+
+/// Estimate token count from byte size
+fn estimate_tokens_from_bytes(bytes: usize) -> u32 {
+    ((bytes as f32 / BYTES_PER_TOKEN) * 1.1).ceil() as u32 // 10% safety buffer
+}
+
+/// Calculate the maximum bytes we should read based on context window state.
+/// Returns None if no limit needed, Some(max_bytes) if limiting required.
+fn calculate_read_limit(file_bytes: usize, total_tokens: u32, used_tokens: u32) -> Option<usize> {
+    let file_tokens = estimate_tokens_from_bytes(file_bytes);
+    let max_tokens_for_file = (total_tokens as f32 * MAX_FILE_READ_PERCENT) as u32;
+    
+    // Tier 1: File is small enough (< 20% of context) - no limit
+    if file_tokens < max_tokens_for_file {
+        return None;
+    }
+    
+    // Calculate available context
+    let available_tokens = total_tokens.saturating_sub(used_tokens);
+    let half_available = available_tokens / 2;
+    
+    // Tier 3: If 20% would exceed half of available, cap at half available
+    let effective_max_tokens = if max_tokens_for_file > half_available {
+        half_available
+    } else {
+        // Tier 2: Cap at 20% of total context
+        max_tokens_for_file
+    };
+    
+    // Convert tokens back to bytes
+    let max_bytes = (effective_max_tokens as f32 * BYTES_PER_TOKEN / 1.1) as usize;
+    
+    Some(max_bytes)
+}
+
 /// Execute the `read_file` tool.
 pub async fn execute_read_file<W: UiWriter>(
     tool_call: &ToolCall,
-    _ctx: &ToolContext<'_, W>,
+    ctx: &ToolContext<'_, W>,
 ) -> Result<String> {
     debug!("Processing read_file tool call");
     
@@ -47,54 +87,83 @@ pub async fn execute_read_file<W: UiWriter>(
 
     match std::fs::read_to_string(path_str) {
         Ok(content) => {
-            // Validate and apply range if specified
-            let start = start_char.unwrap_or(0);
-            let end = end_char.unwrap_or(content.len());
+            let total_file_len = content.len();
+            
+            // Calculate token-aware limit for the content we're about to read
+            let read_limit = calculate_read_limit(
+                total_file_len,
+                ctx.context_total_tokens,
+                ctx.context_used_tokens,
+            );
 
-            // Validation
-            if start > content.len() {
+            // Validate user-specified range
+            let user_start = start_char.unwrap_or(0);
+            if user_start > total_file_len {
                 return Ok(format!(
                     "❌ Start position {} exceeds file length {}",
-                    start,
-                    content.len()
+                    user_start,
+                    total_file_len
                 ));
             }
-            if end > content.len() {
+            
+            let user_end = end_char.unwrap_or(total_file_len);
+            if user_end > total_file_len {
                 return Ok(format!(
                     "❌ End position {} exceeds file length {}",
-                    end,
-                    content.len()
+                    user_end,
+                    total_file_len
                 ));
             }
-            if start > end {
+            if user_start > user_end {
                 return Ok(format!(
                     "❌ Start position {} is greater than end position {}",
-                    start, end
+                    user_start, user_end
                 ));
             }
 
+            // Calculate the range we'll actually read
+            let user_range_len = user_end - user_start;
+            
+            // Determine if we need to apply token-aware limiting
+            let (effective_end, was_truncated) = match read_limit {
+                Some(max_bytes) if user_range_len > max_bytes => {
+                    // Truncate to max_bytes from the start position
+                    (user_start + max_bytes, true)
+                }
+                _ => (user_end, false),
+            };
+
             // Extract the requested portion, ensuring we're at char boundaries
-            let start_boundary = if start == 0 {
+            let start_boundary = if user_start == 0 {
                 0
             } else {
                 content
                     .char_indices()
-                    .find(|(i, _)| *i >= start)
+                    .find(|(i, _)| *i >= user_start)
                     .map(|(i, _)| i)
-                    .unwrap_or(start)
+                    .unwrap_or(user_start)
             };
             let end_boundary = content
                 .char_indices()
-                .find(|(i, _)| *i >= end)
+                .find(|(i, _)| *i >= effective_end)
                 .map(|(i, _)| i)
-                .unwrap_or(content.len());
+                .unwrap_or(total_file_len);
 
             let partial_content = &content[start_boundary..end_boundary];
             let line_count = partial_content.lines().count();
             let total_lines = content.lines().count();
 
-            // Format output with range info if partial
-            if start_char.is_some() || end_char.is_some() {
+            // Format output based on whether truncation occurred
+            if was_truncated {
+                // Token-aware truncation header
+                let context_pct = (ctx.context_used_tokens as f32 / ctx.context_total_tokens as f32 * 100.0) as u32;
+                Ok(format!(
+                    "⚠️ FILE TRUNCATED: Reading chars {}-{} of {} total (file exceeds 20% context window threshold, context at {}%)\n\
+                     📄 File content ({} lines of {} total):\n{}",
+                    start_boundary, end_boundary, total_file_len, context_pct,
+                    line_count, total_lines, partial_content
+                ))
+            } else if start_char.is_some() || end_char.is_some() {
                 Ok(format!(
                     "📄 File content (chars {}-{}, {} lines of {} total):\n{}",
                     start_boundary, end_boundary, line_count, total_lines, partial_content
