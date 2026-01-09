@@ -323,7 +323,14 @@ fn handle_suppressing_char(state: &mut FilterState, ch: char, _output: &mut Stri
         
         // Limit buffer size to prevent unbounded growth
         if state.buffer.len() > 200 {
-            let keep_from = state.buffer.len() - 100;
+            // Find a valid character boundary near the 100-byte mark from the end
+            // We can't just slice at byte offset - multi-byte chars (like emojis) would panic
+            let target_keep = state.buffer.len() - 100;
+            // Find the nearest char boundary at or after target_keep
+            let keep_from = state.buffer.char_indices()
+                .map(|(i, _)| i)
+                .find(|&i| i >= target_keep)
+                .unwrap_or(0);
             state.buffer = state.buffer[keep_from..].to_string();
         }
     }
@@ -412,5 +419,23 @@ mod tests {
             result.push_str(&filter_json_tool_calls(chunk));
         }
         assert_eq!(result, "Before\n\nAfter");
+    }
+
+    #[test]
+    fn test_buffer_truncation_with_multibyte_chars() {
+        // This test ensures that buffer truncation doesn't panic on multi-byte characters
+        // The bug was: slicing at byte offset 100 from end could land mid-emoji
+        reset_json_tool_state();
+        
+        // Create a string with emojis that's over 200 bytes to trigger truncation
+        // Each emoji is 4 bytes, so we need ~50+ emojis to exceed 200 bytes
+        let emoji_heavy = "🔄".repeat(60); // 240 bytes of emojis
+        let input = format!("Text\n{{\"tool\": \"shell\", \"args\": {{\"data\": \"{}\"}}}}\nMore", emoji_heavy);
+        
+        // This should not panic - the fix ensures we find valid char boundaries
+        let result = filter_json_tool_calls(&input);
+        
+        // The tool call should be filtered out
+        assert_eq!(result, "Text\n\nMore");
     }
 }

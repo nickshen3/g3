@@ -440,6 +440,7 @@ Some text after"#;
             finished: true,
             tool_calls: None,
             usage: None,
+        stop_reason: None,
         };
         
         let tools = parser.process_chunk(&chunk);

@@ -1841,6 +1841,7 @@ impl<W: UiWriter> Agent<W> {
             let mut raw_chunks: Vec<String> = Vec::new(); // Store raw chunks for debugging
             let mut _last_error: Option<String> = None;
             let mut accumulated_usage: Option<g3_providers::Usage> = None;
+            let mut stream_stop_reason: Option<String> = None; // Track why the stream stopped
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
@@ -2277,6 +2278,12 @@ impl<W: UiWriter> Agent<W> {
                         if chunk.finished {
                             debug!("Stream finished: tool_executed={}, current_response_len={}, full_response_len={}, chunks_received={}",
                                 tool_executed, current_response.len(), full_response.len(), chunks_received);
+                            
+                            // Capture the stop reason from the final chunk
+                            if let Some(ref reason) = chunk.stop_reason {
+                                debug!("Stream stop_reason: {}", reason);
+                                stream_stop_reason = Some(reason.clone());
+                            }
 
                             // Stream finished - check if we should continue or return
                             if !tool_executed {
@@ -2498,10 +2505,18 @@ impl<W: UiWriter> Agent<W> {
                     debug!("Detected unexecuted tool call in buffer - this may indicate a parsing issue");
                     warn!("Unexecuted tool call detected in buffer after stream ended");
                 }
+                
+                // Check if the response was truncated due to max_tokens
+                let was_truncated_by_max_tokens = stream_stop_reason.as_deref() == Some("max_tokens");
+                if was_truncated_by_max_tokens {
+                    debug!("Response was truncated due to max_tokens limit");
+                    warn!("LLM response was cut off due to max_tokens limit - will auto-continue");
+                }
 
                 // Auto-continue if tools were executed and we are in autonomous mode
                 // OR if the LLM emitted an incomplete tool call (truncated JSON)
                 // OR if the LLM emitted a complete tool call that wasn't executed
+                // OR if the response was truncated due to max_tokens
                 // This ensures we don't return control when the LLM clearly intended to call a tool
                 // Note: We removed the redundant condition (any_tool_executed && is_empty_response)
                 // because it's already covered by (any_tool_executed )
@@ -2509,7 +2524,8 @@ impl<W: UiWriter> Agent<W> {
                 // the user may be asking questions and we should return control to them
                 let should_auto_continue = self.is_autonomous && ((any_tool_executed ) 
                     || has_incomplete_tool_call 
-                    || has_unexecuted_tool_call);
+                    || has_unexecuted_tool_call
+                    || was_truncated_by_max_tokens);
                 if should_auto_continue {
                     if auto_summary_attempts < MAX_AUTO_SUMMARY_ATTEMPTS {
                         auto_summary_attempts += 1;

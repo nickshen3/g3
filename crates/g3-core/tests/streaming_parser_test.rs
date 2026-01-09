@@ -17,6 +17,7 @@ fn chunk(content: &str, finished: bool) -> CompletionChunk {
         finished,
         tool_calls: None,
         usage: None,
+        stop_reason: None,
     }
 }
 

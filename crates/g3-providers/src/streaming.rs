@@ -61,6 +61,22 @@ pub fn make_final_chunk(tool_calls: Vec<ToolCall>, usage: Option<Usage>) -> Comp
         } else {
             Some(tool_calls)
         },
+        stop_reason: None,
+    }
+}
+
+/// Create a final completion chunk with stop reason.
+pub fn make_final_chunk_with_reason(tool_calls: Vec<ToolCall>, usage: Option<Usage>, stop_reason: Option<String>) -> CompletionChunk {
+    CompletionChunk {
+        content: String::new(),
+        finished: true,
+        usage,
+        tool_calls: if tool_calls.is_empty() {
+            None
+        } else {
+            Some(tool_calls)
+        },
+        stop_reason,
     }
 }
 
@@ -71,6 +87,7 @@ pub fn make_text_chunk(content: String) -> CompletionChunk {
         finished: false,
         usage: None,
         tool_calls: None,
+        stop_reason: None,
     }
 }
 
@@ -81,5 +98,6 @@ pub fn make_tool_chunk(tool_calls: Vec<ToolCall>) -> CompletionChunk {
         finished: false,
         usage: None,
         tool_calls: Some(tool_calls),
+        stop_reason: None,
     }
 }

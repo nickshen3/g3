@@ -112,7 +112,7 @@ use tracing::{debug, error};
 use crate::{
     CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, LLMProvider, Message,
     MessageRole, Tool, ToolCall, Usage,
-    streaming::{decode_utf8_streaming, make_final_chunk, make_text_chunk, make_tool_chunk},
+    streaming::{decode_utf8_streaming, make_final_chunk, make_final_chunk_with_reason, make_text_chunk, make_tool_chunk},
 };
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -395,6 +395,7 @@ impl AnthropicProvider {
         let mut accumulated_usage: Option<Usage> = None;
         let mut byte_buffer = Vec::new(); // Buffer for incomplete UTF-8 sequences
         let mut message_stopped = false; // Track if we've received message_stop
+        let mut stop_reason: Option<String> = None; // Track why the message stopped
 
         while let Some(chunk_result) = stream.next().await {
             match chunk_result {
@@ -583,10 +584,20 @@ impl AnthropicProvider {
                                                 current_tool_calls.clear();
                                             }
                                         }
+                                        "message_delta" => {
+                                            // message_delta contains the stop_reason and final usage
+                                            if let Some(delta) = &event.delta {
+                                                if let Some(reason) = &delta.stop_reason {
+                                                    debug!("Received stop_reason: {}", reason);
+                                                    stop_reason = Some(reason.clone());
+                                                }
+                                            }
+                                            // Usage is also in message_delta but we get it from message_start
+                                        }
                                         "message_stop" => {
                                             debug!("Received message stop event");
                                             message_stopped = true;
-                                            let final_chunk = make_final_chunk(current_tool_calls.clone(), accumulated_usage.clone());
+                                            let final_chunk = make_final_chunk_with_reason(current_tool_calls.clone(), accumulated_usage.clone(), stop_reason.clone());
                                             if tx.send(Ok(final_chunk)).await.is_err() {
                                                 debug!("Receiver dropped, stopping stream");
                                             }
@@ -931,6 +942,8 @@ struct AnthropicStreamMessage {
 struct AnthropicDelta {
     text: Option<String>,
     partial_json: Option<String>,
+    #[serde(default)]
+    stop_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

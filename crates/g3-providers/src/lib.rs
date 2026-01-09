@@ -187,6 +187,8 @@ pub struct CompletionChunk {
     pub finished: bool,
     pub tool_calls: Option<Vec<ToolCall>>,
     pub usage: Option<Usage>, // Add usage tracking for streaming
+    /// Stop reason from the API (e.g., "end_turn", "max_tokens", "stop_sequence")
+    pub stop_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
