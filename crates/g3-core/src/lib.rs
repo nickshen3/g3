@@ -782,12 +782,17 @@ impl<W: UiWriter> Agent<W> {
         let provider_name = provider.name().to_string();
         let _has_native_tool_calling = provider.has_native_tool_calling();
         let _supports_cache_control = provider.supports_cache_control();
+        // Check if we should exclude the research tool (scout agent to prevent recursion)
+        let exclude_research = self.agent_name.as_deref() == Some("scout");
         let tools = if provider.has_native_tool_calling() {
-            Some(tool_definitions::create_tool_definitions(
-                tool_definitions::ToolConfig::new(
+            let mut tool_config = tool_definitions::ToolConfig::new(
                     self.config.webdriver.enabled,
                     self.config.computer_control.enabled,
-                )))
+                );
+            if exclude_research {
+                tool_config = tool_config.with_research_excluded();
+            }
+            Some(tool_definitions::create_tool_definitions(tool_config))
         } else {
             None
         };
@@ -2200,11 +2205,15 @@ impl<W: UiWriter> Agent<W> {
                             // Ensure tools are included for native providers in subsequent iterations
                             let provider_for_tools = self.providers.get(None)?;
                             if provider_for_tools.has_native_tool_calling() {
-                                request.tools = Some(tool_definitions::create_tool_definitions(
-                                    tool_definitions::ToolConfig::new(
+                                let mut tool_config = tool_definitions::ToolConfig::new(
                                         self.config.webdriver.enabled,
                                         self.config.computer_control.enabled,
-                                    )));
+                                    );
+                                // Exclude research tool for scout agent to prevent recursion
+                                if self.agent_name.as_deref() == Some("scout") {
+                                    tool_config = tool_config.with_research_excluded();
+                                }
+                                request.tools = Some(tool_definitions::create_tool_definitions(tool_config));
                             }
 
                             // DO NOT add final_display_content to full_response here!

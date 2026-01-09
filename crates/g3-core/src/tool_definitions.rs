@@ -12,6 +12,7 @@ use serde_json::json;
 pub struct ToolConfig {
     pub webdriver: bool,
     pub computer_control: bool,
+    pub exclude_research: bool,
 }
 
 impl ToolConfig {
@@ -19,7 +20,15 @@ impl ToolConfig {
         Self {
             webdriver,
             computer_control,
+            exclude_research: false,
         }
+    }
+
+    /// Create a config with the research tool excluded.
+    /// Used for scout agent to prevent recursion.
+    pub fn with_research_excluded(mut self) -> Self {
+        self.exclude_research = true;
+        self
     }
 }
 
@@ -28,7 +37,7 @@ impl ToolConfig {
 /// Returns a vector of Tool definitions that describe the available tools
 /// and their input schemas.
 pub fn create_tool_definitions(config: ToolConfig) -> Vec<Tool> {
-    let mut tools = create_core_tools();
+    let mut tools = create_core_tools(config.exclude_research);
 
     if config.webdriver {
         tools.extend(create_webdriver_tools());
@@ -38,8 +47,8 @@ pub fn create_tool_definitions(config: ToolConfig) -> Vec<Tool> {
 }
 
 /// Create the core tools that are always available
-fn create_core_tools() -> Vec<Tool> {
-    vec![
+fn create_core_tools(exclude_research: bool) -> Vec<Tool> {
+    let mut tools = vec![
         Tool {
             name: "shell".to_string(),
             description: "Execute shell commands".to_string(),
@@ -243,7 +252,27 @@ fn create_core_tools() -> Vec<Tool> {
                 "required": ["searches"]
             }),
         },
-    ]
+    ];
+
+    // Conditionally add the research tool (excluded for scout agent to prevent recursion)
+    if !exclude_research {
+        tools.push(Tool {
+            name: "research".to_string(),
+            description: "Perform web-based research on a topic and return a structured research brief. Use this tool when you need to research APIs, SDKs, libraries, approaches, bugs, documentation, or anything else that requires web-based research. The tool spawns a specialized research agent that browses the web and returns a concise, decision-ready report.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The research question or topic to investigate. Be specific about what you need to know."
+                    }
+                },
+                "required": ["query"]
+            }),
+        });
+    }
+
+    tools
 }
 
 /// Create WebDriver browser automation tools
@@ -445,11 +474,11 @@ mod tests {
 
     #[test]
     fn test_core_tools_count() {
-        let tools = create_core_tools();
+        let tools = create_core_tools(false);
         // Should have the core tools: shell, background_process, read_file, read_image,
-        // write_file, str_replace, final_output, take_screenshot,
-        // todo_read, todo_write, code_coverage, code_search (11 total)
-        assert_eq!(tools.len(), 11);
+        // write_file, str_replace, take_screenshot,
+        // todo_read, todo_write, code_coverage, code_search, research (12 total)
+        assert_eq!(tools.len(), 12);
     }
 
     #[test]
@@ -463,24 +492,36 @@ mod tests {
     fn test_create_tool_definitions_core_only() {
         let config = ToolConfig::default();
         let tools = create_tool_definitions(config);
-        assert_eq!(tools.len(), 11);
+        assert_eq!(tools.len(), 12);
     }
 
     #[test]
     fn test_create_tool_definitions_all_enabled() {
         let config = ToolConfig::new(true, true);
         let tools = create_tool_definitions(config);
-        // 11 core + 15 webdriver = 26
-        assert_eq!(tools.len(), 26);
+        // 12 core + 15 webdriver = 27
+        assert_eq!(tools.len(), 27);
     }
 
     #[test]
     fn test_tool_has_required_fields() {
-        let tools = create_core_tools();
+        let tools = create_core_tools(false);
         for tool in tools {
             assert!(!tool.name.is_empty(), "Tool name should not be empty");
             assert!(!tool.description.is_empty(), "Tool description should not be empty");
             assert!(tool.input_schema.is_object(), "Tool input_schema should be an object");
         }
+    }
+
+    #[test]
+    fn test_research_tool_excluded() {
+        let tools_with_research = create_core_tools(false);
+        let tools_without_research = create_core_tools(true);
+        
+        assert_eq!(tools_with_research.len(), 12);
+        assert_eq!(tools_without_research.len(), 11);
+        
+        assert!(tools_with_research.iter().any(|t| t.name == "research"));
+        assert!(!tools_without_research.iter().any(|t| t.name == "research"));
     }
 }

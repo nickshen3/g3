@@ -114,6 +114,14 @@ If you create temporary files for verification or investigation, place these in 
 
 When you need to look up documentation, search for resources, find data online, or simply search the web to complete your task, you have access to WebDriver browser automation tools.
 
+**Preferred: Use the `research` tool for complex research tasks:**
+- For researching APIs, SDKs, libraries, approaches, bugs, or any topic requiring web research
+- The `research` tool spawns a specialized research agent that browses the web and returns a concise, decision-ready report
+- Simply call `research` with a specific query describing what you need to know
+- The tool returns a structured brief with options, trade-offs, and recommendations
+
+**Alternative: Use WebDriver directly for simple lookups or when you need fine-grained control:**
+
 **How to use WebDriver for research:**
 1. Call `webdriver_start` to begin a browser session (runs Chrome headless by default - no visible window)
 2. Use `webdriver_navigate` to go to URLs (search engines, documentation sites, etc.)
@@ -219,6 +227,11 @@ Short description for providers without native calling specs:
   - With context lines: {\"tool\": \"code_search\", \"args\": {\"searches\": [{\"name\": \"funcs\", \"query\": \"(function_item name: (identifier) @name)\", \"language\": \"rust\", \"context_lines\": 3}]}}
        - \"context\": 3 (show surrounding lines),
        - \"json_style\": \"stream\" (for large results)
+
+- **research**: Perform web-based research and return a structured report
+  - Format: {\"tool\": \"research\", \"args\": {\"query\": \"your research question\"}}
+  - Example: {\"tool\": \"research\", \"args\": {\"query\": \"Best Rust HTTP client libraries for async/await\"}}
+  - Use for researching APIs, SDKs, libraries, approaches, bugs, or any topic requiring web research
 
 # Instructions
 

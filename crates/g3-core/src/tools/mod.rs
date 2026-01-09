@@ -7,10 +7,12 @@
 //! - `todo` - TODO list management
 //! - `webdriver` - Browser automation via WebDriver
 //! - `misc` - Other tools (screenshots, code search, etc.)
+//! - `research` - Web research via scout agent
 
 pub mod executor;
 pub mod file_ops;
 pub mod misc;
+pub mod research;
 pub mod shell;
 pub mod todo;
 pub mod webdriver;
