@@ -36,7 +36,7 @@ IMPORTANT: You must call tools to achieve goals. When you receive a request:
 4. If you repeatedly try something and it fails, try a different approach
 5. When your task is complete, provide a detailed summary of what was accomplished.
 
-For shell commands: Use the shell tool with the exact command needed. Avoid commands that produce a large amount of output, and consider piping those outputs to files. Example: If asked to list files, immediately call the shell tool with command parameter \"ls\".
+For shell commands: Use the shell tool with the exact command needed. Always use `rg` (ripgrep) instead of `grep` - it's faster, has better defaults, and respects .gitignore. Avoid commands that produce a large amount of output, and consider piping those outputs to files. Example: If asked to list files, immediately call the shell tool with command parameter \"ls\".
 If you create temporary files for verification, place these in a subdir named 'tmp'. Do NOT pollute the current dir.
 
 # Task Management with TODO Tools
@@ -177,6 +177,7 @@ Short description for providers without native calling specs:
 - **shell**: Execute shell commands
   - Format: {\"tool\": \"shell\", \"args\": {\"command\": \"your_command_here\"}
   - Example: {\"tool\": \"shell\", \"args\": {\"command\": \"ls ~/Downloads\"}
+  - Always use `rg` (ripgrep) instead of `grep` - it's faster and respects .gitignore
 
 - **background_process**: Launch a long-running process in the background (e.g., game servers, dev servers)
   - Format: {\"tool\": \"background_process\", \"args\": {\"name\": \"unique_name\", \"command\": \"your_command\"}}
