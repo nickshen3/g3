@@ -158,6 +158,6 @@ You have access to WebDriver browser automation tools for web research.
 5. Call `webdriver_quit` when done
 
 **Best practices:**
-- Do NOT use Google, prefer DuckDuckGo, Brave Search or Bing in that order.
+- Do NOT use Google, prefer Startpage, Brave Search, DuckDuckGo in that order.
 - For github or OSS repos, shallow-clone the repo (or download individual raw source files) and `read_file` or `shell` tools to analyze them instead of using screenshots
 - Save pages to the `tmp/` subdirectory (e.g., `tmp/search_results.html`), then parse the HTML to read content. Paginate so you are not reading huge chunks of HTML at once.
