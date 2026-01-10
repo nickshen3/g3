@@ -375,6 +375,71 @@ pub fn find_incomplete_agent_session(agent_name: &str) -> Result<Option<SessionC
     Ok(candidates.into_iter().next())
 }
 
+/// List all available sessions in the current working directory.
+/// Returns sessions sorted by creation time (most recent first).
+pub fn list_sessions_for_directory() -> Result<Vec<SessionContinuation>> {
+    let sessions_dir = get_sessions_dir();
+    
+    if !sessions_dir.exists() {
+        debug!("Sessions directory does not exist: {:?}", sessions_dir);
+        return Ok(Vec::new());
+    }
+    
+    let current_dir = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    
+    let mut sessions: Vec<SessionContinuation> = Vec::new();
+    
+    // Scan all session directories
+    for entry in std::fs::read_dir(&sessions_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        
+        if !path.is_dir() {
+            continue;
+        }
+        
+        // Check for latest.json in this session directory
+        let latest_path = path.join(CONTINUATION_FILENAME);
+        if !latest_path.exists() {
+            continue;
+        }
+        
+        // Try to load the continuation
+        let json = match std::fs::read_to_string(&latest_path) {
+            Ok(j) => j,
+            Err(_) => continue,
+        };
+        
+        let continuation: SessionContinuation = match serde_json::from_str(&json) {
+            Ok(c) => c,
+            Err(_) => continue, // Skip sessions with old format
+        };
+        
+        // Only include sessions from the current working directory
+        if continuation.working_directory == current_dir {
+            sessions.push(continuation);
+        }
+    }
+    
+    // Sort by created_at descending (most recent first)
+    sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    
+    Ok(sessions)
+}
+
+/// Format a session's created_at timestamp for display
+pub fn format_session_time(created_at: &str) -> String {
+    match chrono::DateTime::parse_from_rfc3339(created_at) {
+        Ok(dt) => {
+            let local: chrono::DateTime<chrono::Local> = dt.into();
+            local.format("%Y-%m-%d %H:%M").to_string()
+        }
+        Err(_) => created_at.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

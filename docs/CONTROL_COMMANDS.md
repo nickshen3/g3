@@ -14,6 +14,8 @@ Control commands are special commands you can use during an interactive G3 sessi
 | `/compact` | Manually trigger conversation compaction |
 | `/thinnify` | Replace large tool results with file references (first third) |
 | `/skinnify` | Full context thinning (entire context window) |
+| `/clear` | Clear session and start fresh |
+| `/resume` | List and switch to a previous session |
 | `/readme` | Reload README.md and AGENTS.md from disk |
 | `/stats` | Show detailed context and performance statistics |
 | `/help` | Display all available control commands |
@@ -105,6 +107,74 @@ g3> /skinnify
 
 ---
 
+## /clear
+
+Clear the current session and start fresh.
+
+**When to use**:
+- You want to start a completely new task
+- The current context is cluttered or confused
+- You want to discard all conversation history
+
+**What it does**:
+1. Clears all conversation history (keeps system prompt)
+2. Removes the session continuation symlink
+3. Resets context to initial state
+
+**Example**:
+```
+g3> /clear
+🧹 Clearing session...
+✅ Session cleared. Starting fresh.
+```
+
+**Notes**:
+- This is irreversible for the current session
+- Previous session data remains in `.g3/sessions/` and can be resumed with `/resume`
+- Use when you want a clean slate
+
+---
+
+## /resume
+
+List available sessions and switch to a previous one.
+
+**When to use**:
+- You want to continue work from a previous session
+- You accidentally cleared or lost context
+- You want to switch between different tasks/sessions
+
+**What it does**:
+1. Scans `.g3/sessions/` for sessions in the current directory
+2. Displays a numbered list with timestamps and context usage
+3. Prompts for selection
+4. Saves current session before switching
+5. Restores the selected session's context
+
+**Example**:
+```
+g3> /resume
+📋 Scanning for available sessions...
+
+Available sessions:
+  1. [2025-01-11 14:30] implement_auth_feature_abc123 (45%) 📝
+  2. [2025-01-11 10:15] fix_bug_in_parser_def456 (23%)
+  3. [2025-01-10 16:45] refactor_database_layer_ghi789 (67%)
+
+Enter session number to resume (or press Enter to cancel):
+> 1
+🔄 Switching to session: implement_auth_feature_abc123
+✅ Full context restored from session.
+```
+
+**Notes**:
+- Sessions marked with 📝 have incomplete TODO items
+- Current session is marked with "(current)"
+- Only sessions from the current working directory are shown
+- Full context is restored if usage was <80%, otherwise summary is used
+
+---
+
 ## /readme
 
 Reload README.md and AGENTS.md from disk without restarting.
@@ -174,6 +244,8 @@ g3> /help
   /compact   - Summarize conversation to reduce context
   /thinnify  - Replace large tool results with file refs
   /skinnify  - Full context thinning (entire window)
+  /clear     - Clear session and start fresh
+  /resume    - List and switch to a previous session
   /readme    - Reload README.md and AGENTS.md
   /stats     - Show context and performance statistics
   /help      - Show this help message

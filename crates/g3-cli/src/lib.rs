@@ -858,6 +858,9 @@ async fn run_agent_mode(
     
     let _result = agent.execute_task(final_task, None, true).await?;
     
+    // Save session continuation for resume capability
+    agent.save_session_continuation(None);
+    
     // Don't print completion message for scout agent - it needs the last line
     // to be the report file path for the research tool to read
     if agent_name != "scout" {
@@ -1261,6 +1264,9 @@ async fn run_autonomous_machine(
     println!("END_AGENT_RESPONSE");
     println!("TASK_END");
 
+    // Save session continuation for resume capability
+    agent.save_session_continuation(Some(result.response.clone()));
+
     println!("AUTONOMOUS_MODE_ENDED");
     Ok(())
 }
@@ -1299,6 +1305,8 @@ async fn run_with_console_mode(
             )
             .await?;
         output.print_smart(&result.response);
+        // Save session continuation for resume capability
+        agent.save_session_continuation(Some(result.response.clone()));
     } else {
         // Interactive mode (default)
         run_interactive(
@@ -1347,6 +1355,8 @@ async fn run_with_machine_mode(
         println!("AGENT_RESPONSE:");
         println!("{}", result.response);
         println!("END_AGENT_RESPONSE");
+        // Save session continuation for resume capability
+        agent.save_session_continuation(Some(result.response.clone()));
     } else {
         // Interactive mode
         run_interactive_machine(agent, cli.show_prompt, cli.show_code).await?;
@@ -1700,6 +1710,7 @@ async fn run_interactive<W: UiWriter>(
                                 output.print("  /thinnify  - Trigger context thinning (replaces large tool results with file references)");
                                 output.print("  /skinnify  - Trigger full context thinning (like /thinnify but for entire context, not just first third)");
                                 output.print("  /clear     - Clear session and start fresh (discards continuation artifacts)");
+                                output.print("  /resume    - List and switch to a previous session");
                                 output.print(
                                     "  /readme    - Reload README.md and AGENTS.md from disk",
                                 );
@@ -1762,6 +1773,72 @@ async fn run_interactive<W: UiWriter>(
                                 output.print(&stats);
                                 continue;
                             }
+                            "/resume" => {
+                                output.print("📋 Scanning for available sessions...");
+                                
+                                match g3_core::list_sessions_for_directory() {
+                                    Ok(sessions) => {
+                                        if sessions.is_empty() {
+                                            output.print("No sessions found for this directory.");
+                                            continue;
+                                        }
+                                        
+                                        // Get current session ID to mark it
+                                        let current_session_id = agent.get_session_id().map(|s| s.to_string());
+                                        
+                                        output.print("");
+                                        output.print("Available sessions:");
+                                        for (i, session) in sessions.iter().enumerate() {
+                                            let time_str = g3_core::format_session_time(&session.created_at);
+                                            let context_str = format!("{:.0}%", session.context_percentage);
+                                            let current_marker = if current_session_id.as_deref() == Some(&session.session_id) {
+                                                " (current)"
+                                            } else {
+                                                ""
+                                            };
+                                            let todo_marker = if session.has_incomplete_todos() { " 📝" } else { "" };
+                                            
+                                            // Truncate session ID for display
+                                            let display_id = if session.session_id.len() > 40 {
+                                                format!("{}...", &session.session_id[..40])
+                                            } else {
+                                                session.session_id.clone()
+                                            };
+                                            
+                                            output.print(&format!(
+                                                "  {}. [{}] {} ({}){}{}",
+                                                i + 1, time_str, display_id, context_str, todo_marker, current_marker
+                                            ));
+                                        }
+                                        output.print("");
+                                        output.print("Enter session number to resume (or press Enter to cancel):");
+                                        
+                                        // Read user selection
+                                        if let Ok(selection) = rl.readline("> ") {
+                                            let selection = selection.trim();
+                                            if selection.is_empty() {
+                                                output.print("Resume cancelled.");
+                                            } else if let Ok(num) = selection.parse::<usize>() {
+                                                if num >= 1 && num <= sessions.len() {
+                                                    let selected = &sessions[num - 1];
+                                                    output.print(&format!("🔄 Switching to session: {}", selected.session_id));
+                                                    match agent.switch_to_session(selected) {
+                                                        Ok(true) => output.print("✅ Full context restored from session."),
+                                                        Ok(false) => output.print("✅ Session restored from summary."),
+                                                        Err(e) => output.print(&format!("❌ Error restoring session: {}", e)),
+                                                    }
+                                                } else {
+                                                    output.print("Invalid selection.");
+                                                }
+                                            } else {
+                                                output.print("Invalid input. Please enter a number.");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => output.print(&format!("❌ Error listing sessions: {}", e)),
+                                }
+                                continue;
+                            }
                             _ => {
                                 output.print(&format!(
                                     "❌ Unknown command: {}. Type /help for available commands.",
@@ -1803,6 +1880,9 @@ async fn run_interactive<W: UiWriter>(
     if let Some(ref history_path) = history_file {
         let _ = rl.save_history(history_path);
     }
+
+    // Save session continuation for resume capability
+    agent.save_session_continuation(None);
 
     output.print("👋 Goodbye!");
     Ok(())
@@ -1986,10 +2066,62 @@ async fn run_interactive_machine(
                         }
                         "/help" => {
                             println!("COMMAND: help");
-                            println!("AVAILABLE_COMMANDS: /compact /thinnify /skinnify /clear /readme /stats /help");
+                            println!("AVAILABLE_COMMANDS: /compact /thinnify /skinnify /clear /resume /readme /stats /help");
+                            continue;
+                        }
+                        "/resume" => {
+                            println!("COMMAND: resume");
+                            match g3_core::list_sessions_for_directory() {
+                                Ok(sessions) => {
+                                    if sessions.is_empty() {
+                                        println!("RESULT: No sessions found");
+                                        continue;
+                                    }
+                                    
+                                    println!("SESSIONS_START");
+                                    for (i, session) in sessions.iter().enumerate() {
+                                        let time_str = g3_core::format_session_time(&session.created_at);
+                                        let has_todos = if session.has_incomplete_todos() { "true" } else { "false" };
+                                        println!(
+                                            "SESSION: {} | {} | {} | {:.0}% | {}",
+                                            i + 1,
+                                            session.session_id,
+                                            time_str,
+                                            session.context_percentage,
+                                            has_todos
+                                        );
+                                    }
+                                    println!("SESSIONS_END");
+                                    println!("HINT: Use /resume <number> to switch to a session");
+                                }
+                                Err(e) => println!("ERROR: {}", e),
+                            }
                             continue;
                         }
                         _ => {
+                            // Check for /resume <number> pattern
+                            if input.starts_with("/resume ") {
+                                let num_str = input.strip_prefix("/resume ").unwrap().trim();
+                                if let Ok(num) = num_str.parse::<usize>() {
+                                    println!("COMMAND: resume {}", num);
+                                    match g3_core::list_sessions_for_directory() {
+                                        Ok(sessions) => {
+                                            if num >= 1 && num <= sessions.len() {
+                                                let selected = &sessions[num - 1];
+                                                match agent.switch_to_session(selected) {
+                                                    Ok(true) => println!("RESULT: Full context restored from session {}", selected.session_id),
+                                                    Ok(false) => println!("RESULT: Session {} restored from summary", selected.session_id),
+                                                    Err(e) => println!("ERROR: {}", e),
+                                                }
+                                            } else {
+                                                println!("ERROR: Invalid session number");
+                                            }
+                                        }
+                                        Err(e) => println!("ERROR: {}", e),
+                                    }
+                                    continue;
+                                }
+                            }
                             println!("ERROR: Unknown command: {}", input);
                             continue;
                         }
@@ -2014,6 +2146,9 @@ async fn run_interactive_machine(
     if let Some(ref history_path) = history_file {
         let _ = rl.save_history(history_path);
     }
+
+    // Save session continuation for resume capability
+    agent.save_session_continuation(None);
 
     println!("INTERACTIVE_MODE_ENDED");
     Ok(())
@@ -2937,6 +3072,9 @@ Remember: Be clear in your review and concise in your feedback. APPROVE iff the 
             format_elapsed_time(loop_start.elapsed())
         ));
     }
+
+    // Save session continuation for resume capability
+    agent.save_session_continuation(None);
 
     Ok(())
 }

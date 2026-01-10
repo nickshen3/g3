@@ -23,7 +23,7 @@ pub mod webdriver_session;
 pub use task_result::TaskResult;
 pub use retry::{RetryConfig, RetryResult, execute_with_retry, retry_operation};
 pub use feedback_extraction::{ExtractedFeedback, FeedbackSource, FeedbackExtractionConfig, extract_coach_feedback};
-pub use session_continuation::{SessionContinuation, load_continuation, save_continuation, clear_continuation, has_valid_continuation, get_session_dir, load_context_from_session_log, find_incomplete_agent_session};
+pub use session_continuation::{SessionContinuation, load_continuation, save_continuation, clear_continuation, has_valid_continuation, get_session_dir, load_context_from_session_log, find_incomplete_agent_session, list_sessions_for_directory, format_session_time};
 
 // Re-export context window types
 pub use context_window::{ContextWindow, ThinScope};
@@ -1526,6 +1526,42 @@ impl<W: UiWriter> Agent<W> {
         
         debug!("Restored session from summary");
         Ok(false)
+    }
+
+    /// Switch to a different session, saving the current one first.
+    /// This discards the current in-memory state and loads the new session.
+    pub fn switch_to_session(
+        &mut self,
+        continuation: &crate::session_continuation::SessionContinuation,
+    ) -> Result<bool> {
+        // Save current session first (so it can be resumed later)
+        self.save_session_continuation(None);
+        
+        // Reset session-specific metrics
+        self.thinning_events.clear();
+        self.compaction_events.clear();
+        self.first_token_times.clear();
+        self.tool_call_metrics.clear();
+        self.tool_call_count = 0;
+        self.pending_90_compaction = false;
+        
+        // Update session ID to the new session
+        self.session_id = Some(continuation.session_id.clone());
+        
+        // Update agent mode info from continuation
+        self.is_agent_mode = continuation.is_agent_mode;
+        self.agent_name = continuation.agent_name.clone();
+        
+        // Load TODO content from the new session if available
+        if let Some(ref todo) = continuation.todo_snapshot {
+            // Use blocking write since we're in a sync context
+            if let Ok(mut guard) = self.todo_content.try_write() {
+                *guard = todo.clone();
+            }
+        }
+        
+        // Restore context from the continuation
+        self.restore_from_continuation(continuation)
     }
 
     async fn stream_completion(
