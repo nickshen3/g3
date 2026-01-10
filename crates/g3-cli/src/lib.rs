@@ -512,6 +512,9 @@ pub async fn run() -> Result<()> {
     // Then load README for project context
     let readme_content = read_project_readme(&workspace_dir);
 
+    // Load project memory if available
+    let memory_content = read_project_memory(&workspace_dir);
+
     // Create project model
     let project = if cli.autonomous {
         if let Some(requirements_text) = &cli.requirements {
@@ -587,12 +590,23 @@ pub async fn run() -> Result<()> {
     // Initialize agent
     // ui_writer will be created conditionally based on machine mode
 
-    // Combine AGENTS.md and README content if both exist
-    let combined_content = match (agents_content.clone(), readme_content.clone()) {
-        (Some(agents), Some(readme)) => Some(format!("{}\n\n{}", agents, readme)),
-        (Some(agents), None) => Some(agents),
-        (None, Some(readme)) => Some(readme),
-        (None, None) => None,
+    // Combine AGENTS.md, README, and memory content if they exist
+    let combined_content = {
+        let mut parts = Vec::new();
+        if let Some(agents) = agents_content.clone() {
+            parts.push(agents);
+        }
+        if let Some(readme) = readme_content.clone() {
+            parts.push(readme);
+        }
+        if let Some(memory) = memory_content.clone() {
+            parts.push(memory);
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
+        }
     };
 
     // Execute task, autonomous mode, or start interactive mode based on machine mode
@@ -1168,24 +1182,31 @@ async fn run_accumulative_mode(
                 // Run autonomous mode with the accumulated requirements
                 let autonomous_result = tokio::select! {
                     result = run_autonomous(
-                    agent,
-                    project,
-                    cli.show_prompt,
-                    cli.show_code,
-                    cli.max_turns,
-                    cli.quiet,
-                    cli.codebase_fast_start.clone(),
-                    ) => result,
+                        agent,
+                        project,
+                        cli.show_prompt,
+                        cli.show_code,
+                        cli.max_turns,
+                        cli.quiet,
+                        cli.codebase_fast_start.clone(),
+                    ) => result.map(Some),
                     _ = tokio::signal::ctrl_c() => {
                         output.print("\n⚠️  Autonomous run cancelled by user (Ctrl+C)");
-                        Ok(())
+                        // Agent was moved into run_autonomous and is now dropped
+                        // We can't save continuation here, but the next iteration will create a new agent
+                        Ok(None)
                     }
                 };
 
                 match autonomous_result {
-                    Ok(_) => {
+                    Ok(Some(_returned_agent)) => {
+                        // Session continuation was already saved by run_autonomous
                         output.print("");
                         output.print("✅ Autonomous run completed");
+                    }
+                    Ok(None) => {
+                        // Ctrl+C case - agent was dropped, continuation not saved
+                        output.print("   (session continuation not saved due to cancellation)");
                     }
                     Err(e) => {
                         output.print("");
@@ -1280,7 +1301,7 @@ async fn run_with_console_mode(
     // Execute task, autonomous mode, or start interactive mode
     if cli.autonomous {
         // Autonomous mode with coach-player feedback loop
-        run_autonomous(
+        let _agent = run_autonomous(
             agent,
             project,
             cli.show_prompt,
@@ -1447,6 +1468,30 @@ fn read_project_readme(workspace_dir: &Path) -> Option<String> {
     None
 }
 
+/// Read project memory if available
+fn read_project_memory(workspace_dir: &Path) -> Option<String> {
+    let memory_path = workspace_dir.join(".g3").join("memory.md");
+
+    if memory_path.exists() {
+        match std::fs::read_to_string(&memory_path) {
+            Ok(content) => {
+                let size = if content.len() < 1000 {
+                    format!("{} chars", content.len())
+                } else {
+                    format!("{:.1}k chars", content.len() as f64 / 1000.0)
+                };
+                Some(format!(
+                    "🧠 Project Memory ({}):\n\n{}",
+                    size, content
+                ))
+            }
+            Err(_) => None,
+        }
+    } else {
+        None
+    }
+}
+
 /// Extract the main heading or title from README content
 fn extract_readme_heading(readme_content: &str) -> Option<String> {
     // Find the README section in the combined content
@@ -1594,6 +1639,7 @@ async fn run_interactive<W: UiWriter>(
         // Check what was loaded
         let has_agents = content.contains("Agent Configuration");
         let has_readme = content.contains("Project README");
+        let has_memory = content.contains("Project Memory");
 
         if has_agents {
             print!(
@@ -1612,6 +1658,14 @@ async fn run_interactive<W: UiWriter>(
                 "{}📚 detected: {}{}\n",
                 SetForegroundColor(Color::DarkGrey),
                 readme_snippet,
+                ResetColor
+            );
+        }
+
+        if has_memory {
+            print!(
+                "{}🧠 Project memory loaded{}\n",
+                SetForegroundColor(Color::DarkGrey),
                 ResetColor
             );
         }
@@ -2354,7 +2408,7 @@ async fn run_autonomous(
     max_turns: usize,
     quiet: bool,
     codebase_fast_start: Option<PathBuf>,
-) -> Result<()> {
+) -> Result<Agent<ConsoleUiWriter>> {
     let start_time = std::time::Instant::now();
     let output = SimpleOutput::new();
     let mut turn_metrics: Vec<TurnMetrics> = Vec::new();
@@ -2411,7 +2465,7 @@ async fn run_autonomous(
         output.print(&generate_turn_histogram(&turn_metrics));
         output.print(&"=".repeat(60));
 
-        return Ok(());
+        return Ok(agent);
     }
 
     // Read requirements
@@ -2453,7 +2507,7 @@ async fn run_autonomous(
             output.print(&generate_turn_histogram(&turn_metrics));
             output.print(&"=".repeat(60));
 
-            return Ok(());
+            return Ok(agent);
         }
     };
 
@@ -3076,5 +3130,5 @@ Remember: Be clear in your review and concise in your feedback. APPROVE iff the 
     // Save session continuation for resume capability
     agent.save_session_continuation(None);
 
-    Ok(())
+    Ok(agent)
 }

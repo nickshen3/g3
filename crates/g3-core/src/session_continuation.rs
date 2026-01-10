@@ -434,7 +434,32 @@ pub fn format_session_time(created_at: &str) -> String {
     match chrono::DateTime::parse_from_rfc3339(created_at) {
         Ok(dt) => {
             let local: chrono::DateTime<chrono::Local> = dt.into();
-            local.format("%Y-%m-%d %H:%M").to_string()
+            let now = chrono::Local::now();
+            let duration = now.signed_duration_since(local);
+            
+            // Show relative time for recent sessions, absolute for older ones
+            if duration.num_minutes() < 1 {
+                "just now".to_string()
+            } else if duration.num_minutes() < 60 {
+                format!("{} min ago", duration.num_minutes())
+            } else if duration.num_hours() < 24 {
+                let hours = duration.num_hours();
+                if hours == 1 {
+                    "1 hour ago".to_string()
+                } else {
+                    format!("{} hours ago", hours)
+                }
+            } else if duration.num_days() < 7 {
+                let days = duration.num_days();
+                if days == 1 {
+                    "yesterday".to_string()
+                } else {
+                    format!("{} days ago", days)
+                }
+            } else {
+                // For older sessions, show the date
+                local.format("%b %d, %Y").to_string()
+            }
         }
         Err(_) => created_at.to_string(),
     }
