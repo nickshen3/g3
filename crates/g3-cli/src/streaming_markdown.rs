@@ -197,13 +197,25 @@ impl StreamingMarkdownFormatter {
                 return;
             }
             
+            // If we're already buffering a code fence (```), continue buffering until newline
+            // This handles the language identifier after ``` (e.g., ```rust)
+            let trimmed = self.current_line.trim_start();
+            if trimmed.starts_with("```") && ch != '\n' {
+                // Continue buffering non-newline characters
+                self.current_line.push(ch);
+                return;
+            }
+            // If ch == '\n', fall through to the newline handler below
+            
             if ch == '`' {
                 self.current_line.push(ch);
                 // Check if this might be starting a code fence
-                if self.current_line.starts_with("```") {
+                let trimmed = self.current_line.trim_start();
+                if trimmed.starts_with("```") {
                     // Don't emit yet - wait for the full fence line
-                } else if self.current_line == "`" || self.current_line == "``" {
+                } else if trimmed == "`" || trimmed == "``" {
                     // Might become a fence, keep buffering
+                    // (current_line may have leading whitespace)
                 }
                 return;
             } else if ch == '>' && self.current_line.is_empty() {
@@ -399,8 +411,11 @@ impl StreamingMarkdownFormatter {
     /// Handle a newline character.
     fn handle_newline(&mut self) {
         // Check if we were building a code fence
-        if self.current_line.starts_with("```") {
-            let lang = self.current_line[3..].trim().to_string();
+        // Support indented code fences (up to 3 spaces per CommonMark spec)
+        let trimmed = self.current_line.trim_start();
+        let leading_spaces = self.current_line.len() - trimmed.len();
+        if trimmed.starts_with("```") && leading_spaces <= 3 {
+            let lang = trimmed[3..].trim().to_string();
             let lang = if lang.is_empty() { None } else { Some(lang) };
             self.block_state = BlockState::CodeBlock {
                 lang,
