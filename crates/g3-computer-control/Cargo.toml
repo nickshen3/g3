@@ -17,6 +17,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 shellexpand = "3.1"
+dirs = "5.0"
 # Async trait support
 async-trait = "0.1"
 

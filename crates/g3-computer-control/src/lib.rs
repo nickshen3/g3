@@ -10,6 +10,7 @@ pub mod webdriver;
 // Re-export webdriver types for convenience
 pub use webdriver::{
     chrome::ChromeDriver, safari::SafariDriver, WebDriverController, WebElement,
+    diagnostics::{run_diagnostics as run_chrome_diagnostics, ChromeDiagnosticReport, DiagnosticStatus},
 };
 
 // Re-export macax types for convenience

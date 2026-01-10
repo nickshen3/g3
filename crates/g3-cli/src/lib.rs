@@ -548,6 +548,17 @@ pub async fn run() -> Result<()> {
     if cli.chrome_headless {
         config.webdriver.enabled = true;
         config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
+
+        // Run Chrome diagnostics on first use
+        let report = g3_computer_control::run_chrome_diagnostics(
+            config.webdriver.chrome_binary.as_deref(),
+        );
+        
+        // Display the diagnostic report
+        println!("{}", report.format_report());
+        
+        // If there are errors, the user can ask g3 to help fix them
+        // We continue anyway to let the user decide
     }
 
     // Apply safari flag override

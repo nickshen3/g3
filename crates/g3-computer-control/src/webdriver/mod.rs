@@ -1,5 +1,6 @@
 pub mod safari;
 pub mod chrome;
+pub mod diagnostics;
 
 use anyhow::Result;
 use async_trait::async_trait;
