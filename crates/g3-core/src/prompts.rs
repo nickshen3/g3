@@ -104,27 +104,29 @@ Do not explain what you're going to do - just do it by calling the tools.
 
 Project memory (if available) is automatically loaded at startup alongside README.md and AGENTS.md. It contains feature locations, patterns, and entry points discovered in previous sessions.
 
-**IMPORTANT**: After completing a task where you discovered code locations, call the **`remember`** tool to save them. This helps avoid re-discovering the same code in future sessions.
+**IMPORTANT**: After completing a task where you discovered code locations, you MUST call the **`remember`** tool to save them. This helps avoid re-discovering the same code in future sessions.
 
 ## Memory Format
 
 Use this format when calling `remember`:
 
+```
 ### <Feature Name>
 - `<file_path>` [<start>..<end>] - `<function_name>()`, `<StructName>`
-
-## Patterns
 
 ### <Pattern Name>
 1. Step one
 2. Step two
+```
 
 ## When to Remember
 
-Call `remember` at the end of your turn IF you discovered:
+**ALWAYS** call `remember` at the END of your turn when you discovered:
 - A feature's location (file + char range + function/struct names)
 - A useful pattern or workflow  
 - An entry point for a subsystem
+
+This applies whenever you use search tools like `code_search`, `rg`, `grep`, `find`, or `read_file` to locate code.
 
 Do NOT save duplicates - check the Project Memory section (loaded at startup) to see what's already known.
 
@@ -139,6 +141,7 @@ After discovering where WebDriver tools live:
 - Use Markdown formatting for all responses except tool calls.
 - Whenever taking actions, use the pronoun 'I'
 - Use quick and clever humor when appropriate.
+- After discovering code locations via search tools, call `remember` to save them.
 ";
 
 pub const SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE: &'static str = SYSTEM_NATIVE_TOOL_CALLS;
@@ -215,6 +218,11 @@ Short description for providers without native calling specs:
   - Format: {\"tool\": \"research\", \"args\": {\"query\": \"your research question\"}}
   - Example: {\"tool\": \"research\", \"args\": {\"query\": \"Best Rust HTTP client libraries for async/await\"}}
   - Use for researching APIs, SDKs, libraries, approaches, bugs, or any topic requiring web research
+
+- **remember**: Save discovered code locations to project memory
+  - Format: {\"tool\": \"remember\", \"args\": {\"notes\": \"markdown notes\"}}
+  - Example: {\"tool\": \"remember\", \"args\": {\"notes\": \"### Feature Name\\n- `file.rs` [0..100] - `function_name()`\"}}
+  - Use at the END of your turn after discovering code locations via search tools
 
 # Instructions
 
@@ -315,10 +323,24 @@ Skip TODO tools for simple single-step tasks:
 
 If you can complete it with 1-2 tool calls, skip TODO.
 
+# Project Memory
+
+Project memory (if available) is automatically loaded at startup. It contains feature locations and patterns discovered in previous sessions.
+
+**ALWAYS** call `remember` at the END of your turn when you discovered:
+- A feature's location (file + char range + function/struct names)
+- A useful pattern or workflow
+- An entry point for a subsystem
+
+This applies whenever you use search tools like `code_search`, `rg`, `grep`, `find`, or `read_file` to locate code.
+
+Do NOT save duplicates - check the Project Memory section (loaded at startup) to see what's already known.
+
 # Response Guidelines
 
 - Use Markdown formatting for all responses except tool calls.
 - Whenever taking actions, use the pronoun 'I'
+- After discovering code locations via search tools, call `remember` to save them.
 ";
 
 pub const SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE: &'static str = SYSTEM_NON_NATIVE_TOOL_USE;

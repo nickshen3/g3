@@ -33,6 +33,7 @@ fn test_session_continuation_creation() {
     // This test doesn't need file system access
     let continuation = SessionContinuation::new(false, None, 
         "test_session_123".to_string(),
+        None,
         Some("Task completed successfully".to_string()),
         "/path/to/session.json".to_string(),
         45.0,
@@ -66,6 +67,7 @@ fn test_can_restore_full_context_threshold() {
         let continuation = SessionContinuation::new(false, None, 
             "test".to_string(),
             None,
+            None,
             "path".to_string(),
             percentage,
             None,
@@ -87,6 +89,7 @@ fn test_save_and_load_continuation() {
 
     let original = SessionContinuation::new(false, None, 
         "save_load_test".to_string(),
+        None,
         Some("Test summary content".to_string()),
         "/logs/g3_session_save_load_test.json".to_string(),
         35.5,
@@ -134,6 +137,7 @@ fn test_find_incomplete_agent_session() {
         true,  // is_agent_mode
         Some("fowler".to_string()),  // agent_name
         "fowler_session_1".to_string(),
+        None,
         Some("Working on task".to_string()),
         "/path/to/session.json".to_string(),
         50.0,
@@ -172,6 +176,7 @@ fn test_find_incomplete_agent_session_ignores_complete_todos() {
         true,
         Some("fowler".to_string()),
         "fowler_complete".to_string(),
+        None,
         Some("All done".to_string()),
         "/path/to/session.json".to_string(),
         50.0,
@@ -203,6 +208,7 @@ fn test_find_incomplete_agent_session_ignores_non_agent_mode() {
         false,  // NOT agent mode
         None,
         "regular_session".to_string(),
+        None,
         None,
         "/path/to/session.json".to_string(),
         50.0,
@@ -238,6 +244,7 @@ fn test_clear_continuation() {
     // Create and save a continuation
     let continuation = SessionContinuation::new(false, None, 
         "clear_test".to_string(),
+        None,
         Some("Will be cleared".to_string()),
         "/path/to/session.json".to_string(),
         50.0,
@@ -293,6 +300,7 @@ fn test_has_valid_continuation_with_missing_session_log() {
     // Create a continuation pointing to a non-existent session log
     let continuation = SessionContinuation::new(false, None, 
         "invalid_test".to_string(),
+        None,
         Some("Summary".to_string()),
         "/nonexistent/path/session.json".to_string(),
         30.0,
@@ -321,6 +329,7 @@ fn test_has_valid_continuation_with_existing_session_log() {
     // Create a continuation pointing to the existing session log
     let continuation = SessionContinuation::new(false, None, 
         "valid_test".to_string(),
+        None,
         Some("Summary".to_string()),
         session_log_path.to_string_lossy().to_string(),
         30.0,
@@ -342,6 +351,7 @@ fn test_continuation_serialization_format() {
 
     let continuation = SessionContinuation::new(false, None, 
         "format_test".to_string(),
+        None,
         Some("Test summary".to_string()),
         "/path/to/session.json".to_string(),
         42.5,
@@ -376,6 +386,7 @@ fn test_multiple_saves_update_symlink() {
     // Save first continuation
     let first = SessionContinuation::new(false, None, 
         "first_session".to_string(),
+        None,
         Some("First summary".to_string()),
         "/path/first.json".to_string(),
         20.0,
@@ -392,6 +403,7 @@ fn test_multiple_saves_update_symlink() {
     // Save second continuation (should update symlink)
     let second = SessionContinuation::new(false, None, 
         "second_session".to_string(),
+        None,
         Some("Second summary".to_string()),
         "/path/second.json".to_string(),
         60.0,
@@ -437,6 +449,7 @@ fn test_symlink_migration_from_old_directory() {
     // Save a new continuation - this should migrate the old directory to a symlink
     let continuation = SessionContinuation::new(false, None, 
         "new_session".to_string(),
+        None,
         Some("New summary".to_string()),
         "/path/to/session.json".to_string(),
         50.0,

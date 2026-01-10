@@ -68,9 +68,6 @@ pub async fn execute_remember<W: UiWriter>(
     // Write back
     std::fs::write(&memory_path, &final_content)?;
 
-    ctx.ui_writer
-        .println(&format!("💾 Memory updated ({})", format_size(final_content.len())));
-
     Ok(format!("Memory updated. Size: {}", format_size(final_content.len())))
 }
 

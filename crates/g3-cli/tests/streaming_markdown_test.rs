@@ -840,7 +840,8 @@ fn test_table_empty_line_then_header() {
     for ch in input.chars() {
         let out = fmt.process(&ch.to_string());
         if !out.is_empty() {
-            eprintln!("After '{}': {:?}", if ch == '\n' { "\\n" } else { &ch.to_string() }, out);
+            let ch_display = if ch == '\n' { "\\n".to_string() } else { ch.to_string() };
+            eprintln!("After '{}': {:?}", ch_display, out);
         }
         full_output.push_str(&out);
     }
