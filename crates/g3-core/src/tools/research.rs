@@ -143,6 +143,12 @@ fn truncate_command_snippet(cmd: &str, max_len: usize) -> String {
     }
 }
 
+/// Error patterns that indicate context window exhaustion
+const CONTEXT_ERROR_PATTERNS: &[&str] = &[
+    "context length", "context_length_exceeded", "maximum context", "token limit",
+    "too many tokens", "exceeds the model", "context window", "max_tokens",
+];
+
 pub async fn execute_research<W: UiWriter>(
     tool_call: &ToolCall,
     ctx: &mut ToolContext<'_, W>,
@@ -181,10 +187,24 @@ pub async fn execute_research<W: UiWriter>(
     let stdout = child.stdout.take()
         .ok_or_else(|| anyhow::anyhow!("Failed to capture scout agent stdout"))?;
     
+    // Also capture stderr for error messages
+    let stderr = child.stderr.take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to capture scout agent stderr"))?;
+    
     let mut reader = BufReader::new(stdout).lines();
     let mut all_output = Vec::new();
+    
+    // Spawn a task to collect stderr
+    let stderr_handle = tokio::spawn(async move {
+        let mut stderr_reader = BufReader::new(stderr).lines();
+        let mut stderr_output = Vec::new();
+        while let Some(line) = stderr_reader.next_line().await.ok().flatten() {
+            stderr_output.push(line);
+        }
+        stderr_output
+    });
 
-    // Collect all lines, showing only translated progress messages
+    // Collect stdout lines, showing only translated progress messages
     while let Some(line) = reader.next_line().await? {
         all_output.push(line.clone());
         
@@ -194,19 +214,91 @@ pub async fn execute_research<W: UiWriter>(
             ctx.ui_writer.update_tool_output_line(&progress_msg);
         }
     }
+    
+    // Collect stderr output
+    let stderr_output = stderr_handle.await.unwrap_or_default();
 
     // Wait for the process to complete
     let status = child.wait().await
         .map_err(|e| anyhow::anyhow!("Failed to wait for scout agent: {}", e))?;
 
     if !status.success() {
-        return Ok(format!("❌ Scout agent failed with exit code: {:?}", status.code()));
+        // Build detailed error message
+        let exit_code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
+        let full_output = all_output.join("\n");
+        let stderr_text = stderr_output.join("\n");
+        
+        // Check for context window exhaustion
+        let combined_output = format!("{} {}", full_output, stderr_text).to_lowercase();
+        let is_context_error = CONTEXT_ERROR_PATTERNS.iter()
+            .any(|pattern| combined_output.contains(pattern));
+        
+        if is_context_error {
+            let error_msg = format!(
+                "❌ **Scout Agent Error: Context Window Exhausted**\n\n\
+                The research query required more context than the model supports.\n\n\
+                **Suggestions:**\n\
+                - Try a more specific, narrower query\n\
+                - Break the research into smaller sub-questions\n\
+                - Use a model with a larger context window\n\n\
+                **Technical Details:**\n\
+                Exit code: {}\n\
+                {}",
+                exit_code,
+                if !stderr_text.is_empty() { format!("Error output: {}", stderr_text.chars().take(500).collect::<String>()) } else { String::new() }
+            );
+            ctx.ui_writer.println(&error_msg);
+            return Ok(error_msg);
+        }
+        
+        // Generic error with details
+        let error_msg = format!(
+            "❌ **Scout Agent Failed**\n\n\
+            Exit code: {}\n\n\
+            {}{}",
+            exit_code,
+            if !stderr_text.is_empty() { format!("**Error output:**\n{}\n\n", stderr_text.chars().take(1000).collect::<String>()) } else { String::new() },
+            if all_output.len() > 0 { format!("**Last output lines:**\n{}", all_output.iter().rev().take(10).rev().cloned().collect::<Vec<_>>().join("\n")) } else { String::new() }
+        );
+        ctx.ui_writer.println(&error_msg);
+        return Ok(error_msg);
     }
 
     // Join all output and extract the report between markers
     let full_output = all_output.join("\n");
     
-    let report = extract_report(&full_output)?;
+    let report = match extract_report(&full_output) {
+        Ok(r) => r,
+        Err(e) => {
+            // Check if this looks like a context exhaustion issue
+            let combined = format!("{} {}", full_output, stderr_output.join(" ")).to_lowercase();
+            let is_context_error = CONTEXT_ERROR_PATTERNS.iter()
+                .any(|pattern| combined.contains(pattern));
+            
+            let error_msg = if is_context_error {
+                format!(
+                    "❌ **Scout Agent Error: Context Window Exhausted**\n\n\
+                    The scout agent ran out of context before completing the research report.\n\n\
+                    **Suggestions:**\n\
+                    - Try a more specific, narrower query\n\
+                    - Break the research into smaller sub-questions\n\n\
+                    **Technical Details:**\n\
+                    {}",
+                    e
+                )
+            } else {
+                format!(
+                    "❌ **Scout Agent Error: Report Extraction Failed**\n\n\
+                    {}\n\n\
+                    The scout agent completed but did not produce a valid report.\n\
+                    This may indicate the agent encountered an error during research.",
+                    e
+                )
+            };
+            ctx.ui_writer.println(&error_msg);
+            return Ok(error_msg);
+        }
+    };
     
     // Print the research brief to the console for scrollback reference
     // The report is printed without stripping ANSI codes to preserve formatting
