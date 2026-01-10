@@ -851,8 +851,14 @@ impl<W: UiWriter> Agent<W> {
 
         // Add assistant response to context window only if not empty
         // This prevents the "Skipping empty message" warning when only tools were executed
-        if !response_content.trim().is_empty() {
-            let assistant_message = Message::new(MessageRole::Assistant, response_content.clone());
+        // Also strip timing footer - it's display-only and shouldn't be in context
+        let content_for_context = if let Some(timing_pos) = response_content.rfind("\n\n⏱️") {
+            response_content[..timing_pos].to_string()
+        } else {
+            response_content.clone()
+        };
+        if !content_for_context.trim().is_empty() {
+            let assistant_message = Message::new(MessageRole::Assistant, content_for_context);
             self.context_window.add_message(assistant_message);
         } else {
             debug!("Assistant response was empty (likely only tool execution), skipping message addition");

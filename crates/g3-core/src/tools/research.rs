@@ -7,6 +7,7 @@ use tokio::process::Command;
 
 use crate::ui_writer::UiWriter;
 use crate::ToolCall;
+use g3_config::WebDriverBrowser;
 
 use super::executor::ToolContext;
 
@@ -156,14 +157,21 @@ pub async fn execute_research<W: UiWriter>(
     let g3_path = std::env::current_exe()
         .unwrap_or_else(|_| std::path::PathBuf::from("g3"));
 
-    // Spawn the scout agent
-    let mut child = Command::new(&g3_path)
+    // Build the command with appropriate webdriver flags
+    let mut cmd = Command::new(&g3_path);
+    cmd
         .arg("--agent")
         .arg("scout")
-        .arg("--webdriver")  // Scout needs webdriver for web research
         .arg("--new-session")  // Always start fresh for research
-        .arg("--quiet")  // Suppress log file creation
-        .arg(query)
+        .arg("--quiet");  // Suppress log file creation
+
+    // Propagate the webdriver browser choice from the parent g3 instance
+    match ctx.config.webdriver.browser {
+        WebDriverBrowser::ChromeHeadless => { cmd.arg("--chrome-headless"); }
+        WebDriverBrowser::Safari => { cmd.arg("--webdriver"); }
+    }
+
+    let mut child = cmd.arg(query)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
