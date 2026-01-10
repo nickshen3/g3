@@ -1,0 +1,344 @@
+<html lang="en" data-theme="dark" data-docs-rs-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Stream utilities for Tokio."><title>tokio_stream - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="/-/rustdoc.static/${f}">`).join(""))</script><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/SourceSerif4-Regular-6b053e98.ttf.woff2"><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/FiraSans-Italic-81dc35de.woff2"><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/FiraSans-Regular-0fe48ade.woff2"><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/FiraSans-MediumItalic-ccf7e434.woff2"><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/FiraSans-Medium-e1aa3f0a.woff2"><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/SourceCodePro-Regular-8badfe75.ttf.woff2"><link rel="preload" as="font" type="font/woff2" href="/-/rustdoc.static/SourceCodePro-Semibold-aa29a496.ttf.woff2"><link rel="stylesheet" href="/-/rustdoc.static/normalize-9960930a.css"><link rel="stylesheet" href="/-/static/vendored.css?0-1-0-7bfb09c2-2026-01-03" media="all"><link rel="stylesheet" href="/-/rustdoc.static/rustdoc-2eb46af5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="/-/rustdoc.static/" data-current-crate="tokio_stream" data-themes="" data-resource-suffix="-20260103-1.94.0-nightly-7ecabfaaf" data-rustdoc-version="1.94.0-nightly (7ecabfaaf 2026-01-03)" data-channel="nightly" data-search-js="search-9e2438ea.js" data-stringdex-js="stringdex-b897f86f.js" data-settings-js="settings-c38705f0.js"><script src="/-/rustdoc.static/storage-e2aeef58.js"></script><script defer="" src="../crates-20260103-1.94.0-nightly-7ecabfaaf.js"></script><script defer="" src="/-/rustdoc.static/main-7bab91a1.js"></script><noscript><link rel="stylesheet" href="/-/rustdoc.static/noscript-ffcac47a.css"></noscript><link rel="alternate icon" type="image/png" href="/-/rustdoc.static/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="/-/rustdoc.static/favicon-044be391.svg"><link rel="stylesheet" href="/-/static/rustdoc-2025-08-20.css?0-1-0-7bfb09c2-2026-01-03" media="all"><link rel="stylesheet" href="/-/static/font-awesome.css?0-1-0-7bfb09c2-2026-01-03" media="all">
+
+<link rel="search" href="/-/static/opensearch.xml" type="application/opensearchdescription+xml" title="Docs.rs">
+
+<script type="text/javascript">(function() {
+    function applyTheme(theme) {
+        if (theme) {
+            document.documentElement.dataset.docsRsTheme = theme;
+        }
+    }
+
+    window.addEventListener("storage", ev => {
+        if (ev.key === "rustdoc-theme") {
+            applyTheme(ev.newValue);
+        }
+    });
+
+    // see ./storage-change-detection.html for details
+    window.addEventListener("message", ev => {
+        if (ev.data && ev.data.storage && ev.data.storage.key === "rustdoc-theme") {
+            applyTheme(ev.data.storage.value);
+        }
+    });
+
+    applyTheme(window.localStorage.getItem("rustdoc-theme"));
+})();</script></head><div style="display: none; position: fixed; width: 100%; height: 100%; z-index: 1;"></div><body class="rustdoc-page">
+<div class="nav-container">
+    <div class="container">
+        <div class="pure-menu pure-menu-horizontal" role="navigation" aria-label="Main navigation">
+            <form action="/releases/search" method="GET" id="nav-search-form" class="landing-search-form-nav  ">
+
+                
+                <a href="/" class="pure-menu-heading pure-menu-link docsrs-logo" aria-label="Docs.rs">
+                    <span title="Docs.rs"><span class="fa fa-solid fa-cubes " aria-hidden="true"></span></span>
+                    <span class="title">Docs.rs</span>
+                </a><ul class="pure-menu-list">
+    <script id="crate-metadata" type="application/json">
+        
+        {
+            "name": "tokio-stream",
+            "version": "0.1.18"
+        }
+    </script><li class="pure-menu-item pure-menu-has-children">
+            <a href="#" class="pure-menu-link crate-name" title="Utilities to work with `Stream` and `tokio`.
+" aria-haspopup="menu">
+                <span class="fa fa-solid fa-cube " aria-hidden="true"></span>
+                <span class="title">tokio-stream-0.1.18</span>
+            </a><div class="pure-menu-children package-details-menu" role="menu">
+                
+                <ul class="pure-menu-list menu-item-divided">
+                    <li class="pure-menu-heading" id="crate-title">
+                        tokio-stream 0.1.18
+                        <span id="clipboard" class="svg-clipboard" title="Copy crate name and version information"></span>
+                    </li><li class="pure-menu-item">
+                        <a href="/tokio-stream/0.1.18/tokio_stream/" class="pure-menu-link description" id="permalink" title="Get a link to this specific version"><span class="fa fa-solid fa-link " aria-hidden="true"></span> Permalink
+                        </a>
+                    </li><li class="pure-menu-item">
+                        <a href="/crate/tokio-stream/latest" class="pure-menu-link description" title="See tokio-stream in docs.rs">
+                            <span class="fa fa-solid fa-cube " aria-hidden="true"></span> Docs.rs crate page
+                        </a>
+                    </li><li class="pure-menu-item">
+                            <span class="pure-menu-link description"><span class="fa fa-solid fa-scale-unbalanced-flip " aria-hidden="true"></span>
+                            <a href="https://spdx.org/licenses/MIT" class="pure-menu-sublink">MIT</a></span>
+                        </li></ul>
+
+                <div class="pure-g menu-item-divided">
+                    <div class="pure-u-1-2 right-border">
+                        <ul class="pure-menu-list">
+                            <li class="pure-menu-heading">Links</li>
+
+                            <li class="pure-menu-item">
+                                    <a href="https://tokio.rs" class="pure-menu-link">
+                                        <span class="fa fa-solid fa-house " aria-hidden="true"></span> Homepage
+                                    </a>
+                                </li><li class="pure-menu-item">
+                                    <a href="https://github.com/tokio-rs/tokio" class="pure-menu-link">
+                                        <span class="fa fa-solid fa-code-branch " aria-hidden="true"></span> Repository
+                                    </a>
+                                </li><li class="pure-menu-item">
+                                <a href="https://crates.io/crates/tokio-stream" class="pure-menu-link" title="See tokio-stream in crates.io">
+                                    <span class="fa fa-solid fa-cube " aria-hidden="true"></span> crates.io
+                                </a>
+                            </li>
+
+                            
+                            <li class="pure-menu-item">
+                                <a href="/crate/tokio-stream/latest/source/" title="Browse source of tokio-stream-0.1.18" class="pure-menu-link">
+                                    <span class="fa fa-solid fa-folder-open " aria-hidden="true"></span> Source
+                                </a>
+                            </li>
+                        </ul>
+                    </div><div class="pure-u-1-2">
+                        <ul class="pure-menu-list" id="topbar-owners">
+                            <li class="pure-menu-heading">Owners</li><li class="pure-menu-item">
+                                    <a href="https://crates.io/users/carllerche" class="pure-menu-link">
+                                        <span class="fa fa-solid fa-user " aria-hidden="true"></span> carllerche
+                                    </a>
+                                </li><li class="pure-menu-item">
+                                    <a href="https://crates.io/users/Darksonn" class="pure-menu-link">
+                                        <span class="fa fa-solid fa-user " aria-hidden="true"></span> Darksonn
+                                    </a>
+                                </li><li class="pure-menu-item">
+                                    <a href="https://crates.io/teams/github:tokio-rs:core" class="pure-menu-link">
+                                        <span class="fa fa-solid fa-user " aria-hidden="true"></span> github:tokio-rs:core
+                                    </a>
+                                </li></ul>
+                    </div>
+                </div>
+
+                <div class="pure-g menu-item-divided">
+                    <div class="pure-u-1-2 right-border">
+                        <ul class="pure-menu-list">
+                            <li class="pure-menu-heading">Dependencies</li>
+
+                            
+                            <li class="pure-menu-item">
+                                <div class="pure-menu pure-menu-scrollable sub-menu" tabindex="-1">
+                                    <ul class="pure-menu-list">
+                                        <li class="pure-menu-item"><a href="/futures-core/^0.3.0/" class="pure-menu-link">
+                futures-core ^0.3.0
+                
+                    <i class="dependencies normal">normal</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/pin-project-lite/^0.2.11/" class="pure-menu-link">
+                pin-project-lite ^0.2.11
+                
+                    <i class="dependencies normal">normal</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/tokio/^1.15.0/" class="pure-menu-link">
+                tokio ^1.15.0
+                
+                    <i class="dependencies normal">normal</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/tokio-util/^0.7.0/" class="pure-menu-link">
+                tokio-util ^0.7.0
+                
+                    <i class="dependencies normal">normal</i>
+                    
+                        <i>optional</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/async-stream/^0.3/" class="pure-menu-link">
+                async-stream ^0.3
+                
+                    <i class="dependencies dev">dev</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/futures/^0.3/" class="pure-menu-link">
+                futures ^0.3
+                
+                    <i class="dependencies dev">dev</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/parking_lot/^0.12.0/" class="pure-menu-link">
+                parking_lot ^0.12.0
+                
+                    <i class="dependencies dev">dev</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/tokio/^1.2.0/" class="pure-menu-link">
+                tokio ^1.2.0
+                
+                    <i class="dependencies dev">dev</i>
+                    
+                
+            </a>
+        </li><li class="pure-menu-item"><a href="/tokio-test/^0.4/" class="pure-menu-link">
+                tokio-test ^0.4
+                
+                    <i class="dependencies dev">dev</i>
+                    
+                
+            </a>
+        </li>
+                                    </ul>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="pure-u-1-2">
+                        <ul class="pure-menu-list">
+                            <li class="pure-menu-heading">Versions</li>
+
+                            <li class="pure-menu-item">
+                                <div class="pure-menu pure-menu-scrollable sub-menu" id="releases-list" tabindex="-1" data-url="/crate/tokio-stream/latest/menus/releases/tokio_stream/">
+                                    <span class="rotate"><span class="fa fa-solid fa-spinner " aria-hidden="true"></span></span>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                    
+                    
+                    <div class="pure-g">
+                        <div class="pure-u-1">
+                            <ul class="pure-menu-list">
+                                <li>
+                                    <a href="/crate/tokio-stream/latest" class="pure-menu-link">
+                                        <b>100%</b>
+                                        of the crate is documented
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div></div>
+        </li><li class="pure-menu-item pure-menu-has-children">
+                <a href="#" class="pure-menu-link" aria-label="Platform" aria-haspopup="menu">
+                    <span class="fa fa-solid fa-gears " aria-hidden="true"></span>
+                    <span class="title">Platform</span>
+                </a>
+
+                
+                <ul class="pure-menu-children" id="platforms" data-url="/crate/tokio-stream/latest/menus/platforms/tokio_stream/" role="menu"><li class="pure-menu-item">
+            <a href="/crate/tokio-stream/latest/target-redirect/aarch64-apple-darwin/tokio_stream/" class="pure-menu-link" data-fragment="retain" rel="nofollow">aarch64-apple-darwin</a>
+        </li><li class="pure-menu-item">
+            <a href="/crate/tokio-stream/latest/target-redirect/aarch64-unknown-linux-gnu/tokio_stream/" class="pure-menu-link" data-fragment="retain" rel="nofollow">aarch64-unknown-linux-gnu</a>
+        </li><li class="pure-menu-item">
+            <a href="/crate/tokio-stream/latest/target-redirect/i686-pc-windows-msvc/tokio_stream/" class="pure-menu-link" data-fragment="retain" rel="nofollow">i686-pc-windows-msvc</a>
+        </li><li class="pure-menu-item">
+            <a href="/crate/tokio-stream/latest/target-redirect/x86_64-pc-windows-msvc/tokio_stream/" class="pure-menu-link" data-fragment="retain" rel="nofollow">x86_64-pc-windows-msvc</a>
+        </li><li class="pure-menu-item">
+            <a href="/crate/tokio-stream/latest/target-redirect/tokio_stream/" class="pure-menu-link" data-fragment="retain" rel="nofollow">x86_64-unknown-linux-gnu</a>
+        </li></ul>
+            </li><li class="pure-menu-item">
+                <a href="/crate/tokio-stream/latest/features" title="Browse available feature flags of tokio-stream-0.1.18" class="pure-menu-link">
+                    <span class="fa fa-solid fa-flag " aria-hidden="true"></span>
+                    <span class="title">Feature flags</span>
+                </a>
+            </li>
+        
+    
+</ul><div class="spacer"></div>
+                
+                
+
+<ul class="pure-menu-list">
+                    <li class="pure-menu-item pure-menu-has-children">
+                        <a href="#" class="pure-menu-link" aria-label="docs.rs" aria-haspopup="menu">docs.rs</a>
+                        <ul class="pure-menu-children aligned-icons" role="menu"><li class="pure-menu-item"><a class="pure-menu-link" href="/about"><span class="fa fa-solid fa-circle-info " aria-hidden="true"></span> About docs.rs</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/about/badges"><span class="fa fa-brands fa-fonticons " aria-hidden="true"></span> Badges</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/about/builds"><span class="fa fa-solid fa-gears " aria-hidden="true"></span> Builds</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/about/metadata"><span class="fa fa-solid fa-table " aria-hidden="true"></span> Metadata</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/about/redirections"><span class="fa fa-solid fa-road " aria-hidden="true"></span> Shorthand URLs</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/about/download"><span class="fa fa-solid fa-download " aria-hidden="true"></span> Download</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/about/rustdoc-json"><span class="fa fa-solid fa-file-code " aria-hidden="true"></span> Rustdoc JSON</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="/releases/queue"><span class="fa fa-solid fa-gears " aria-hidden="true"></span> Build queue</a></li><li class="pure-menu-item"><a class="pure-menu-link" href="https://foundation.rust-lang.org/policies/privacy-policy/#docs.rs" target="_blank"><span class="fa fa-solid fa-shield-halved " aria-hidden="true"></span> Privacy policy</a></li>
+                        </ul>
+                    </li>
+                </ul>
+                <ul class="pure-menu-list"><li class="pure-menu-item pure-menu-has-children">
+                        <a href="#" class="pure-menu-link" aria-label="Rust" aria-haspopup="menu">Rust</a>
+                        <ul class="pure-menu-children" role="menu">
+                            <li class="pure-menu-item"><a class="pure-menu-link" href="https://www.rust-lang.org/" target="_blank">Rust website</a></li>
+                            <li class="pure-menu-item"><a class="pure-menu-link" href="https://doc.rust-lang.org/book/" target="_blank">The Book</a></li>
+
+                            <li class="pure-menu-item"><a class="pure-menu-link" href="https://doc.rust-lang.org/std/" target="_blank">Standard Library API Reference</a></li>
+
+                            <li class="pure-menu-item"><a class="pure-menu-link" href="https://doc.rust-lang.org/rust-by-example/" target="_blank">Rust by Example</a></li>
+
+                            <li class="pure-menu-item"><a class="pure-menu-link" href="https://doc.rust-lang.org/cargo/guide/" target="_blank">The Cargo Guide</a></li>
+
+                            <li class="pure-menu-item"><a class="pure-menu-link" href="https://doc.rust-lang.org/nightly/clippy" target="_blank">Clippy Documentation</a></li>
+                        </ul>
+                    </li>
+                </ul>
+                
+                <div id="search-input-nav">
+                    <label for="nav-search">
+                        <span class="fa fa-solid fa-magnifying-glass " aria-hidden="true"></span>
+                    </label>
+
+                    
+                    
+                    <input id="nav-search" name="query" type="text" aria-label="Find crate by search query" tabindex="-1" placeholder="Find crate">
+                </div>
+            </form>
+        </div>
+    </div>
+</div><div class="rustdoc mod crate container-rustdoc" id="rustdoc_body_wrapper" tabindex="-1"><script async="" src="/-/static/menu.js?0-1-0-7bfb09c2-2026-01-03"></script>
+<script async="" src="/-/static/index.js?0-1-0-7bfb09c2-2026-01-03"></script>
+
+<iframe src="/-/storage-change-detection.html" width="0" height="0" style="display: none"></iframe><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar>
+        <button class="sidebar-menu-toggle" slot="sidebar-menu-toggle" title="show sidebar">
+        </button>
+        <div class="settings-menu" slot="settings-menu" tabindex="-1">
+            <a href="../settings.html"><span class="label">Settings</span></a>
+        </div>
+        <div class="help-menu" slot="help-menu" tabindex="-1">
+            <a href="../help.html"><span class="label">Help</span></a>
+        </div>
+        <h2><a href="#">Crate tokio_stream</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../tokio_stream/index.html">tokio_<wbr>stream</a><span class="version">0.1.18</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#iterating-over-a-stream" title="Iterating over a Stream">Iterating over a Stream</a></li><li><a href="#returning-a-stream-from-a-function" title="Returning a Stream from a function">Returning a Stream from a function</a></li><li><a href="#conversion-to-and-from-asyncreadasyncwrite" title="Conversion to and from `AsyncRead`/`AsyncWrite`">Conversion to and from <code>AsyncRead</code>/<code>AsyncWrite</code></a></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"><h3>Crates</h3><ul class="block crate"><li class="current"><a href="../tokio_stream/index.html">tokio_stream</a></li></ul></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div id="sidebar-button"><a href="../tokio_stream/all.html" title="show sidebar"></a></div><h1>Crate <span>tokio_<wbr>stream</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="sub-heading"><a class="src" href="../src/tokio_stream/lib.rs.html#1-117">Source</a> </span><rustdoc-toolbar>
+        <div id="search-button" tabindex="-1">
+            <a href="https://docs.rs/tokio-stream/latest/tokio_stream/?search="><span class="label">Search</span></a>
+        </div>
+        <div class="settings-menu" tabindex="-1">
+            <a href="../settings.html"><span class="label">Settings</span></a>
+        </div>
+        <div class="help-menu" tabindex="-1">
+            <a href="../help.html"><span class="label">Help</span></a>
+        </div>
+        <button id="toggle-all-docs" title="Collapse sections (shift-click to also collapse impl blocks)"><span class="label">Summary</span></button></rustdoc-toolbar></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Stream utilities for Tokio.</p>
+<p>A <code>Stream</code> is an asynchronous sequence of values. It can be thought of as
+an asynchronous version of the standard library’s <code>Iterator</code> trait.</p>
+<p>This crate provides helpers to work with them. For examples of usage and a more in-depth
+description of streams you can also refer to the <a href="https://tokio.rs/tokio/tutorial/streams">streams
+tutorial</a> on the tokio website.</p>
+<h2 id="iterating-over-a-stream"><a class="doc-anchor" href="#iterating-over-a-stream">§</a>Iterating over a Stream</h2>
+<p>Due to similarities with the standard library’s <code>Iterator</code> trait, some new
+users may assume that they can use <code>for in</code> syntax to iterate over a
+<code>Stream</code>, but this is unfortunately not possible. Instead, you can use a
+<code>while let</code> loop as follows:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>tokio_stream::{<span class="self">self </span><span class="kw">as </span>stream, StreamExt};
+
+<span class="kw">let </span><span class="kw-2">mut </span>stream = stream::iter(<span class="macro">vec!</span>[<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>]);
+
+<span class="kw">while let </span><span class="prelude-val">Some</span>(value) = stream.next().<span class="kw">await </span>{
+    <span class="macro">println!</span>(<span class="string">"Got {}"</span>, value);
+}</code></pre></div><h2 id="returning-a-stream-from-a-function"><a class="doc-anchor" href="#returning-a-stream-from-a-function">§</a>Returning a Stream from a function</h2>
+<p>A common way to stream values from a function is to pass in the sender
+half of a channel and use the receiver as the stream. This requires awaiting
+both futures to ensure progress is made. Another alternative is the
+<a href="https://docs.rs/async-stream">async-stream</a> crate, which contains macros that provide a <code>yield</code> keyword
+and allow you to return an <code>impl Stream</code>.</p>
+<h2 id="conversion-to-and-from-asyncreadasyncwrite"><a class="doc-anchor" href="#conversion-to-and-from-asyncreadasyncwrite">§</a>Conversion to and from <code>AsyncRead</code>/<code>AsyncWrite</code></h2>
+<p>It is often desirable to convert a <code>Stream</code> into an <a href="https://docs.rs/tokio/latest/tokio/io/trait.AsyncRead.html"><code>AsyncRead</code></a>,
+especially when dealing with plaintext formats streamed over the network.
+The opposite conversion from an <a href="https://docs.rs/tokio/latest/tokio/io/trait.AsyncRead.html"><code>AsyncRead</code></a> into a <code>Stream</code> is also
+another commonly required feature. To enable these conversions,
+<a href="https://docs.rs/tokio-util/latest/tokio_util/codec/index.html"><code>tokio-util</code></a> provides the <a href="https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html"><code>StreamReader</code></a> and <a href="https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html"><code>ReaderStream</code></a>
+types when the io feature is enabled.</p>
+</div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.Stream"><code>pub use futures_core::<a class="trait" href="https://docs.rs/futures-core/0.3.31/x86_64-unknown-linux-gnu/futures_core/stream/trait.Stream.html" title="trait futures_core::stream::Stream">Stream</a>;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="adapters/index.html" title="mod tokio_stream::adapters">adapters</a></dt><dd>Adapters for <a href="https://docs.rs/futures-core/0.3.31/x86_64-unknown-linux-gnu/futures_core/stream/trait.Stream.html" title="trait futures_core::stream::Stream"><code>Stream</code></a>s created by methods in <a href="trait.StreamExt.html" title="trait tokio_stream::StreamExt"><code>StreamExt</code></a>.</dd><dt><a class="mod" href="wrappers/index.html" title="mod tokio_stream::wrappers">wrappers</a></dt><dd>Wrappers for Tokio types that implement <code>Stream</code>.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Elapsed.html" title="struct tokio_stream::Elapsed">Elapsed</a><wbr><span class="stab portability" title="Available on crate feature `time` only"><code>time</code></span></dt><dd>Error returned by <code>Timeout</code> and <code>TimeoutRepeating</code>.</dd><dt><a class="struct" href="struct.Empty.html" title="struct tokio_stream::Empty">Empty</a></dt><dd>Stream for the <a href="fn.empty.html" title="fn tokio_stream::empty"><code>empty</code></a> function.</dd><dt><a class="struct" href="struct.Iter.html" title="struct tokio_stream::Iter">Iter</a></dt><dd>Stream for the <a href="fn.iter.html" title="fn tokio_stream::iter"><code>iter</code></a> function.</dd><dt><a class="struct" href="struct.Once.html" title="struct tokio_stream::Once">Once</a></dt><dd>Stream for the <a href="fn.once.html" title="fn tokio_stream::once"><code>once</code></a> function.</dd><dt><a class="struct" href="struct.Pending.html" title="struct tokio_stream::Pending">Pending</a></dt><dd>Stream for the <a href="fn.pending.html" title="fn tokio_stream::pending"><code>pending</code></a> function.</dd><dt><a class="struct" href="struct.StreamMap.html" title="struct tokio_stream::StreamMap">Stream<wbr>Map</a></dt><dd>Combine many streams into one, indexing each source stream with a unique
+key.</dd><dt><a class="struct" href="struct.StreamNotifyClose.html" title="struct tokio_stream::StreamNotifyClose">Stream<wbr>Notify<wbr>Close</a></dt><dd>A <code>Stream</code> that wraps the values in an <code>Option</code>.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.FromStream.html" title="trait tokio_stream::FromStream">From<wbr>Stream</a></dt><dd>Convert from a <a href="https://docs.rs/futures-core/0.3.31/x86_64-unknown-linux-gnu/futures_core/stream/trait.Stream.html" title="trait futures_core::stream::Stream"><code>Stream</code></a>.</dd><dt><a class="trait" href="trait.StreamExt.html" title="trait tokio_stream::StreamExt">Stream<wbr>Ext</a></dt><dd>An extension trait for the <a href="https://docs.rs/futures-core/0.3.31/x86_64-unknown-linux-gnu/futures_core/stream/trait.Stream.html" title="trait futures_core::stream::Stream"><code>Stream</code></a> trait that provides a variety of
+convenient combinator functions.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.empty.html" title="fn tokio_stream::empty">empty</a></dt><dd>Creates a stream that yields nothing.</dd><dt><a class="fn" href="fn.iter.html" title="fn tokio_stream::iter">iter</a></dt><dd>Converts an <code>Iterator</code> into a <code>Stream</code> which is always ready
+to yield the next value.</dd><dt><a class="fn" href="fn.once.html" title="fn tokio_stream::once">once</a></dt><dd>Creates a stream that emits an element exactly once.</dd><dt><a class="fn" href="fn.pending.html" title="fn tokio_stream::pending">pending</a></dt><dd>Creates a stream that is never ready</dd></dl></section><section id="alternative-display" class="content hidden"></section><section id="not-displayed" class="hidden"><section id="search"><div class="main-heading search-results-main-heading"><nav class="sub">
+                    <form class="search-form loading">
+                        <span></span> <!-- This empty span is a hacky fix for Safari: see #93184 -->
+                        <input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Type ‘S’ or ‘/’ to search, ‘?’ for more options…" type="search">
+                    </form>
+                </nav><div class="search-switcher"></div></div><div class="search-out"></div></section></section></div></main></div></body></html>

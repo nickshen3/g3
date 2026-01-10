@@ -231,6 +231,8 @@ impl UiWriter for ConsoleUiWriter {
     }
 
     fn print_tool_timing(&self, duration_str: &str, tokens_delta: u32, context_percentage: f32) {
+        // Add blank line before footer for visual separation
+        println!();
         // Parse the duration string to determine color
         // Format is like "1.5s", "500ms", "2m 30.0s"
         let color_code = if duration_str.ends_with("ms") {

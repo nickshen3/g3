@@ -1,0 +1,793 @@
+<html lang="en"><head><style>
+    .utterances {
+      position: relative;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 760px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .utterances-frame {
+      color-scheme: light;
+      position: absolute;
+      left: 0;
+      right: 0;
+      width: 1px;
+      min-width: 100%;
+      max-width: 100%;
+      height: 100%;
+      border: 0;
+    }
+  </style>
+    <meta charset="utf-8">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer-when-downgrade">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:site" content="@adam_chal">
+    <meta name="twitter:creator" content="@adam_chal">
+    <meta name="author" content="Adam Chalmers">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Adam Chalmers Programming Blog">
+    <meta property="og:image" content="https://blog.adamchalmers.com/birds_of_paradise_wide.jpg">
+    <meta property="og:url" content="https://blog.adamchalmers.com/streaming-proxy/">
+    <meta name="og:title" content="Static streams for faster async proxies">
+    <meta name="twitter:title" content="Static streams for faster async proxies">
+    <meta name="description" content="The borrow checker is a tough negotiating partner">
+    <meta name="twitter:description" content="The borrow checker is a tough negotiating partner">
+    <meta property="og:description" content="The borrow checker is a tough negotiating partner">
+    <title>Static streams for faster async proxies</title>
+    <style>
+        /* Basic */
+@import url('https://fonts.googleapis.com/css?family=Montserrat&display=swap');
+html {
+    font-family: -apple-system, BlinkMacSystemFont, 'Montserrat', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    /* 1 */
+    -ms-text-size-adjust: 100%;
+    /* 2 */
+    -webkit-text-size-adjust: 100%;
+    /* 2 */
+}
+
+body {
+    margin: 0;
+    background: #ffffff;
+    color: hsl(210deg, 2%, 11%);
+    font-size: 18px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        margin: 0;
+        background: hsl(210deg, 2%, 11%);
+        color: #fff;
+        font-size: 18px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+    }
+}
+
+article,
+aside,
+details,
+figcaption,
+figure,
+footer,
+header,
+hgroup,
+main,
+menu,
+nav,
+section,
+summary {
+    display: block;
+}	
+
+.container {
+    max-width: 42em;
+    margin: 0 auto;
+}
+
+main {
+    outline:none;
+}
+
+/* Headers */
+h1 {
+    font-size: 1.35em;
+}
+
+
+@media (prefers-color-scheme: dark) {
+    h1, h2 {
+        color: #7a9b76;
+    }
+}
+
+
+h2 {
+    font-size: 1.2em;
+}
+
+h3 {
+    font-size: 1.1em;
+}
+
+/* Links */
+
+a {
+    color: #5888b8;
+    text-decoration: none;
+}
+
+a:active,
+a:hover {
+    outline: 0;
+}
+
+a:hover,
+a:focus {
+    color: #c64191;
+    border-bottom: 1px solid #c64191;
+}
+
+a:active {
+    color: #c64191;
+    opacity: 0.9;
+    border-bottom: 1px solid #c64191;
+}
+
+a.active {
+    color: #c64191;
+}
+
+a.skip-main {
+    left:-999px;
+    position:absolute;
+    top:auto;
+    width:1px;
+    height:1px;
+    overflow:hidden;
+    z-index:-999;
+}
+
+a.skip-main:focus, 
+a.skip-main:active {
+    left: auto;
+    top: 0px;
+    width: auto;
+    height: auto;
+    overflow:auto;
+    z-index:999;
+    padding: 4px 6px 4px 6px;
+    text-decoration: underline;
+    border: none;
+}
+
+/* Table */
+.table-wrapper {
+    overflow-x: auto;
+}
+
+table {
+    max-width: 100%;
+    border-spacing: 0;
+}
+
+thead {
+    background: lightgrey;
+}
+
+th, td {
+    padding: 0.5em 1em;
+    border: 1px double lightgrey;
+}
+
+/* Code */
+pre {
+    padding: 1em;
+    background-color: #f1f1f1;
+    max-width: 100%;
+    overflow: auto;
+}
+
+code,
+pre,
+kbd {
+    font-family: monospace;
+    font-size: 0.90em;
+    line-height: 154%;
+}
+
+code {
+    color: #c78baf
+}
+
+/* Styles */
+
+blockquote {
+    border-left: 2px solid #cccccc;
+    padding: 0.1em 1em;
+    margin-left: 0.75em;
+}
+
+p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+hr {
+    height: 1px;
+    border: 0;
+    border-top: 1px solid #cccccc;
+}
+
+ul ol, ol ol, ul ul {
+    margin: 0em 2em;
+}
+
+/* Header */
+
+header {
+    display: flex;
+    justify-content: space-between;
+}
+
+header h1 {
+    font-size: 1em;
+    margin-top: 1em;
+    margin-bottom: 0;
+    font-weight: normal;
+}
+
+header h2 {
+    font-size: 1em;
+    margin: 0;
+    font-weight: normal;
+}
+
+header nav {
+    margin-top: 1em;
+    max-width: 100%;
+    text-align: right;
+    margin-bottom: 1em;
+}
+
+header nav a {
+    margin-left: 2em;
+}
+
+header a {
+    color: hsl(210deg, 2%, 11%);
+}
+
+@media (prefers-color-scheme: dark) {
+    header a {
+        color: #7a9b76;
+    }
+}
+
+.site-header {
+    white-space: nowrap;
+}
+
+/* Pages */
+main h1 {
+    margin-top: 1em;
+    font-weight: normal;
+    line-height: 1.1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+.post-short-list:first-of-type {
+    margin-top: 1em;
+}
+
+/* Articles */
+
+
+article:not(:last-of-type) {
+    border-bottom: thin solid #f1f1f1;
+    padding-bottom: 2em;
+}
+
+article header h1 {
+    font-size: 1.35em;
+    line-height: 1.1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+article header h1 a {
+    border: none;
+    text-decoration: none;
+    color: hsl(210deg, 2%, 11%);
+}
+
+
+@media (prefers-color-scheme: dark) {
+    article header h1 a {
+        border: none;
+        text-decoration: none;
+        color: #7a9b76;
+    }
+}
+
+
+.article-info {
+    font-size: 0.75em;
+    color: grey;
+    margin-top: 1em;
+}
+
+.article-info a {
+    color: grey;
+}
+
+.article-info a:hover {
+    color: #c64191;
+}
+
+.post-short-list .article-info {
+    margin-top: 0;
+    margin-bottom: 1.5em;
+}
+
+.article-taxonomies {
+    display: inline;
+}
+
+.article-date {
+    white-space: nowrap;
+}
+
+.article-categories {
+    display: inline;
+    list-style-type: none;
+    padding: 0;
+}
+
+.article-categories li {
+    display: inline;
+    margin-right: 1em;
+}
+
+.article-tags {
+    display: inline;
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.article-tags li {
+    display: inline;
+    margin-right: 1em;
+}
+
+article img {
+    max-width: 100%;
+    display: block;
+    height: auto;
+    margin: 0 auto .5em;
+}
+
+.read-more {
+    font-size: 0.85em;
+}
+
+.divider {
+    display: block;
+    height: 1px;
+    border: 0;
+    border-top: thin solid #f1f1f1;
+    width: 25%;
+    margin: 1em auto;
+}
+
+.post-summary {
+    margin-top: 0.5em;
+    display: block;
+}
+
+.post-summary > p {
+    display: block;
+}
+
+/* Other pages */
+.terms {
+    list-style-type: none;
+    padding: 0;
+    line-height: 2em;
+}
+
+/* Pagination */
+
+.pagination {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3em;
+}
+
+.pagination {
+    text-align: center;   
+}
+
+.pagination-item {
+    background: #fafafa;
+    padding: 0.75em 0.75em;
+}
+
+.disabled {
+    visibility: hidden;
+}
+
+.pagination-item a {
+    color: hsl(210deg, 2%, 11%)333;
+}
+
+.pagination-item a:hover, .pagination-item a:focus {
+    color: #c64191;
+    border-bottom: 0;
+}
+
+/* Footer */
+
+footer {
+    border-top: thin solid #f1f1f1;
+    margin-top: 3em;
+    font-size: 16px;
+}
+
+ul.language-select {
+    padding-left: 0;
+    list-style: none;
+    display: flex;
+}
+
+ul.language-select > li {
+    margin-right: 1em;
+}
+
+/* Media Queries */
+
+@media (max-width: 840px) {
+    .main-wrapper {
+        margin: 0;
+        max-width: none;
+        overflow-x: hidden;
+        padding-left: 25px;
+        padding-right: 25px;
+    }
+
+    .container {
+        max-width: 90%;
+        margin: 0 auto;
+    }
+
+    .pagination-item {
+        padding: 0.5em 0.5em;
+        font-size: 14px;
+    }
+
+    header {
+        display: block;
+    }
+
+    .site-header {
+        text-align: center;
+    }
+
+    header nav {
+        margin-top: 1em;
+        max-width: 100%;
+        text-align: center;
+        background: #fafafa;
+        padding: 0.5em 0;
+    }
+
+
+    @media (prefers-color-scheme: dark) {
+        header nav {
+            margin-top: 1em;
+            max-width: 100%;
+            text-align: center;
+            background: #232323;
+            padding: 0.5em 0;
+        }
+    }
+
+    header nav a:first-of-type {
+        margin-left: 0;
+    }
+
+    header nav a {
+        margin-left: 5%;
+    }
+}
+    </style>
+    <link href="https://hachyderm.io/@adam_chal" rel="me">
+    <link rel="shortcut icon" href="https://blog.adamchalmers.com/favicon.ico">
+
+    
+        <link rel="alternate" type="application/atom+xml" title="RSS" href="https://blog.adamchalmers.com/atom.xml">
+    
+
+    
+    
+</head>
+<body>
+    <a class="skip-main" href="#main">Skip to content</a>
+    <div class="container">
+        <header> 
+            <h1 class="site-header">
+                <a href="https://blog.adamchalmers.com">Adam Chalmers</a>
+            </h1>
+            <nav>
+                
+                
+                
+                <a href="https://blog.adamchalmers.com/about/">About me</a>
+                
+                
+                <a href="https://blog.adamchalmers.com/tags/video/">Video</a>
+                
+                
+                <a href="https://blog.adamchalmers.com/tags/audio/">Audio</a>
+                
+                
+                <a href="https://blog.adamchalmers.com/tags/">Tags</a>
+                
+                
+                <a href="https://blog.adamchalmers.com/atom.xml">Atom feed</a>
+                
+                
+            </nav>
+        </header>
+        <main id="main" tabindex="-1">
+            
+
+<article class="post">
+    <header>
+        <h1>Static streams for faster async proxies</h1>
+    </header>
+
+    <ul>
+    
+        <li>
+            <a href="https://blog.adamchalmers.com/streaming-proxy/#why-streaming-instead-of-buffering">Why streaming instead of buffering?</a>
+            
+        </li>
+    
+        <li>
+            <a href="https://blog.adamchalmers.com/streaming-proxy/#the-problem">The problem</a>
+            
+        </li>
+    
+        <li>
+            <a href="https://blog.adamchalmers.com/streaming-proxy/#the-solution">The solution</a>
+            
+        </li>
+    
+        <li>
+            <a href="https://blog.adamchalmers.com/streaming-proxy/#benchmarks">Benchmarks</a>
+            
+        </li>
+    
+        <li>
+            <a href="https://blog.adamchalmers.com/streaming-proxy/#takeaways">Takeaways</a>
+            
+        </li>
+    
+    </ul>
+
+    <div class="content">
+        <p>Last week in <a href="https://discord.com/invite/tokio">Tokio's Discord chat server</a> someone asked a really interesting question: how can you stream a multipart body from an incoming request into an outgoing request? My struggle to answer this really helped me understand Rust async lifetimes. We'll explore <em>why</em> this is tricky, then design and benchmark a solution. </p>
+<span id="continue-reading"></span>
+<p>Note: all the code is in a full <a href="https://github.com/adamchalmers/axum-reqwest">GitHub example</a>.</p>
+<hr>
+<p>The question was:</p>
+<blockquote>
+<p>I'm rather new to Rust, so perhaps I'm trying to bite off more than I can chew, but I can't find any way to stream an <code>axum::extract::multipart::Field</code> to the body of a PUT request made with reqwest. Obviously, waiting for all the bytes works just fine, as in this test handler:</p>
+</blockquote>
+<pre style="background-color:#2b303b;"><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">use </span><span style="color:#c0c5ce;">axum::{extract, Extension};
+</span><span style="color:#b48ead;">use </span><span style="color:#c0c5ce;">reqwest::StatusCode;
+
+</span><span style="color:#65737e;">/// An Axum request handler. 
+</span><span style="color:#c0c5ce;">async </span><span style="color:#b48ead;">fn </span><span style="color:#8fa1b3;">upload</span><span style="color:#c0c5ce;">(
+    </span><span style="color:#65737e;">// The request body should be a Multipart.
+    </span><span style="color:#b48ead;">mut </span><span style="color:#bf616a;">multipart</span><span style="color:#c0c5ce;">: extract::Multipart,
+    </span><span style="color:#65737e;">// The server should set a reqwest::Client in the extensions.
+</span><span style="color:#c0c5ce;">    Extension(</span><span style="color:#bf616a;">client</span><span style="color:#c0c5ce;">): Extension&lt;reqwest::Client&gt;,
+</span><span style="color:#65737e;">// If this function succeeds, return HTTP 200 and the Ok string as the body.
+// If it fails, return the given status code and the Err string as the body.
+</span><span style="color:#c0c5ce;">) -&gt; Result&lt;String, (StatusCode, String)&gt; {
+
+    </span><span style="color:#65737e;">// Get the first field of the multipart request.
+    </span><span style="color:#b48ead;">if let </span><span style="color:#c0c5ce;">Some(field) = multipart.</span><span style="color:#96b5b4;">next_field</span><span style="color:#c0c5ce;">().await.</span><span style="color:#96b5b4;">unwrap</span><span style="color:#c0c5ce;">() {
+        client
+            .</span><span style="color:#96b5b4;">put</span><span style="color:#c0c5ce;">(url::Url::parse("</span><span style="color:#a3be8c;">https://example.com/file</span><span style="color:#c0c5ce;">").</span><span style="color:#96b5b4;">unwrap</span><span style="color:#c0c5ce;">())
+            .</span><span style="color:#96b5b4;">body</span><span style="color:#c0c5ce;">(field.</span><span style="color:#96b5b4;">bytes</span><span style="color:#c0c5ce;">().await.</span><span style="color:#96b5b4;">unwrap</span><span style="color:#c0c5ce;">())
+            .</span><span style="color:#96b5b4;">send</span><span style="color:#c0c5ce;">()
+            .await
+            .</span><span style="color:#96b5b4;">map_err</span><span style="color:#c0c5ce;">(|_| (StatusCode::</span><span style="color:#d08770;">INTERNAL_SERVER_ERROR</span><span style="color:#c0c5ce;">, "</span><span style="color:#a3be8c;">Oops</span><span style="color:#c0c5ce;">".</span><span style="color:#96b5b4;">to_string</span><span style="color:#c0c5ce;">()))
+            .</span><span style="color:#96b5b4;">map</span><span style="color:#c0c5ce;">(|_| "</span><span style="color:#a3be8c;">Yay</span><span style="color:#c0c5ce;">".</span><span style="color:#96b5b4;">to_string</span><span style="color:#c0c5ce;">())
+    } </span><span style="color:#b48ead;">else </span><span style="color:#c0c5ce;">{
+        Err((StatusCode::</span><span style="color:#d08770;">INTERNAL_SERVER_ERROR</span><span style="color:#c0c5ce;">, "</span><span style="color:#a3be8c;">Oh no</span><span style="color:#c0c5ce;">".</span><span style="color:#96b5b4;">to_string</span><span style="color:#c0c5ce;">()))
+    }
+}
+</span></code></pre>
+<blockquote>
+<p>Everything I've found for using a stream as the request body requires that the stream be 'static, which of course the fields I'm getting from multipart aren't.</p>
+</blockquote>
+<p>The problem sounded very simple -- the server should stream a request in, and stream a request out -- so I figured I'd help this person out, for two reasons:</p>
+<ol>
+<li>It's nice to help people and I am Very Nice</li>
+<li>My dayjob is writing a streaming HTTP proxy in Rust, so this would be good practice.</li>
+</ol>
+<p>But it turned out to be harder than I thought. </p>
+<h1 id="why-streaming-instead-of-buffering">Why streaming instead of buffering?</h1>
+<p>Why not just buffer the whole body into memory? Is streaming really that important? Well, yeah -- if you're building a proxy, streaming is worth the extra headache, for two reasons:</p>
+<p>First, <strong>latency</strong> is worse with buffering. Your proxy has to buffer the entire request from the client before sending it to the server. This <em>doubles</em> the latency of requests (assuming all three hosts are equidistant). You have to wait <em>n</em> seconds for the request to reach the proxy, then <em>n</em> seconds to transmit it to the server. But if your proxy used streams, you could get the first few bytes from the client, and send them to the server while you waited for the next few bytes from the client.</p>
+<p>Second, <strong>memory</strong> overhead is <em>huge</em> with buffering. Say you're proxying a 10gb MacOS system update file. If you buffer every request into memory, your server can't handle many parallel requests (probably &lt;10). But with streaming, you can get the first <em>n</em> bytes the client, proxy them to the server, and then free them. No more crashing the process because it ran out of memory.</p>
+<p>So we <em>really</em> want our proxy server to stream requests. There's just one problem. Our HTTP server and HTTP client seem to have contradictory lifetimes.</p>
+<h1 id="the-problem">The problem</h1>
+<p>Axum's <a href="https://docs.rs/axum/latest/axum/extract/struct.Multipart.html"><code>Multipart</code> extractor</a> owns the incoming request body. It has a method <a href="https://docs.rs/axum/latest/axum/extract/struct.Multipart.html#method.next_field"><code>next_field</code></a> that returns a <a href="https://docs.rs/axum/latest/axum/extract/multipart/struct.Field.html"><code>Field</code></a> type. That <code>Field</code> is a view into the data from the main <code>Multipart</code> body. It just borrows part of the multipart data. This means the Field is actually <code>Field&lt;'a&gt;</code> where <code>'a</code> is the lifetime of the <code>Multipart</code> that created it.</p>
+<p><img src="/streaming-proxy/field_borrow.jpg" alt="Field borrows from Multipart"></p>
+<p>Clearly the field can't outlive the Multipart, because then Field would be pointing at data that is no longer there. Rust borrow checker stops us from doing that. So far so good.</p>
+<p>You can read data from a stream, either by reading the whole thing into memory (as above), or using the Stream trait. This trait is defined by the Futures crate <a href="https://docs.rs/futures/latest/futures/prelude/trait.Stream.html">here</a> and implemented <a href="https://docs.rs/axum/latest/axum/extract/multipart/struct.Field.html#impl-Stream-for-Field%3C%27a%3E">here</a>. Streams are basically asynchronous iterators. When you try to get the next value from them, it might not be ready yet, so you have to <code>.await</code>. This is perfect for reading HTTP request bodies, because you can start processing the body as it comes in piece-by-piece. If the next bytes aren't available, your runtime (e.g. Tokio) will switch to a different task until the data arrives. </p>
+<p>This means you don't have to wait for the entire body to be available, saving time and maybe RAM, if you don't actually need to store the entire body.</p>
+<p>So, now we know how to stream data <em>out</em> of the body. What about streaming data <em>into</em> a new request's body?</p>
+<p>We'll use <a href="docs.rs/reqwest">reqwest</a> as the HTTP client. Reqwest can send various things as HTTP bodies -- strings, vectors of bytes, and even streams, using the <a href="https://docs.rs/reqwest/latest/reqwest/struct.Body.html#method.wrap_stream"><code>wrap_stream</code></a> method. The problem is, the stream has to be <code>'static</code>, a special lifetime which means "either it's not borrowed, or it's borrowed for the entire length of the program". This means we can't use <code>Field</code> as a reqwest body, because it's not <code>'static</code>. It's borrowed, and it's only valid for as long as the <code>Multipart</code> that owns it.</p>
+<p>Why does reqwest only allow static streams to be bodies? I asked its creator <a href="https://twitter.com/seanmonstar">Sean McArthur</a>.</p>
+<blockquote>
+<p>Sean: Internally the connection is in a separate task, to manage connection-level stuff (keep alive, if http2: pings, settings, and flow control). The body gets sent to that connection task</p>
+</blockquote>
+<blockquote>
+<p>Adam: So basically the connection task takes ownership of all request bodies? And therefore bodies have to be 'static because they need to be moved into that task? </p>
+</blockquote>
+<blockquote>
+<p>Sean: Exactly</p>
+</blockquote>
+<p>But there <em>is</em> a solution. The field type is <code>Field&lt;'a&gt;</code>, so it's generic over various possible lifetimes. We just need to make sure that the <em>specific</em> lifetime our server uses is <code>'static</code>.</p>
+<h1 id="the-solution">The solution</h1>
+<p>Note that the <code>Multipart</code> object itself is <code>'static</code>. Why? Because it's not borrowed. The <code>next_field</code> type signature is <code>next_field(&amp;mut self) -&gt; Field&lt;'_&gt;</code>. What's that <code>'_</code>? That's an <em>elided lifetime</em>. Basically these two signatures are equivalent:</p>
+<pre style="background-color:#2b303b;"><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">fn </span><span style="color:#8fa1b3;">next_field</span><span style="color:#c0c5ce;">(&amp;</span><span style="color:#b48ead;">'a mut </span><span style="color:#bf616a;">self</span><span style="color:#c0c5ce;">) -&gt; Field&lt;</span><span style="color:#b48ead;">'a</span><span style="color:#c0c5ce;">&gt;
+fn next_field(&amp;</span><span style="color:#b48ead;">mut</span><span style="color:#c0c5ce;"> self) -&gt; Field&lt;'_&gt;
+</span></code></pre>
+<p>So, the field type is <code>Field&lt;'a&gt;</code>, but that <code>'a</code> is generic. Its definition works for any possible lifetime. We just have to make sure that when our server's handler is compiled, it knows that <code>'a</code> is <code>'static</code>. </p>
+<p>The key insight is that, if you want to use a stream as a reqwest body, it can't borrow anything. Because if it borrowed data from some other thread which owns data, what happens if the owning thread dies? Your body would keep reading from the freed memory, and Rust won't let that happen. This means <em>the stream has to own all the data being streamed</em>. </p>
+<p>So, the stream needs to own the <code>Multipart</code>! After all, the multipart owns the data, and the stream has to own the data. So the stream has to own the multipart.</p>
+<p>Once I realized that, the solution emerged. We'll define a new type of Stream that owns a Multipart and streams data out of its fields.</p>
+<pre style="background-color:#2b303b;"><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">use </span><span style="color:#c0c5ce;">axum::{body::Bytes, extract, extract::multipart::MultipartError};
+</span><span style="color:#b48ead;">use </span><span style="color:#c0c5ce;">futures::prelude::Stream;
+
+</span><span style="color:#65737e;">/// Wrapper for axum's Multipart type. 
+</span><span style="color:#b48ead;">struct </span><span style="color:#c0c5ce;">MultipartStream(extract::Multipart);
+
+</span><span style="color:#b48ead;">impl </span><span style="color:#c0c5ce;">MultipartStream {
+    </span><span style="color:#65737e;">/// Stream every byte from every field.
+    </span><span style="color:#b48ead;">fn </span><span style="color:#8fa1b3;">into_stream</span><span style="color:#c0c5ce;">(</span><span style="color:#b48ead;">mut </span><span style="color:#bf616a;">self</span><span style="color:#c0c5ce;">) -&gt; impl Stream&lt;Item = Result&lt;Bytes, MultipartError&gt;&gt; {
+        </span><span style="color:#65737e;">// Create a stream using crates.io/crates/async-stream
+        </span><span style="color:#c0c5ce;">async_stream::stream! {
+            </span><span style="color:#b48ead;">while let </span><span style="color:#c0c5ce;">Some(field) = </span><span style="color:#bf616a;">self</span><span style="color:#c0c5ce;">.</span><span style="color:#d08770;">0.</span><span style="color:#96b5b4;">next_field</span><span style="color:#c0c5ce;">().await.</span><span style="color:#96b5b4;">unwrap</span><span style="color:#c0c5ce;">() {
+                </span><span style="color:#65737e;">// Special syntax from the stream! macro.
+                // Basically streams items out of the `field` stream.
+                </span><span style="color:#b48ead;">for</span><span style="color:#c0c5ce;"> await value in field {
+                    </span><span style="background-color:#bf616a;color:#2b303b;">yield</span><span style="color:#c0c5ce;"> value;
+                }
+            }
+        }
+    }
+}
+</span></code></pre>
+<p>We make a <a href="https://doc.rust-lang.org/rust-by-example/generics/new_types.html">newtype</a> for converting a Multipart into a Stream. I'm Very Creative so I chose the imaginative name MultipartStream. It owns the Multipart, and its <code>into_stream</code> method consumes (aka takes ownership of) <code>self</code>, so that method also owns the Multipart. This means the Multipart is <code>'static</code>. The method creates a stream, using the <code>stream!</code> macro from the <a href="https://docs.rs/async-stream/latest/async_stream/">async-stream</a> crate. And that stream then takes ownership of <code>self</code> and therefore the Multipart.</p>
+<p>All this means that the stream doesn't borrow anything. It owns all its data -- both the multipart and its fields -- so the stream is <code>'static</code>. Now you can pass it to <code>reqweset::Body::wrap_stream</code>. </p>
+<p>Note: the <code>into_stream</code> example is very rudimentary -- it concatenates all the fields together. This probably wouldn't be useful. In a real server you might want to only stream certain fields, or maybe filter out fields, or maybe only stream the <em>nth</em> field. </p>
+<p>The last thing to do is actually <em>use</em> this <code>MultipartStream</code> wrapper in our endpoint. </p>
+<pre style="background-color:#2b303b;"><code class="language-rust" data-lang="rust"><span style="color:#65737e;">/// State for the proxy server.
+/// See https://docs.rs/axum/0.6.0-rc.1/axum/extract/struct.State.html
+</span><span style="color:#c0c5ce;">#[</span><span style="color:#bf616a;">derive</span><span style="color:#c0c5ce;">(Clone)]
+</span><span style="color:#b48ead;">struct </span><span style="color:#c0c5ce;">ProxyState {
+    </span><span style="color:#bf616a;">dst_port</span><span style="color:#c0c5ce;">: </span><span style="color:#b48ead;">u16</span><span style="color:#c0c5ce;">,
+    </span><span style="color:#bf616a;">client</span><span style="color:#c0c5ce;">: reqwest::Client,
+}
+
+async </span><span style="color:#b48ead;">fn </span><span style="color:#8fa1b3;">proxy_upload_streaming</span><span style="color:#c0c5ce;">(
+    </span><span style="color:#65737e;">// the State parameter can be destructed right here in the function signature, so let's
+    // destructure it and unpack its two fields.
+</span><span style="color:#c0c5ce;">    State(</span><span style="color:#bf616a;">ProxyState</span><span style="color:#c0c5ce;"> { </span><span style="color:#bf616a;">dst_port</span><span style="color:#c0c5ce;">, </span><span style="color:#bf616a;">client</span><span style="color:#c0c5ce;"> }): State&lt;ProxyState&gt;,
+    </span><span style="color:#65737e;">// The incoming request's multipart body.
+    </span><span style="color:#bf616a;">incoming_body</span><span style="color:#c0c5ce;">: extract::Multipart,
+) -&gt; Result&lt;String, (StatusCode, String)&gt; {
+
+    </span><span style="color:#65737e;">// Stream the incoming request's body, into the outgoing request's body.
+    </span><span style="color:#b48ead;">let</span><span style="color:#c0c5ce;"> stream = MultipartStream(incoming_body).</span><span style="color:#96b5b4;">into_stream</span><span style="color:#c0c5ce;">();
+    </span><span style="color:#b48ead;">let</span><span style="color:#c0c5ce;"> outgoing_body = reqwest::Body::wrap_stream(stream);
+
+    </span><span style="color:#65737e;">// Send the outgoing request
+</span><span style="color:#c0c5ce;">    client
+        .</span><span style="color:#96b5b4;">post</span><span style="color:#c0c5ce;">(url::Url::parse(&amp;format!("</span><span style="color:#a3be8c;">http://127.0.0.1:</span><span style="color:#d08770;">{dst_port}</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">")).</span><span style="color:#96b5b4;">unwrap</span><span style="color:#c0c5ce;">())
+        .</span><span style="color:#96b5b4;">body</span><span style="color:#c0c5ce;">(outgoing_body)
+        .</span><span style="color:#96b5b4;">send</span><span style="color:#c0c5ce;">()
+        .await
+        .</span><span style="color:#96b5b4;">map_err</span><span style="color:#c0c5ce;">(|</span><span style="color:#bf616a;">e</span><span style="color:#c0c5ce;">| (StatusCode::</span><span style="color:#d08770;">INTERNAL_SERVER_ERROR</span><span style="color:#c0c5ce;">, e.</span><span style="color:#96b5b4;">to_string</span><span style="color:#c0c5ce;">()))
+        .</span><span style="color:#96b5b4;">map</span><span style="color:#c0c5ce;">(|_| format!("</span><span style="color:#a3be8c;">All OK</span><span style="color:#96b5b4;">\n</span><span style="color:#c0c5ce;">"))
+}
+</span></code></pre>
+<p>Note, this example uses Axum 0.6.0-rc.1 with its new <a href="https://docs.rs/axum/0.6.0-rc.1/axum/extract/struct.State.html">State</a> types. It's possible that it might change a little before the final 0.6 release. See <a href="https://tokio.rs/blog/2022-08-whats-new-in-axum-0-6-0-rc1">the announcement</a> for more. State is basically like an Axum extension where the compiler can guarantee it's always set. This perfectly solves the problem my <a href="/what-are-extensions">previous post about Axum</a> complained about, where <em>I</em> know the extension is always set, but the compiler doesn't, so I need a dubious <code>.unwrap()</code></p>
+<h1 id="benchmarks">Benchmarks</h1>
+<p>I ran some benchmarks on the repo. Basically I used <code>curl</code> to send the proxy server a Multipart body with 20 copies of the Unix wordlist. Then the server proxied it to a second server, which prints it. I compared the streaming proxy above, with a proxy that buffers everything. You can see the full setup in the <a href="https://github.com/adamchalmers/axum-reqwest">GitHub example</a>. </p>
+<p>Because I ran this all locally, I don't expect much difference in total time. After all, the latency between processes running on my Macbook is pretty low. So doubling the latency won't matter much, because the latency is nearly zero anyway. But I expect the RAM usage to be very different.</p>
+<table><thead><tr><th></th><th>Time (seconds)</th><th>RAM (mb)</th></tr></thead><tbody>
+<tr><td>Streaming</td><td>0.10</td><td>16</td></tr>
+<tr><td>Buffering</td><td>0.32</td><td>128</td></tr>
+</tbody></table>
+<p>Yep, streaming saves a lot of memory.</p>
+<h1 id="takeaways">Takeaways</h1>
+<ul>
+<li>reqwest connections are handled in their own thread, so they need to own their bodies.
+<ul>
+<li>This is just a design choice -- other HTTP libraries could work differently, although <a href="https://docs.rs/tide">tide</a> and <a href="https://docs.rs/awc">actix web client</a> also require streaming bodies be <code>'static</code>. </li>
+<li>I think this is partly because of the Tokio runtime, and other runtimes might not require 'static, see <a href="https://www.youtube.com/watch?v=PbgTyCSDPrs">this talk</a> from the creator of <a href="https://docs.rs/glommio/latest/glommio/">glommio</a>.</li>
+</ul>
+</li>
+<li><code>'static</code> means "this value either isn't borrowed, or is borrowed for the entire runtime of the program"</li>
+<li>A static stream can't borrow any data</li>
+<li>Implementing your own streams with <a href="https://docs.rs/async-stream/latest/async_stream/">async-stream</a> is pretty easy</li>
+</ul>
+<hr>
+
+    </div>
+    <div class="utterances">
+    <iframe class="utterances-frame" title="Comments" scrolling="no" src="https://utteranc.es/utterances.html?src=https%3A%2F%2Futteranc.es%2Fclient.js&amp;repo=adamchalmers%2Fblog&amp;issue-term=title&amp;label=comments&amp;theme=github-light&amp;crossorigin=anonymous&amp;async=&amp;url=https%3A%2F%2Fblog.adamchalmers.com%2Fstreaming-proxy%2F&amp;origin=https%3A%2F%2Fblog.adamchalmers.com&amp;pathname=streaming-proxy%2F&amp;title=Static+streams+for+faster+async+proxies&amp;description=The+borrow+checker+is+a+tough+negotiating+partner&amp;og%3Atitle=Static+streams+for+faster+async+proxies&amp;session=" loading="lazy"></iframe>
+  </div>
+
+    
+    <div class="article-info">
+        
+        <div class="article-date">26 August 2022</div>
+        
+        <div class="article-taxonomies">
+            
+            
+                <ul class="article-tags">
+                    
+                    <li><a href="https://blog.adamchalmers.com/tags/rust/">#rust</a></li>
+                    
+                    <li><a href="https://blog.adamchalmers.com/tags/programming/">#programming</a></li>
+                    
+                    <li><a href="https://blog.adamchalmers.com/tags/web/">#web</a></li>
+                    
+                    <li><a href="https://blog.adamchalmers.com/tags/streams/">#streams</a></li>
+                    
+                    <li><a href="https://blog.adamchalmers.com/tags/axum/">#axum</a></li>
+                    
+                    <li><a href="https://blog.adamchalmers.com/tags/multipart/">#multipart</a></li>
+                    
+                </ul>
+            
+        </div>
+    </div>
+
+</article>
+
+
+        </main>
+        <footer>
+            <p>
+                © Adam Chalmers 2026<br>
+                Powered by <a target="_blank" href="https://getzola.org/">Zola</a>, Theme <a target="_blank" href="https://github.com/zbrox/anpu-zola-theme">Anpu</a>.
+            </p>
+            <p>
+                
+                
+            </p>
+        </footer>
+    </div>
+<!-- Cloudflare Pages Analytics --><script defer="" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon="{&quot;token&quot;: &quot;77db9d734c8d4d1e8d86c8008c5e9dc6&quot;}"></script><!-- Cloudflare Pages Analytics --><script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon="{&quot;rayId&quot;:&quot;9bb94b571d7ff426&quot;,&quot;serverTiming&quot;:{&quot;name&quot;:{&quot;cfExtPri&quot;:true,&quot;cfEdge&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfL4&quot;:true,&quot;cfSpeedBrain&quot;:true,&quot;cfCacheStatus&quot;:true}},&quot;version&quot;:&quot;2025.9.1&quot;,&quot;token&quot;:&quot;9350d6ce65a94e1bab85a1247c6f6b0c&quot;}" crossorigin="anonymous"></script>
+
+
+</body></html>

@@ -1,0 +1,129 @@
+<html lang="en-GB"><head>
+  <meta charset="utf-8">
+  <title>Asynchronous Streaming in Rust with Tokio: A Deep Dive into Efficient Concurrency | Poespas Blog</title>
+  <meta name="description" content="Introduction Rust has emerged as a popular choice for building high-performance, concurrent systems due to its ownership model, memory safety features, and">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="generator" content="Eleventy v2.0.0" built="2025-03-09T12:43:27.269Z">
+
+  <meta property="og:title" content="Asynchronous Streaming in Rust with Tokio: A Deep Dive into Efficient Concurrency | Poespas Blog">
+  <meta property="og:description" content="Introduction Rust has emerged as a popular choice for building high-performance, concurrent systems due to its ownership model, memory safety features, and">
+  <meta property="og:url" content="https://blog.poespas.me">
+  <meta property="og:site_name" content="Poespas Blog">
+  <meta property="og:type" content="article">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Asynchronous Streaming in Rust with Tokio: A Deep Dive into Efficient Concurrency | Poespas Blog">
+  <meta name="twitter:description" content="Introduction Rust has emerged as a popular choice for building high-performance, concurrent systems due to its ownership model, memory safety features, and">
+
+  <link rel="shortcut icon" href="/images/favicon-32x32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+
+<link rel="stylesheet" href="/css/styles.min.css">  <link rel="alternate" type="application/rss+xml" title="RSS" href="/feeds.xml">
+  <script defer="" src="https://umami.mageberg.com/script.js" data-website-id="7a091986-a5ec-4b97-804e-94bf02703165"></script>
+</head>
+<body class="theme-base-0b">
+
+  <div role="region" class="sidebar">
+    <div class="container sidebar-sticky">
+      <div class="sidebar-about">
+        <h1><a href="/">Poespas Blog</a></h1>
+        <p class="lead">Every day smarter!</p>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="sidebar-nav-item" href="/">Home</a>
+        <a class="sidebar-nav-item" href="/about/">About</a>
+        <a class="sidebar-nav-item" href="/sitemap">Sitemap</a>
+      </nav>
+
+      <p>© 2025 All rights reserved.</p>
+    </div>
+  </div>
+
+  <div role="main" class="content container">
+    <article class="post" data-input-path="/posts/2024/08/08/rust-async-streaming-with-tokio">
+      <h2 class="post-title">Asynchronous Streaming in Rust with Tokio: A Deep Dive into Efficient Concurrency</h2>
+      <time class="post-date" datetime="2024-08-08T10:22:27.000Z">8 August 2024</time>
+<h2>Introduction</h2>
+<p>Rust has emerged as a popular choice for building high-performance, concurrent systems due to its ownership model, memory safety features, and native support for concurrency. When it comes to handling large datasets or streaming data from various sources, asynchronous programming becomes essential. In this article, we’ll delve into the world of asynchronous streaming in Rust using the Tokio framework.</p>
+<h2>What is Asynchronous Streaming?</h2>
+<p>Asynchronous streaming allows your program to process a stream of data without blocking on individual elements. This approach is particularly useful when dealing with large datasets or real-time data sources. By using asynchronous programming, you can efficiently handle multiple streams concurrently, improving overall system performance and responsiveness.</p>
+<h2>Tokio’s Async Streaming API</h2>
+<p>Tokio provides a robust async streaming API that makes it easy to implement efficient concurrency in your Rust applications. The <code>tokio::sync::mpsc</code> (multi-producer, single-consumer) channel is a key component of this API, enabling you to send and receive data asynchronously.</p>
+<h3>Code Example: Basic Asynchronous Streaming with Tokio</h3>
+<pre class="hljs"><code><span class="hljs-keyword">use</span> tokio::sync::mpsc;
+<span class="hljs-keyword">use</span> tokio::time::{interval, Interval};
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">fn</span> <span class="hljs-title function_">producer</span>(<span class="hljs-keyword">mut</span> sender: mpsc::Sender&lt;<span class="hljs-type">i32</span>&gt;, interval: Interval) {
+    <span class="hljs-keyword">for</span> <span class="hljs-variable">i</span> <span class="hljs-keyword">in</span> <span class="hljs-number">0</span>..<span class="hljs-number">10</span> {
+        sender.<span class="hljs-title function_ invoke__">send</span>(i).<span class="hljs-keyword">await</span>;
+        interval.<span class="hljs-title function_ invoke__">sleep</span>().<span class="hljs-keyword">await</span>;
+    }
+}
+<span class="hljs-meta">#[tokio::main]</span>
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">fn</span> <span class="hljs-title function_">main</span>() <span class="hljs-punctuation">-&gt;</span> <span class="hljs-type">Result</span>&lt;(), <span class="hljs-type">Box</span>&lt;<span class="hljs-keyword">dyn</span> std::error::Error&gt;&gt; {
+    <span class="hljs-keyword">let</span> (sender, receiver) = mpsc::<span class="hljs-title function_ invoke__">channel</span>(<span class="hljs-number">32</span>);
+    <span class="hljs-keyword">let</span> <span class="hljs-variable">producer_handle</span> = tokio::<span class="hljs-title function_ invoke__">spawn</span>(<span class="hljs-title function_ invoke__">producer</span>(sender, <span class="hljs-title function_ invoke__">interval</span>()));
+    <span class="hljs-keyword">while</span> <span class="hljs-keyword">let</span> <span class="hljs-variable">Some</span>(i) = receiver.<span class="hljs-title function_ invoke__">recv</span>().<span class="hljs-keyword">await</span> {
+        <span class="hljs-built_in">println!</span>(<span class="hljs-string">"Received: {}"</span>, i);
+    }
+    producer_handle.<span class="hljs-keyword">await</span>?;
+    <span class="hljs-title function_ invoke__">Ok</span>(())
+}
+</code></pre>
+<p>In this example, we create a Tokio async channel and spawn a producer task that sends numbers from 0 to 9 using the <code>sender</code> channel. The main task receives these numbers using the <code>receiver</code> channel.</p>
+<h2>Conclusion</h2>
+<p>Asynchronous streaming is a powerful technique in Rust programming that enables efficient concurrency and scalability. By leveraging Tokio’s async streaming API, you can build high-performance systems that efficiently handle large datasets or real-time data sources. This article has provided a basic example of asynchronous streaming with Tokio, and you can further explore the possibilities by experimenting with different use cases and configurations.</p>
+    </article>
+
+    <div class="related">
+      <h2>Related Posts</h2>
+      <ul class="related-posts">        <li>
+          <a href="/posts/2025/03/05/expressjs-error-handling-production-deployments/">
+            <h3>
+                Advanced Express.js Error Handling Strategies for Production Deployments <br> 
+            </h3>
+          </a>
+            <p class="post-description">Optimize error handling with advanced Express.js techniques, ensuring a secure and reliable production environment.</p><p>
+          <small>5 March 2025</small>
+        </p></li>        <li>
+          <a href="/posts/2024/08/13/thales-group-secure-boot-on-linux/">
+            <h3>
+                Secure Boot on Linux with Thales Group: Ensuring Trust in the Boot Process <br> 
+            </h3>
+          </a>
+            <p class="post-description">Learn how Thales Group's secure boot solution works on Linux systems, ensuring secure and trusted boot processes.</p><p>
+          <small>13 August 2024</small>
+        </p></li>        <li>
+          <a href="/posts/2024/08/21/objective-c-dealing-with-large-image-data-in-ui-table-view/">
+            <h3>
+                Displaying Large Images in a UI Table View with Objective-C: A Practical Approach <br> 
+            </h3>
+          </a>
+            <p class="post-description">Learn how to efficiently display large images in a UI Table View using Objective-C.</p><p>
+          <small>20 August 2024</small>
+        </p></li>        <li>
+          <a href="/posts/2025/02/13/efficient-time-series-data-processing-apache-arrow-numpy/">
+            <h3>
+                Efficiently Handling Large-Scale Time Series Data with Apache Arrow and NumPy <br> 
+            </h3>
+          </a>
+            <p class="post-description">Learn how to optimize time series data processing using Apache Arrow and NumPy for faster analysis and better performance.</p><p>
+          <small>13 February 2025</small>
+        </p></li>        <li>
+          <a href="/posts/2024/08/14/imperva-ddos-defense-with-cdn-and-waf/">
+            <h3>
+                Protecting Your Website from DDoS Attacks with Imperva's CDN and WAF <br> 
+            </h3>
+          </a>
+            <p class="post-description">Learn how Imperva's CDN and WAF can help defend against DDoS attacks, protecting your website from malicious traffic.</p><p>
+          <small>14 August 2024</small>
+        </p></li>      </ul>
+    </div>
+  </div>
+
+
+  <!-- <script src="https://kulroakonsu.net/88/tag.min.js" data-zone="133071" async data-cfasync="false"></script> -->
+<script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;89ea6fc96f81400e9ac57b5b53f5473c&quot;,&quot;r&quot;:1,&quot;server_timing&quot;:{&quot;name&quot;:{&quot;cfCacheStatus&quot;:true,&quot;cfEdge&quot;:true,&quot;cfExtPri&quot;:true,&quot;cfL4&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfSpeedBrain&quot;:true},&quot;location_startswith&quot;:null}}" crossorigin="anonymous"></script>
+
+
+</body></html>

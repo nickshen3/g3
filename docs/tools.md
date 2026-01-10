@@ -11,7 +11,7 @@ This document describes all tools available to the G3 agent. Tools are the prima
 
 | Category | Tools | Enabled By |
 |----------|-------|------------|
-| **Core** | shell, read_file, write_file, str_replace, final_output, background_process | Always |
+| **Core** | shell, read_file, write_file, str_replace, background_process | Always |
 | **Images** | read_image, take_screenshot | Always |
 | **Task Management** | todo_read, todo_write | Always |
 | **Code Intelligence** | code_search, code_coverage | Always |
@@ -151,24 +151,6 @@ Apply a unified diff to a file.
 
 ---
 
-### final_output
-
-Signal task completion with a summary.
-
-**Parameters**:
-- `summary` (string, required): Markdown summary of what was accomplished
-
-**Example**:
-```json
-{"tool": "final_output", "args": {"summary": "## Completed\n\n- Created user authentication module\n- Added unit tests\n- Updated documentation"}}
-```
-
-**Notes**:
-- Ends the current task
-- Summary is displayed to the user
-- In autonomous mode, triggers coach review
-
----
 
 ## Image & Screenshot Tools
 
