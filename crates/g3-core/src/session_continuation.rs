@@ -32,6 +32,9 @@ pub struct SessionContinuation {
     pub created_at: String,
     /// Original session ID
     pub session_id: String,
+    /// Human-readable description (first user message, truncated)
+    #[serde(default)]
+    pub description: Option<String>,
     /// Session summary (last assistant response)
     pub summary: Option<String>,
     /// Path to the full session log (g3_session_*.json)
@@ -50,6 +53,7 @@ impl SessionContinuation {
         is_agent_mode: bool,
         agent_name: Option<String>,
         session_id: String,
+        description: Option<String>,
         summary: Option<String>,
         session_log_path: String,
         context_percentage: f32,
@@ -62,6 +66,7 @@ impl SessionContinuation {
             agent_name,
             created_at: chrono::Utc::now().to_rfc3339(),
             session_id,
+            description,
             summary,
             session_log_path,
             context_percentage,

@@ -1852,16 +1852,18 @@ async fn run_interactive<W: UiWriter>(
                                             };
                                             let todo_marker = if session.has_incomplete_todos() { " 📝" } else { "" };
                                             
-                                            // Truncate session ID for display
-                                            let display_id = if session.session_id.len() > 40 {
-                                                format!("{}...", &session.session_id[..40])
-                                            } else {
-                                                session.session_id.clone()
+                                            // Use description if available, otherwise fall back to session ID
+                                            let display_name = match &session.description {
+                                                Some(desc) => format!("'{}'", desc),
+                                                None => if session.session_id.len() > 40 {
+                                                    format!("{}...", &session.session_id[..40])
+                                                } else {
+                                                    session.session_id.clone()
+                                                }
                                             };
-                                            
                                             output.print(&format!(
                                                 "  {}. [{}] {} ({}){}{}",
-                                                i + 1, time_str, display_id, context_str, todo_marker, current_marker
+                                                i + 1, time_str, display_name, context_str, todo_marker, current_marker
                                             ));
                                         }
                                         output.print("");

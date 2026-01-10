@@ -1405,10 +1405,20 @@ impl<W: UiWriter> Agent<W> {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string());
         
+        // Get description from first user message (strip "Task: " prefix if present)
+        let description = self.context_window.conversation_history.iter()
+            .find(|m| matches!(m.role, g3_providers::MessageRole::User))
+            .map(|m| {
+                let content = m.content.strip_prefix("Task: ").unwrap_or(&m.content);
+                // Truncate to ~60 chars for display, ending at word boundary
+                truncate_to_word_boundary(content, 60)
+            });
+        
         let continuation = SessionContinuation::new(
             self.is_agent_mode,
             self.agent_name.clone(),
             session_id,
+            description,
             summary,
             session_log_path.to_string_lossy().to_string(),
             self.context_window.percentage_used(),
@@ -2830,6 +2840,24 @@ impl<W: UiWriter> Agent<W> {
 
 // Re-export utility functions
 pub use utils::apply_unified_diff_to_string;
+
+/// Truncate a string to approximately max_len characters, ending at a word boundary
+fn truncate_to_word_boundary(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        return s.to_string();
+    }
+    
+    // Find the last space before max_len
+    let truncated = &s[..max_len];
+    if let Some(last_space) = truncated.rfind(' ') {
+        if last_space > max_len / 2 {
+            // Only use word boundary if it's not too short
+            return format!("{}...", &s[..last_space]);
+        }
+    }
+    // Fall back to character truncation
+    format!("{}...", truncated)
+}
 
 // Implement Drop to clean up safaridriver process
 impl<W: UiWriter> Drop for Agent<W> {
