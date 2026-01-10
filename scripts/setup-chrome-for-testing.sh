@@ -75,10 +75,13 @@ rm chromedriver.zip
 
 CHROMEDRIVER_DIR="chromedriver-$PLATFORM"
 if [ -f "$CHROMEDRIVER_DIR/chromedriver" ]; then
-    # Create symlink in bin directory
+    # Create symlinks in bin directory
+    # Primary symlink: 'chromedriver' - works with g3 out of the box
+    ln -sf "$INSTALL_DIR/$CHROMEDRIVER_DIR/chromedriver" "$BIN_DIR/chromedriver"
+    # Secondary symlink: 'chromedriver-for-testing' - explicit name to avoid confusion
     ln -sf "$INSTALL_DIR/$CHROMEDRIVER_DIR/chromedriver" "$BIN_DIR/chromedriver-for-testing"
     chmod +x "$INSTALL_DIR/$CHROMEDRIVER_DIR/chromedriver"
-    echo "✅ ChromeDriver installed and linked to: $BIN_DIR/chromedriver-for-testing"
+    echo "✅ ChromeDriver installed and linked to: $BIN_DIR/chromedriver"
 else
     echo "❌ ChromeDriver extraction failed"
     exit 1
@@ -107,7 +110,7 @@ echo "  ChromeDriver: $VERSION"
 echo ""
 echo "Binaries:"
 echo "  Chrome: $BIN_DIR/chrome-for-testing"
-echo "  ChromeDriver: $BIN_DIR/chromedriver-for-testing"
+echo "  ChromeDriver: $BIN_DIR/chromedriver"
 echo ""
 echo "To use with g3, make sure $BIN_DIR is in your PATH:"
 echo "  export PATH=\"$BIN_DIR:\$PATH\""

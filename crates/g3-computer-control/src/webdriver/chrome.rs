@@ -10,6 +10,131 @@ pub struct ChromeDriver {
     client: Client,
 }
 
+/// Stealth script to hide automation indicators from bot detection
+const STEALTH_SCRIPT: &str = r#"
+    (function() {
+        'use strict';
+        
+        // 1. Override navigator.webdriver to return undefined (like a real browser)
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+            configurable: true
+        });
+        
+        // 2. Add realistic chrome object that real Chrome has
+        if (!window.chrome) {
+            window.chrome = {};
+        }
+        window.chrome.runtime = {
+            connect: function() {},
+            sendMessage: function() {},
+            onMessage: { addListener: function() {} },
+            onConnect: { addListener: function() {} },
+            id: undefined
+        };
+        window.chrome.loadTimes = function() {
+            return {
+                commitLoadTime: Date.now() / 1000,
+                connectionInfo: 'h2',
+                finishDocumentLoadTime: Date.now() / 1000,
+                finishLoadTime: Date.now() / 1000,
+                firstPaintAfterLoadTime: 0,
+                firstPaintTime: Date.now() / 1000,
+                navigationType: 'Other',
+                npnNegotiatedProtocol: 'h2',
+                requestTime: Date.now() / 1000,
+                startLoadTime: Date.now() / 1000,
+                wasAlternateProtocolAvailable: false,
+                wasFetchedViaSpdy: true,
+                wasNpnNegotiated: true
+            };
+        };
+        window.chrome.csi = function() {
+            return {
+                onloadT: Date.now(),
+                pageT: Date.now() - performance.timing.navigationStart,
+                startE: performance.timing.navigationStart,
+                tran: 15
+            };
+        };
+        
+        // 3. Add realistic plugins array (headless Chrome has empty plugins)
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+                const plugins = [
+                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+                    { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+                ];
+                plugins.item = (i) => plugins[i] || null;
+                plugins.namedItem = (name) => plugins.find(p => p.name === name) || null;
+                plugins.refresh = () => {};
+                Object.setPrototypeOf(plugins, PluginArray.prototype);
+                return plugins;
+            },
+            configurable: true
+        });
+        
+        // 4. Add realistic mimeTypes
+        Object.defineProperty(navigator, 'mimeTypes', {
+            get: () => {
+                const mimeTypes = [
+                    { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
+                    { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' }
+                ];
+                mimeTypes.item = (i) => mimeTypes[i] || null;
+                mimeTypes.namedItem = (name) => mimeTypes.find(m => m.type === name) || null;
+                Object.setPrototypeOf(mimeTypes, MimeTypeArray.prototype);
+                return mimeTypes;
+            },
+            configurable: true
+        });
+        
+        // 5. Fix permissions API to not reveal automation
+        const originalQuery = window.navigator.permissions?.query;
+        if (originalQuery) {
+            window.navigator.permissions.query = (parameters) => {
+                if (parameters.name === 'notifications') {
+                    return Promise.resolve({ state: Notification.permission, onchange: null });
+                }
+                return originalQuery.call(window.navigator.permissions, parameters);
+            };
+        }
+        
+        // 6. Override languages to have realistic values
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en'],
+            configurable: true
+        });
+        
+        // 7. Fix hardwareConcurrency (headless often shows different values)
+        Object.defineProperty(navigator, 'hardwareConcurrency', {
+            get: () => 8,
+            configurable: true
+        });
+        
+        // 8. Fix deviceMemory
+        Object.defineProperty(navigator, 'deviceMemory', {
+            get: () => 8,
+            configurable: true
+        });
+        
+        // 9. Remove automation-related properties from window
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+        
+        // 10. Fix toString methods to not reveal native code modifications
+        const originalToString = Function.prototype.toString;
+        Function.prototype.toString = function() {
+            if (this === navigator.permissions.query) {
+                return 'function query() { [native code] }';
+            }
+            return originalToString.call(this);
+        };
+    })();
+"#;
+
 impl ChromeDriver {
     /// Create a new ChromeDriver instance in headless mode
     ///
@@ -51,7 +176,30 @@ impl ChromeDriver {
                 Value::String("--no-sandbox".to_string()),
                 Value::String("--disable-dev-shm-usage".to_string()),
                 Value::String("--window-size=1920,1080".to_string()),
+                Value::String("--disable-blink-features=AutomationControlled".to_string()),
+                // Stealth: Set a realistic user-agent (removes HeadlessChrome identifier)
+                Value::String("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".to_string()),
+                // Stealth: Disable automation-related info bars
+                Value::String("--disable-infobars".to_string()),
+                // Stealth: Set realistic language
+                Value::String("--lang=en-US,en".to_string()),
+                // Stealth: Disable extensions to avoid detection
+                Value::String("--disable-extensions".to_string()),
             ]),
+        );
+
+        // Exclude automation switches to hide webdriver detection
+        chrome_options.insert(
+            "excludeSwitches".to_string(),
+            Value::Array(vec![
+                Value::String("enable-automation".to_string()),
+            ]),
+        );
+
+        // Disable automation extension
+        chrome_options.insert(
+            "useAutomationExtension".to_string(),
+            Value::Bool(false),
         );
 
         // If a custom Chrome binary is specified, use it
@@ -75,7 +223,14 @@ impl ChromeDriver {
             .context("Connection to ChromeDriver timed out after 30 seconds")?
             .context("Failed to connect to ChromeDriver")?;
 
-        Ok(Self { client })
+        let driver = Self { client };
+        
+        // Inject stealth script immediately after connection
+        // This ensures it runs before any navigation and on every new document
+        // Ignore errors as this is best-effort stealth
+        let _ = driver.client.execute(STEALTH_SCRIPT, vec![]).await;
+        
+        Ok(driver)
     }
 
     /// Go back in browser history
@@ -194,6 +349,9 @@ impl ChromeDriver {
 impl WebDriverController for ChromeDriver {
     async fn navigate(&mut self, url: &str) -> Result<()> {
         self.client.goto(url).await?;
+        // Inject stealth script after navigation to hide automation indicators
+        // Ignore errors as some pages may have strict CSP
+        let _ = self.client.execute(STEALTH_SCRIPT, vec![]).await;
         Ok(())
     }
 

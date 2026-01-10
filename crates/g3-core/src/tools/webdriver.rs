@@ -119,8 +119,16 @@ async fn start_safari_driver<W: UiWriter>(ctx: &ToolContext<'_, W>) -> Result<St
 async fn start_chrome_driver<W: UiWriter>(ctx: &ToolContext<'_, W>) -> Result<String> {
     let port = ctx.config.webdriver.chrome_port;
 
+    // Use configured chromedriver binary or fall back to 'chromedriver' in PATH
+    let chromedriver_cmd = ctx
+        .config
+        .webdriver
+        .chromedriver_binary
+        .as_deref()
+        .unwrap_or("chromedriver");
+
     // Start chromedriver process
-    let driver_result = tokio::process::Command::new("chromedriver")
+    let driver_result = tokio::process::Command::new(chromedriver_cmd)
         .arg(format!("--port={}", port))
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

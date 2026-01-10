@@ -134,6 +134,10 @@ pub struct WebDriverConfig {
     /// If not set, ChromeDriver will use the default Chrome installation
     pub chrome_binary: Option<String>,
     #[serde(default)]
+    /// Optional path to ChromeDriver binary
+    /// If not set, looks for 'chromedriver' in PATH
+    pub chromedriver_binary: Option<String>,
+    #[serde(default)]
     pub browser: WebDriverBrowser,
 }
 
@@ -144,6 +148,7 @@ impl Default for WebDriverConfig {
             safari_port: 4444,
             chrome_port: 9515,
             chrome_binary: None,
+            chromedriver_binary: None,
             browser: WebDriverBrowser::Safari,
         }
     }
