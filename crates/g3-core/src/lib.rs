@@ -1480,7 +1480,7 @@ impl<W: UiWriter> Agent<W> {
         let tools_called = std::mem::take(&mut self.tool_calls_this_turn);
         
         debug!("Auto-memory: Sending reminder to LLM ({} tools called this turn: {:?})", tools_called.len(), tools_called);
-        self.ui_writer.print_context_status(&format!("\n📝 Auto-memory: Checking if discoveries should be saved ({} tools used)...\n", tools_called.len()));
+        self.ui_writer.print_context_status("\n*memory checkpoint:* ");
         
         let reminder = "SYSTEM REMINDER: You used tools during this turn. If you discovered any key code locations, patterns, or entry points that aren't already in Project Memory, please call the `remember` tool now to save them. If you didn't discover anything new worth remembering, you can skip this. Respond briefly after deciding.";
 
