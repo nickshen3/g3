@@ -959,9 +959,11 @@ impl<W: UiWriter> Agent<W> {
         }
     }
 
-    /// Manually trigger context compaction regardless of context window size
+        /// Manually trigger context compaction regardless of context window size
     /// Returns Ok(true) if compaction was successful, Ok(false) if it failed
     pub async fn force_compact(&mut self) -> Result<bool> {
+        use crate::compaction::{CompactionConfig, perform_compaction};
+
         debug!("Manual compaction triggered");
 
         self.ui_writer.print_context_status(&format!(
@@ -973,115 +975,41 @@ impl<W: UiWriter> Agent<W> {
         let provider_name = provider.name().to_string();
         let _ = provider; // Release borrow early
 
-        // Apply fallback sequence: thinnify -> skinnify -> hard-coded 5000
-        let mut summary_max_tokens = self.apply_summary_fallback_sequence(&provider_name);
-
-        // Apply provider-specific caps
-        // For Anthropic with thinking enabled, we need max_tokens > thinking.budget_tokens
-        // So we set a higher cap when thinking is configured
-        let anthropic_cap = match self.get_thinking_budget_tokens(&provider_name) {
-            Some(budget) => (budget + 2000).max(10_000), // At least budget + 2000 for response
-            None => 10_000,
-        };
-        summary_max_tokens = match provider_name.as_str() {
-            "anthropic" => summary_max_tokens.min(anthropic_cap),
-            "databricks" => summary_max_tokens.min(10_000),
-            "embedded" => summary_max_tokens.min(3000),
-            _ => summary_max_tokens.min(5000),
-        };
-
-        // Ensure minimum floor as defense-in-depth (primary protection is in calculate_summary_max_tokens)
-        summary_max_tokens = summary_max_tokens.max(Self::SUMMARY_MIN_TOKENS);
-
-        debug!(
-            "Requesting summary with max_tokens: {} (current usage: {} tokens)",
-            summary_max_tokens, self.context_window.used_tokens
-        );
-
-        // Create summary request with FULL history
-        let summary_prompt = self.context_window.create_summary_prompt();
-
-        // Get the full conversation history
-        let conversation_text = self
+        // Get the latest user message to preserve it
+        let latest_user_msg = self
             .context_window
             .conversation_history
             .iter()
-            .map(|m| format!("{:?}: {}", m.role, m.content))
-            .collect::<Vec<_>>()
-            .join("\n\n");
+            .rev()
+            .find(|m| matches!(m.role, MessageRole::User))
+            .map(|m| m.content.clone());
 
-        let summary_messages = vec![
-            Message::new(
-                MessageRole::System,
-                "You are a helpful assistant that creates concise summaries.".to_string(),
-            ),
-            Message::new(
-                MessageRole::User,
-                format!(
-                    "Based on this conversation history, {}\n\nConversation:\n{}",
-                    summary_prompt, conversation_text
-                ),
-            ),
-        ];
-
-        let provider = self.providers.get(None)?;
-
-        // Determine if we need to disable thinking mode for this request
-        // Anthropic requires: max_tokens > thinking.budget_tokens + 1024
-        let disable_thinking = self.get_thinking_budget_tokens(provider.name()).map_or(false, |budget| {
-            let minimum_for_thinking = budget + 1024;
-            let should_disable = summary_max_tokens <= minimum_for_thinking;
-            if should_disable {
-                tracing::warn!("Disabling thinking mode for summary: max_tokens ({}) <= minimum_for_thinking ({})", summary_max_tokens, minimum_for_thinking);
-            }
-            should_disable
-        });
-
-        tracing::debug!("Creating summary request: max_tokens={}, disable_thinking={}", summary_max_tokens, disable_thinking);
-
-        let summary_request = CompletionRequest {
-            messages: summary_messages,
-            max_tokens: Some(summary_max_tokens),
-            temperature: Some(self.resolve_temperature(provider.name())),
-            stream: false,
-            tools: None,
-            disable_thinking,
+        let compaction_config = CompactionConfig {
+            provider_name: &provider_name,
+            latest_user_msg,
         };
 
-        // Get the summary
-        match provider.complete(summary_request).await {
-            Ok(summary_response) => {
-                self.ui_writer
-                    .print_context_status("✅ Context compacted successfully.\n");
+        let result = perform_compaction(
+            &self.providers,
+            &mut self.context_window,
+            &self.config,
+            compaction_config,
+            &self.ui_writer,
+            &mut self.thinning_events,
+        ).await?;
 
-                // Get the latest user message to preserve it
-                let latest_user_msg = self
-                    .context_window
-                    .conversation_history
-                    .iter()
-                    .rev()
-                    .find(|m| matches!(m.role, MessageRole::User))
-                    .map(|m| m.content.clone());
-
-                // Reset context with summary
-                let chars_saved = self
-                    .context_window
-                    .reset_with_summary(summary_response.content, latest_user_msg);
-                self.compaction_events.push(chars_saved);
-
-                Ok(true)
-            }
-            Err(e) => {
-                error!("Failed to create summary: {}", e);
-                self.ui_writer.print_context_status(
-                    "⚠️ Unable to create summary. Please try again or start a new session.\n",
-                );
-                Ok(false)
-            }
+        if result.success {
+            self.ui_writer.print_context_status("✅ Context compacted successfully.\n");
+            self.compaction_events.push(result.chars_saved);
+            Ok(true)
+        } else {
+            self.ui_writer.print_context_status(
+                "⚠️ Unable to create summary. Please try again or start a new session.\n",
+            );
+            Ok(false)
         }
     }
-
-    /// Manually trigger context thinning regardless of thresholds
+/// Manually trigger context thinning regardless of thresholds
     pub fn force_thin(&mut self) -> String {
         debug!("Manual context thinning triggered");
         self.do_thin_context()
@@ -1773,6 +1701,8 @@ impl<W: UiWriter> Agent<W> {
 
             // Only proceed with compaction if still needed after thinning
             if self.context_window.should_compact() {
+                use crate::compaction::{CompactionConfig, perform_compaction};
+
                 // Notify user about compaction
                 self.ui_writer.print_context_status(&format!(
                     "\n🗜️ Context window reaching capacity ({}%). Compacting...",
@@ -1783,112 +1713,41 @@ impl<W: UiWriter> Agent<W> {
                 let provider_name = provider.name().to_string();
                 let _ = provider; // Release borrow early
 
-                // Apply fallback sequence: thinnify -> skinnify -> hard-coded 5000
-                let mut summary_max_tokens = self.apply_summary_fallback_sequence(&provider_name);
-
-                // Apply provider-specific caps
-                // For Anthropic with thinking enabled, we need max_tokens > thinking.budget_tokens
-                // So we set a higher cap when thinking is configured
-                let anthropic_cap = match self.get_thinking_budget_tokens(&provider_name) {
-                    Some(budget) => (budget + 2000).max(10_000), // At least budget + 2000 for response
-                    None => 10_000,
-                };
-                summary_max_tokens = match provider_name.as_str() {
-                    "anthropic" => summary_max_tokens.min(anthropic_cap),
-                    "databricks" => summary_max_tokens.min(10_000),
-                    "embedded" => summary_max_tokens.min(3000),
-                    _ => summary_max_tokens.min(5000),
-                };
-
-                // Ensure minimum floor as defense-in-depth (primary protection is in calculate_summary_max_tokens)
-                summary_max_tokens = summary_max_tokens.max(Self::SUMMARY_MIN_TOKENS);
-
-                debug!(
-                    "Requesting summary with max_tokens: {} (current usage: {} tokens)",
-                    summary_max_tokens, self.context_window.used_tokens
-                );
-
-                // Create summary request with FULL history
-                let summary_prompt = self.context_window.create_summary_prompt();
-
-                // Get the full conversation history
-                let conversation_text = self
-                    .context_window
-                    .conversation_history
+                // Extract the latest user message from the request (not context_window)
+                let latest_user_msg = request
+                    .messages
                     .iter()
-                    .map(|m| format!("{:?}: {}", m.role, m.content))
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
+                    .rev()
+                    .find(|m| matches!(m.role, MessageRole::User))
+                    .map(|m| m.content.clone());
 
-                let summary_messages = vec![
-                    Message::new(
-                        MessageRole::System,
-                        "You are a helpful assistant that creates concise summaries.".to_string(),
-                    ),
-                    Message::new(
-                        MessageRole::User,
-                        format!(
-                            "Based on this conversation history, {}\n\nConversation:\n{}",
-                            summary_prompt, conversation_text
-                        ),
-                    ),
-                ];
-
-                let provider = self.providers.get(None)?;
-
-                // Determine if we need to disable thinking mode for this request
-                // Anthropic requires: max_tokens > thinking.budget_tokens + 1024
-                let disable_thinking = self.get_thinking_budget_tokens(provider.name()).map_or(false, |budget| {
-                    let minimum_for_thinking = budget + 1024;
-                    let should_disable = summary_max_tokens <= minimum_for_thinking;
-                    if should_disable {
-                        tracing::warn!("Disabling thinking mode for summary: max_tokens ({}) <= minimum_for_thinking ({})", summary_max_tokens, minimum_for_thinking);
-                    }
-                    should_disable
-                });
-
-                tracing::debug!("Creating auto-summary request: max_tokens={}, disable_thinking={}", summary_max_tokens, disable_thinking);
-
-                let summary_request = CompletionRequest {
-                    messages: summary_messages,
-                    max_tokens: Some(summary_max_tokens),
-                    temperature: Some(self.resolve_temperature(provider.name())),
-                    stream: false,
-                    tools: None,
-                    disable_thinking,
+                let compaction_config = CompactionConfig {
+                    provider_name: &provider_name,
+                    latest_user_msg,
                 };
 
-                // Get the summary
-                match provider.complete(summary_request).await {
-                    Ok(summary_response) => {
-                        self.ui_writer.print_context_status(
-                            "✅ Context compacted successfully. Continuing...\n",
-                        );
+                let result = perform_compaction(
+                    &self.providers,
+                    &mut self.context_window,
+                    &self.config,
+                    compaction_config,
+                    &self.ui_writer,
+                    &mut self.thinning_events,
+                ).await?;
 
-                        // Extract the latest user message from the request
-                        let latest_user_msg = request
-                            .messages
-                            .iter()
-                            .rev()
-                            .find(|m| matches!(m.role, MessageRole::User))
-                            .map(|m| m.content.clone());
+                if result.success {
+                    self.ui_writer.print_context_status(
+                        "✅ Context compacted successfully. Continuing...\n",
+                    );
+                    self.compaction_events.push(result.chars_saved);
 
-                        // Reset context with summary
-                        let chars_saved = self
-                            .context_window
-                            .reset_with_summary(summary_response.content, latest_user_msg);
-                        self.compaction_events.push(chars_saved);
-
-                        // Update the request with new context
-                        request.messages = self.context_window.conversation_history.clone();
-                    }
-                    Err(e) => {
-                        error!("Failed to create summary: {}", e);
-                        self.ui_writer.print_context_status("⚠️ Unable to compact context. Consider starting a new session if you continue to see errors.\n");
-                        // Don't continue with the original request if compaction failed
-                        // as we're likely at token limit
-                        return Err(anyhow::anyhow!("Context window at capacity and compaction failed. Please start a new session."));
-                    }
+                    // Update the request with new context
+                    request.messages = self.context_window.conversation_history.clone();
+                } else {
+                    self.ui_writer.print_context_status("⚠️ Unable to compact context. Consider starting a new session if you continue to see errors.\n");
+                    // Don't continue with the original request if compaction failed
+                    // as we're likely at token limit
+                    return Err(anyhow::anyhow!("Context window at capacity and compaction failed. Please start a new session."));
                 }
             }
         }

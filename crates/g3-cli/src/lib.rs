@@ -540,7 +540,14 @@ async fn run_agent_mode(
     };
     
     output.print(&format!("🤖 Running as agent: {}", agent_name));
-    output.print(&format!("📁 Working directory: {:?}", workspace_dir));
+    // Format workspace path, replacing home dir with ~
+    let workspace_display = {
+        let path_str = workspace_dir.display().to_string();
+        dirs::home_dir()
+            .and_then(|home| path_str.strip_prefix(&home.display().to_string()).map(|s| format!("~{}", s)))
+            .unwrap_or(path_str)
+    };
+    output.print(&format!("-> {}", workspace_display));
     
     // Load config
     let mut config = g3_config::Config::load(config_path)?;
