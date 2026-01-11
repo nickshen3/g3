@@ -99,10 +99,16 @@ pub async fn execute_read_file<W: UiWriter>(
             // Validate user-specified range
             let user_start = start_char.unwrap_or(0);
             if user_start > total_file_len {
+                // Start exceeds file length - read last 100 chars instead
+                let fallback_start = total_file_len.saturating_sub(100);
+                let fallback_content = &content[fallback_start..];
+                let line_count = fallback_content.lines().count();
                 return Ok(format!(
-                    "❌ Start position {} exceeds file length {}",
-                    user_start,
-                    total_file_len
+                    "⚠️ Start position {} exceeds file length {}. Reading last {} chars instead.\n\
+                     🔍 {} lines read (chars {}-{}):\n{}",
+                    user_start, total_file_len,
+                    total_file_len - fallback_start,
+                    line_count, fallback_start, total_file_len, fallback_content
                 ));
             }
             
@@ -158,18 +164,18 @@ pub async fn execute_read_file<W: UiWriter>(
                 // Token-aware truncation header
                 let context_pct = (ctx.context_used_tokens as f32 / ctx.context_total_tokens as f32 * 100.0) as u32;
                 Ok(format!(
-                    "⚠️ FILE TRUNCATED: Reading chars {}-{} of {} total (file exceeds 20% context window threshold, context at {}%)\n\
-                     📄 File content ({} lines of {} total):\n{}",
+                    "⚠️ TRUNCATED: chars {}-{} of {} (exceeds 20% context, at {}%)\n\
+                     🔍 {} lines read:\n{}",
                     start_boundary, end_boundary, total_file_len, context_pct,
-                    line_count, total_lines, partial_content
+                    line_count, partial_content
                 ))
             } else if start_char.is_some() || end_char.is_some() {
                 Ok(format!(
-                    "📄 File content (chars {}-{}, {} lines of {} total):\n{}",
-                    start_boundary, end_boundary, line_count, total_lines, partial_content
+                    "🔍 {} lines read (chars {}-{}):\n{}",
+                    line_count, start_boundary, end_boundary, partial_content
                 ))
             } else {
-                Ok(format!("📄 File content ({} lines):\n{}", line_count, content))
+                Ok(format!("🔍 {} lines read:\n{}", line_count, content))
             }
         }
         Err(e) => Ok(format!("❌ Failed to read file '{}': {}", path_str, e)),
@@ -331,9 +337,14 @@ pub async fn execute_write_file<W: UiWriter>(
             Ok(()) => {
                 let line_count = content.lines().count();
                 let char_count = content.len();
+                let char_display = if char_count >= 1000 {
+                    format!("{:.1}k", char_count as f64 / 1000.0)
+                } else {
+                    format!("{}", char_count)
+                };
                 Ok(format!(
-                    "✅ Successfully wrote {} lines ({} characters)",
-                    line_count, char_count
+                    "✅ wrote {} lines | {} chars",
+                    line_count, char_display
                 ))
             }
             Err(e) => Ok(format!("❌ Failed to write to file '{}': {}", path, e)),
@@ -405,9 +416,20 @@ pub async fn execute_str_replace<W: UiWriter>(
         Err(e) => return Ok(format!("❌ {}", e)),
     };
 
+    // Count insertions and deletions from the diff
+    let mut insertions = 0;
+    let mut deletions = 0;
+    for line in diff.lines() {
+        if line.starts_with('+') && !line.starts_with("+++") {
+            insertions += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            deletions += 1;
+        }
+    }
+
     // Write the result back to the file
     match std::fs::write(&file_path, &result) {
-        Ok(()) => Ok("✅ applied unified diff".to_string()),
+        Ok(()) => Ok(format!("✅ \x1b[32m+{} insertions\x1b[0m | \x1b[31m-{} deletions\x1b[0m", insertions, deletions)),
         Err(e) => Ok(format!("❌ Failed to write to file '{}': {}", file_path, e)),
     }
 }

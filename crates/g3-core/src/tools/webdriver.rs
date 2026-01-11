@@ -599,16 +599,22 @@ pub async fn execute_webdriver_quit<W: UiWriter>(
                 Ok(_) => {
                     debug!("WebDriver session closed successfully");
 
-                    // Kill the safaridriver process
+                    // Kill the driver process
                     if let Some(mut process) = ctx.webdriver_process.write().await.take() {
                         if let Err(e) = process.kill().await {
-                            warn!("Failed to kill safaridriver process: {}", e);
+                            warn!("Failed to kill driver process: {}", e);
                         } else {
-                            debug!("Safaridriver process terminated");
+                            debug!("Driver process terminated");
                         }
                     }
 
-                    Ok("✅ WebDriver session closed and safaridriver stopped".to_string())
+                    // Return appropriate message based on browser type
+                    use g3_config::WebDriverBrowser;
+                    let driver_name = match &ctx.config.webdriver.browser {
+                        WebDriverBrowser::Safari => "safaridriver",
+                        WebDriverBrowser::ChromeHeadless => "chromedriver",
+                    };
+                    Ok(format!("✅ WebDriver session closed and {} stopped", driver_name))
                 }
                 Err(e) => Ok(format!("❌ Failed to quit WebDriver: {}", e)),
             }

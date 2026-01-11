@@ -61,7 +61,7 @@ pub async fn execute_shell<W: UiWriter>(tool_call: &ToolCall, ctx: &ToolContext<
                     result.stdout.trim().to_string()
                 })
             } else {
-                Ok(format!("❌ Command failed: {}", result.stderr.trim()))
+                Ok(format!("❌ {}", result.stderr.trim()))
             }
         }
         Err(e) => Ok(format!("❌ Execution error: {}", e)),
