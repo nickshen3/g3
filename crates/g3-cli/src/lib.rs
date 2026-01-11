@@ -562,20 +562,27 @@ async fn run_agent_mode(
     let system_prompt = get_agent_system_prompt(&agent_prompt, true);
     
     // Load AGENTS.md, README, and memory - same as normal mode
-    let agents_content = read_agents_config(&workspace_dir);
-    let readme_content = read_project_readme(&workspace_dir);
-    let memory_content = read_project_memory(&workspace_dir);
+    let agents_content_opt = read_agents_config(&workspace_dir);
+    let readme_content_opt = read_project_readme(&workspace_dir);
+    let memory_content_opt = read_project_memory(&workspace_dir);
+    
+    // Show what was loaded
+    let readme_status = if readme_content_opt.is_some() { "✓" } else { "·" };
+    let agents_status = if agents_content_opt.is_some() { "✓" } else { "·" };
+    let memory_status = if memory_content_opt.is_some() { "✓" } else { "·" };
+    output.print(&format!("   {} README | {} AGENTS.md | {} Memory",
+        readme_status, agents_status, memory_status));
     
     // Combine all content for the agent's context
     let combined_content = {
         let mut parts = Vec::new();
-        if let Some(agents) = agents_content {
+        if let Some(agents) = agents_content_opt {
             parts.push(agents);
         }
-        if let Some(readme) = readme_content {
+        if let Some(readme) = readme_content_opt {
             parts.push(readme);
         }
-        if let Some(memory) = memory_content {
+        if let Some(memory) = memory_content_opt {
             parts.push(memory);
         }
         if parts.is_empty() {

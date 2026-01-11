@@ -1,5 +1,6 @@
 pub mod context_window;
 pub mod background_process;
+pub mod compaction;
 pub mod code_search;
 pub mod error_handling;
 pub mod feedback_extraction;
