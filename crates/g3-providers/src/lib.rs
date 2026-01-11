@@ -94,6 +94,8 @@ pub struct Message {
     pub images: Vec<ImageContent>,
     #[serde(skip)]
     pub id: String,
+    #[serde(skip)]
+    pub kind: MessageKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_control: Option<CacheControl>,
 }
@@ -104,6 +106,20 @@ pub enum MessageRole {
     System,
     User,
     Assistant,
+}
+
+/// Special message kinds for context management (ACD)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MessageKind {
+    /// Regular conversation message
+    #[default]
+    Regular,
+    /// Dehydrated context stub (contains fragment reference)
+    DehydratedStub,
+    /// Summary of dehydrated context (the response that followed dehydration)
+    Summary,
+    /// Rehydrated content (restored from a fragment)
+    Rehydrated,
 }
 
 /// Image content for multimodal messages
@@ -242,6 +258,7 @@ impl Message {
             content,
             images: Vec::new(),
             id: Self::generate_id(),
+            kind: MessageKind::Regular,
             cache_control: None,
         }
     }
@@ -257,8 +274,31 @@ impl Message {
             content,
             images: Vec::new(),
             id: Self::generate_id(),
+            kind: MessageKind::Regular,
             cache_control: Some(cache_control),
         }
+    }
+
+    /// Create a new message with a specific kind (for ACD)
+    pub fn with_kind(role: MessageRole, content: String, kind: MessageKind) -> Self {
+        Self {
+            role,
+            content,
+            images: Vec::new(),
+            id: Self::generate_id(),
+            kind,
+            cache_control: None,
+        }
+    }
+
+    /// Check if this message is a dehydrated stub
+    pub fn is_dehydrated_stub(&self) -> bool {
+        self.kind == MessageKind::DehydratedStub
+    }
+
+    /// Check if this message is a summary
+    pub fn is_summary(&self) -> bool {
+        self.kind == MessageKind::Summary
     }
 
     /// Create a message with cache control, with provider validation

@@ -191,6 +191,8 @@ pub async fn perform_compaction<W: UiWriter>(
     // Execute summary request
     match provider.complete(summary_request).await {
         Ok(summary_response) => {
+            // Note: ACD dehydration now happens at the end of each turn in Agent::dehydrate_context()
+            // Compaction just does lossy summarization of the existing stubs + summaries
             let chars_saved = context_window.reset_with_summary(
                 summary_response.content,
                 compaction_config.latest_user_msg,

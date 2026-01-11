@@ -1,3 +1,4 @@
+pub mod acd;
 pub mod context_window;
 pub mod background_process;
 pub mod compaction;
@@ -127,6 +128,8 @@ pub struct Agent<W: UiWriter> {
     agent_name: Option<String>,
     /// Whether auto-memory reminders are enabled (--auto-memory flag)
     auto_memory: bool,
+    /// Whether aggressive context dehydration is enabled (--acd flag)
+    acd_enabled: bool,
 }
 
 impl<W: UiWriter> Agent<W> {
@@ -296,6 +299,7 @@ impl<W: UiWriter> Agent<W> {
             is_agent_mode: false,
             agent_name: None,
             auto_memory: false,
+            acd_enabled: false,
         })
     }
 
@@ -1369,6 +1373,130 @@ impl<W: UiWriter> Agent<W> {
         debug!("Auto-memory reminders: {}", if enabled { "enabled" } else { "disabled" });
     }
 
+    /// Enable or disable aggressive context dehydration (ACD)
+    pub fn set_acd_enabled(&mut self, enabled: bool) {
+        self.acd_enabled = enabled;
+        debug!("ACD (aggressive context dehydration): {}", if enabled { "enabled" } else { "disabled" });
+    }
+
+    /// Perform ACD dehydration - save current conversation state to a fragment.
+    /// Called at the end of each turn when ACD is enabled.
+    /// 
+    /// This saves all non-system messages (except the final assistant response)
+    /// to a fragment, then replaces them with a compact stub. The final assistant
+    /// response is preserved as the turn summary after the stub.
+    ///
+    /// in the context with a compact stub. The agent's final response (summary)
+    /// is preserved after the stub.
+    fn dehydrate_context(&mut self) {
+        if !self.acd_enabled {
+            return;
+        }
+
+        let session_id = match &self.session_id {
+            Some(id) => id.clone(),
+            None => {
+                debug!("ACD: No session_id, skipping dehydration");
+                return;
+            }
+        };
+
+        // Find the index of the last dehydration stub (marks the end of previously dehydrated content)
+        // We only want to dehydrate messages AFTER the last stub+summary pair
+        let last_stub_index = self.context_window
+            .conversation_history
+            .iter()
+            .rposition(|m| m.is_dehydrated_stub());
+
+        // Start index for messages to dehydrate:
+        // - If there's a previous stub, start after the stub AND its following summary (stub + 2)
+        // - Otherwise, start from the beginning (index 0)
+        let dehydrate_start = match last_stub_index {
+            Some(idx) => idx + 2, // Skip the stub and the summary that follows it
+            None => 0,
+        };
+
+        // Get the preceding fragment ID (if any)
+        let preceding_id = crate::acd::get_latest_fragment_id(&session_id).ok().flatten();
+
+        // Extract only NEW non-system messages to dehydrate (after the last stub+summary)
+        let messages_to_dehydrate: Vec<_> = self.context_window
+            .conversation_history
+            .iter()
+            .enumerate()
+            .filter(|(idx, m)| *idx >= dehydrate_start && !matches!(m.role, g3_providers::MessageRole::System))
+            .map(|(_, m)| m.clone())
+            .collect();
+
+        if messages_to_dehydrate.is_empty() {
+            return;
+        }
+
+        // Extract the last assistant message as the turn summary
+        // This is the actual LLM response, not the timing footer passed in final_response
+        let turn_summary: Option<String> = messages_to_dehydrate
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, g3_providers::MessageRole::Assistant))
+            .map(|m| m.content.clone());
+        
+        // Use extracted summary, falling back to final_response only if no assistant message found
+        let summary_content = turn_summary.unwrap_or_default();
+
+        // Create the fragment and generate stub
+        let fragment = crate::acd::Fragment::new(messages_to_dehydrate, preceding_id);
+        let stub = fragment.generate_stub();
+        
+        if let Err(e) = fragment.save(&session_id) {
+            warn!("Failed to save ACD fragment: {}", e);
+            return; // Don't modify context if save failed
+        }
+        
+        println!("💾 Dehydrated {} messages to fragment {}", fragment.message_count, fragment.fragment_id);
+
+        // Now replace the context: keep system messages + previous stubs/summaries, add new stub, add new summary
+        // Extract messages to keep: system messages + everything up to (but not including) dehydrate_start
+        let messages_to_keep: Vec<_> = self.context_window
+            .conversation_history
+            .iter()
+            .enumerate()
+            .filter(|(idx, m)| {
+                // Keep all system messages OR keep previous stub+summary pairs
+                matches!(m.role, g3_providers::MessageRole::System) || *idx < dehydrate_start
+            })
+            .map(|(_, m)| m.clone())
+            .collect();
+
+        // Clear and rebuild context
+        self.context_window.conversation_history.clear();
+        
+        // Add back kept messages (system + previous stubs/summaries)
+        for msg in messages_to_keep {
+            self.context_window.conversation_history.push(msg);
+        }
+        
+        // Add the stub as a user message (so LLM sees it as context)
+        let stub_msg = g3_providers::Message::with_kind(
+            g3_providers::MessageRole::User,
+            stub,
+            g3_providers::MessageKind::DehydratedStub,
+        );
+        self.context_window.conversation_history.push(stub_msg);
+        
+        // Add the final response as assistant message (the summary)
+        if !summary_content.trim().is_empty() {
+            let summary_msg = g3_providers::Message::with_kind(
+                g3_providers::MessageRole::Assistant,
+                summary_content,
+                g3_providers::MessageKind::Summary,
+            );
+            self.context_window.conversation_history.push(summary_msg);
+        }
+        
+        // Recalculate token usage
+        self.context_window.recalculate_tokens();
+    }
+
     /// Send an auto-memory reminder to the LLM if tools were called during the turn.
     /// This prompts the LLM to call the `remember` tool if it discovered any key code locations.
     /// Returns true if a reminder was sent and processed.
@@ -1503,6 +1631,7 @@ impl<W: UiWriter> Agent<W> {
                                 id: String::new(),
                                 images: Vec::new(),
                                 content: content.to_string(),
+                                kind: g3_providers::MessageKind::Regular,
                                 cache_control: None,
                             });
                         }
@@ -1529,6 +1658,7 @@ impl<W: UiWriter> Agent<W> {
                 id: String::new(),
                 images: Vec::new(),
                 content: format!("[Session Resumed]\n\n{}", context_msg),
+                kind: g3_providers::MessageKind::Regular,
                 cache_control: None,
             });
         }
@@ -2077,11 +2207,26 @@ impl<W: UiWriter> Agent<W> {
                                 const MAX_LINE_WIDTH: usize = 80;
                                 let output_len = output_lines.len();
 
-                                // Skip printing for todo tools - they already print their content
+                                // Skip printing content for todo tools - they already print their content
                                 let is_todo_tool =
                                     tool_call.tool == "todo_read" || tool_call.tool == "todo_write";
 
-                                if !is_todo_tool {
+                                // For read_file, show a summary instead of file contents
+                                let is_read_file = tool_call.tool == "read_file";
+
+                                if is_read_file && tool_success {
+                                    // Calculate summary: lines and chars
+                                    let char_count = tool_result.len();
+                                    let char_display = if char_count >= 1000 {
+                                        format!("{:.1}k", char_count as f64 / 1000.0)
+                                    } else {
+                                        format!("{}", char_count)
+                                    };
+                                    let summary = format!("✅ read {} lines | {} chars", output_len, char_display);
+                                    self.ui_writer.update_tool_output_line(&summary);
+                                } else if is_todo_tool {
+                                    // Skip - todo tools print their own content
+                                } else {
                                     let max_lines_to_show = if wants_full { output_len } else { MAX_LINES };
 
                                     for (idx, line) in output_lines.iter().enumerate() {
@@ -2356,11 +2501,8 @@ impl<W: UiWriter> Agent<W> {
                                     break;
                                 }
 
-                                // Set full_response to current_response (don't append)
-                                // current_response already contains everything that was displayed
-                                // Don't set full_response here - it would duplicate the output
-                                // The text was already displayed during streaming
-                                // Return empty string to avoid duplication
+                                // Set full_response to empty to avoid duplication in return value
+                                // (content was already displayed during streaming)
                                 full_response = String::new();
 
                                 // Finish the streaming markdown formatter before returning
@@ -2388,6 +2530,9 @@ impl<W: UiWriter> Agent<W> {
                                 } else {
                                     full_response
                                 };
+
+                                // Dehydrate context - the function extracts the summary from context itself
+                                self.dehydrate_context();
 
                                 return Ok(TaskResult::new(
                                     final_response,
@@ -2618,9 +2763,11 @@ impl<W: UiWriter> Agent<W> {
 
                 let _ttft = first_token_time.unwrap_or_else(|| stream_start.elapsed());
 
-                // Add the RAW unfiltered response to context window before returning
-                // This ensures the log contains the true raw content including any JSON
-                if !full_response.trim().is_empty() {
+                // Add the RAW unfiltered response to context window before returning.
+                // This ensures the log contains the true raw content including any JSON.
+                // Note: We check current_response, not full_response, because full_response
+                // may be empty to avoid display duplication (content was already streamed).
+                if !current_response.trim().is_empty() {
                     // Get the raw text from the parser (before filtering)
                     let raw_text = parser.get_text_content();
                     let raw_clean = streaming::clean_llm_tokens(&raw_text);
@@ -2652,6 +2799,9 @@ impl<W: UiWriter> Agent<W> {
                     full_response
                 };
 
+                // Dehydrate context - the function extracts the summary from context itself
+                self.dehydrate_context();
+
                 return Ok(TaskResult::new(final_response, self.context_window.clone()));
             }
 
@@ -2678,6 +2828,9 @@ impl<W: UiWriter> Agent<W> {
         } else {
             full_response
         };
+
+        // Dehydrate context - the function extracts the summary from context itself
+        self.dehydrate_context();
 
         Ok(TaskResult::new(final_response, self.context_window.clone()))
     }
@@ -2771,19 +2924,26 @@ pub use utils::apply_unified_diff_to_string;
 
 /// Truncate a string to approximately max_len characters, ending at a word boundary
 fn truncate_to_word_boundary(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
         return s.to_string();
     }
     
-    // Find the last space before max_len
-    let truncated = &s[..max_len];
-    if let Some(last_space) = truncated.rfind(' ') {
-        if last_space > max_len / 2 {
-            // Only use word boundary if it's not too short
-            return format!("{}...", &s[..last_space]);
+    // Get the byte index of the max_len-th character
+    let byte_index: usize = s.char_indices()
+        .nth(max_len)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    
+    // Find the last space before the character limit
+    let truncated = &s[..byte_index];
+    if let Some(last_space_byte) = truncated.rfind(' ') {
+        if truncated[..last_space_byte].chars().count() > max_len / 2 {
+            // Only use word boundary if it's not too short (in characters)
+            return format!("{}...", &s[..last_space_byte]);
         }
     }
-    // Fall back to character truncation
+    // Fall back to truncation at character boundary
     format!("{}...", truncated)
 }
 

@@ -85,6 +85,12 @@ pub fn get_thinned_dir(session_id: &str) -> PathBuf {
     get_session_logs_dir(session_id).join("thinned")
 }
 
+/// Get the fragments directory for a session (for ACD dehydrated context).
+/// Returns .g3/sessions/<session_id>/fragments/
+pub fn get_fragments_dir(session_id: &str) -> PathBuf {
+    get_session_logs_dir(session_id).join("fragments")
+}
+
 /// Get the path to the session.json file for a session.
 /// Returns .g3/sessions/<session_id>/session.json
 pub fn get_session_file(session_id: &str) -> PathBuf {

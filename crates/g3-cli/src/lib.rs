@@ -155,6 +155,10 @@ pub struct Cli {
     /// Automatically remind LLM to call remember tool after turns with tool calls
     #[arg(long)]
     pub auto_memory: bool,
+
+    /// Enable aggressive context dehydration (save context to disk on compaction)
+    #[arg(long)]
+    pub acd: bool,
 }
 
 pub async fn run() -> Result<()> {
@@ -390,6 +394,10 @@ pub async fn run() -> Result<()> {
         if cli.auto_memory {
             agent.set_auto_memory(true);
         }
+        // Apply ACD flag if enabled
+        if cli.acd {
+            agent.set_acd_enabled(true);
+        }
 
         run_with_machine_mode(agent, cli, project).await?;
     } else {
@@ -432,6 +440,10 @@ pub async fn run() -> Result<()> {
         // Apply auto-memory flag if enabled
         if cli.auto_memory {
             agent.set_auto_memory(true);
+        }
+        // Apply ACD flag if enabled
+        if cli.acd {
+            agent.set_acd_enabled(true);
         }
 
         run_with_console_mode(agent, cli, project, combined_content).await?;
@@ -616,6 +628,9 @@ async fn run_agent_mode(
     // Auto-memory is always enabled in agent mode
     // This prompts the LLM to save discoveries to project memory after each turn
     agent.set_auto_memory(true);
+    
+    // Enable ACD in agent mode for longer sessions
+    agent.set_acd_enabled(true);
     
     // If resuming a session, restore context and TODO
     let initial_task = if let Some(ref incomplete_session) = resuming_session {
@@ -1416,7 +1431,10 @@ async fn run_interactive<W: UiWriter>(
                                 output.print("  /thinnify  - Trigger context thinning (replaces large tool results with file references)");
                                 output.print("  /skinnify  - Trigger full context thinning (like /thinnify but for entire context, not just first third)");
                                 output.print("  /clear     - Clear session and start fresh (discards continuation artifacts)");
+                                output.print("  /fragments - List dehydrated context fragments (ACD)");
+                                output.print("  /rehydrate - Restore a dehydrated fragment by ID");
                                 output.print("  /resume    - List and switch to a previous session");
+                                output.print("  /dump      - Dump entire context window to file for debugging");
                                 output.print(
                                     "  /readme    - Reload README.md and AGENTS.md from disk",
                                 );
@@ -1452,6 +1470,90 @@ async fn run_interactive<W: UiWriter>(
                             "/skinnify" => {
                                 let summary = agent.force_thin_all();
                                 println!("{}", summary);
+                                continue;
+                            }
+                            "/fragments" => {
+                                if let Some(session_id) = agent.get_session_id() {
+                                    match g3_core::acd::list_fragments(session_id) {
+                                        Ok(fragments) => {
+                                            if fragments.is_empty() {
+                                                output.print("No dehydrated fragments found for this session.");
+                                            } else {
+                                                output.print(&format!("📦 {} dehydrated fragment(s):\n", fragments.len()));
+                                                for fragment in &fragments {
+                                                    output.print(&fragment.generate_stub());
+                                                    output.print("");
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            output.print(&format!("❌ Error listing fragments: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    output.print("No active session - fragments are session-scoped.");
+                                }
+                                continue;
+                            }
+                            cmd if cmd.starts_with("/rehydrate") => {
+                                let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+                                if parts.len() < 2 || parts[1].trim().is_empty() {
+                                    output.print("Usage: /rehydrate <fragment_id>");
+                                    output.print("Use /fragments to list available fragment IDs.");
+                                } else {
+                                    let fragment_id = parts[1].trim();
+                                    if let Some(session_id) = agent.get_session_id() {
+                                        match g3_core::acd::Fragment::load(session_id, fragment_id) {
+                                            Ok(fragment) => {
+                                                output.print(&format!("✅ Fragment '{}' loaded ({} messages, ~{} tokens)", 
+                                                    fragment_id, fragment.message_count, fragment.estimated_tokens));
+                                                output.print("");
+                                                output.print(&fragment.generate_stub());
+                                            }
+                                            Err(e) => {
+                                                output.print(&format!("❌ Failed to load fragment '{}': {}", fragment_id, e));
+                                            }
+                                        }
+                                    } else {
+                                        output.print("No active session - fragments are session-scoped.");
+                                    }
+                                }
+                                continue;
+                            }
+                            "/dump" => {
+                                // Dump entire context window to a file for debugging
+                                let dump_dir = std::path::Path::new("tmp");
+                                if !dump_dir.exists() {
+                                    if let Err(e) = std::fs::create_dir_all(dump_dir) {
+                                        output.print(&format!("❌ Failed to create tmp directory: {}", e));
+                                        continue;
+                                    }
+                                }
+                                
+                                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+                                let dump_path = dump_dir.join(format!("context_dump_{}.txt", timestamp));
+                                
+                                let context = agent.get_context_window();
+                                let mut dump_content = String::new();
+                                dump_content.push_str(&format!("# Context Window Dump\n"));
+                                dump_content.push_str(&format!("# Timestamp: {}\n", chrono::Utc::now()));
+                                dump_content.push_str(&format!("# Messages: {}\n", context.conversation_history.len()));
+                                dump_content.push_str(&format!("# Used tokens: {} / {} ({:.1}%)\n\n", 
+                                    context.used_tokens, context.total_tokens, context.percentage_used()));
+                                
+                                for (i, msg) in context.conversation_history.iter().enumerate() {
+                                    dump_content.push_str(&format!("=== Message {} ===\n", i));
+                                    dump_content.push_str(&format!("Role: {:?}\n", msg.role));
+                                    dump_content.push_str(&format!("Kind: {:?}\n", msg.kind));
+                                    dump_content.push_str(&format!("Content ({} chars):\n", msg.content.len()));
+                                    dump_content.push_str(&msg.content);
+                                    dump_content.push_str("\n\n");
+                                }
+                                
+                                match std::fs::write(&dump_path, &dump_content) {
+                                    Ok(_) => output.print(&format!("📄 Context dumped to: {}", dump_path.display())),
+                                    Err(e) => output.print(&format!("❌ Failed to write dump: {}", e)),
+                                }
                                 continue;
                             }
                             "/clear" => {
@@ -1751,6 +1853,71 @@ async fn run_interactive_machine(
                             println!("{}", summary);
                             continue;
                         }
+                        "/fragments" => {
+                            println!("COMMAND: fragments");
+                            if let Some(session_id) = agent.get_session_id() {
+                                match g3_core::acd::list_fragments(session_id) {
+                                    Ok(fragments) => {
+                                        println!("FRAGMENT_COUNT: {}", fragments.len());
+                                        for fragment in &fragments {
+                                            println!("FRAGMENT_ID: {}", fragment.fragment_id);
+                                            println!("FRAGMENT_MESSAGES: {}", fragment.message_count);
+                                            println!("FRAGMENT_TOKENS: {}", fragment.estimated_tokens);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("ERROR: {}", e);
+                                    }
+                                }
+                            } else {
+                                println!("ERROR: No active session");
+                            }
+                            continue;
+                        }
+                        cmd if cmd.starts_with("/rehydrate") => {
+                            println!("COMMAND: rehydrate");
+                            let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+                            if parts.len() < 2 || parts[1].trim().is_empty() {
+                                println!("ERROR: Usage: /rehydrate <fragment_id>");
+                            } else {
+                                let fragment_id = parts[1].trim();
+                                println!("FRAGMENT_ID: {}", fragment_id);
+                                println!("RESULT: Use the rehydrate tool to restore fragment content");
+                            }
+                            continue;
+                        }
+                        "/dump" => {
+                            println!("COMMAND: dump");
+                            let dump_dir = std::path::Path::new("tmp");
+                            if !dump_dir.exists() {
+                                if let Err(e) = std::fs::create_dir_all(dump_dir) {
+                                    println!("ERROR: Failed to create tmp directory: {}", e);
+                                    continue;
+                                }
+                            }
+                            
+                            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+                            let dump_path = dump_dir.join(format!("context_dump_{}.txt", timestamp));
+                            
+                            let context = agent.get_context_window();
+                            let mut dump_content = String::new();
+                            dump_content.push_str(&format!("# Context Window Dump\n"));
+                            dump_content.push_str(&format!("# Timestamp: {}\n", chrono::Utc::now()));
+                            dump_content.push_str(&format!("# Messages: {}\n", context.conversation_history.len()));
+                            dump_content.push_str(&format!("# Used tokens: {} / {} ({:.1}%)\n\n", 
+                                context.used_tokens, context.total_tokens, context.percentage_used()));
+                            
+                            for (i, msg) in context.conversation_history.iter().enumerate() {
+                                dump_content.push_str(&format!("=== Message {} ===\nRole: {:?}\nKind: {:?}\nContent ({} chars):\n{}\n\n",
+                                    i, msg.role, msg.kind, msg.content.len(), msg.content));
+                            }
+                            
+                            match std::fs::write(&dump_path, &dump_content) {
+                                Ok(_) => println!("RESULT: Context dumped to {}", dump_path.display()),
+                                Err(e) => println!("ERROR: Failed to write dump: {}", e),
+                            }
+                            continue;
+                        }
                         "/clear" => {
                             println!("COMMAND: clear");
                             agent.clear_session();
@@ -1779,7 +1946,7 @@ async fn run_interactive_machine(
                         }
                         "/help" => {
                             println!("COMMAND: help");
-                            println!("AVAILABLE_COMMANDS: /compact /thinnify /skinnify /clear /resume /readme /stats /help");
+                            println!("AVAILABLE_COMMANDS: /compact /thinnify /skinnify /clear /dump /fragments /rehydrate /resume /readme /stats /help");
                             continue;
                         }
                         "/resume" => {

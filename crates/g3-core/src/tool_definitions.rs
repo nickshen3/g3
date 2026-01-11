@@ -288,6 +288,22 @@ fn create_core_tools(exclude_research: bool) -> Vec<Tool> {
         }),
     });
 
+    // ACD rehydration tool
+    tools.push(Tool {
+        name: "rehydrate".to_string(),
+        description: "Restore dehydrated conversation history from a previous context segment. Use this when you see a DEHYDRATED CONTEXT stub and need to recall the full conversation details from that segment.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "fragment_id": {
+                    "type": "string",
+                    "description": "The fragment ID to restore (from a DEHYDRATED CONTEXT stub message)"
+                }
+            },
+            "required": ["fragment_id"]
+        }),
+    });
+
     tools
 }
 
@@ -495,7 +511,7 @@ mod tests {
         // write_file, str_replace, take_screenshot,
         // todo_read, todo_write, code_coverage, code_search, research, remember
         // (13 total - memory is auto-loaded, only remember tool needed)
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
@@ -509,7 +525,7 @@ mod tests {
     fn test_create_tool_definitions_core_only() {
         let config = ToolConfig::default();
         let tools = create_tool_definitions(config);
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
@@ -517,7 +533,7 @@ mod tests {
         let config = ToolConfig::new(true, true);
         let tools = create_tool_definitions(config);
         // 13 core + 15 webdriver = 28
-        assert_eq!(tools.len(), 28);
+        assert_eq!(tools.len(), 29);
     }
 
     #[test]
@@ -535,8 +551,8 @@ mod tests {
         let tools_with_research = create_core_tools(false);
         let tools_without_research = create_core_tools(true);
         
-        assert_eq!(tools_with_research.len(), 13);
-        assert_eq!(tools_without_research.len(), 12);
+        assert_eq!(tools_with_research.len(), 14);
+        assert_eq!(tools_without_research.len(), 13);
         
         assert!(tools_with_research.iter().any(|t| t.name == "research"));
         assert!(!tools_without_research.iter().any(|t| t.name == "research"));

@@ -9,8 +9,10 @@
 //! - `misc` - Other tools (screenshots, code search, etc.)
 //! - `research` - Web research via scout agent
 //! - `memory` - Project memory (read_memory, remember)
+//! - `acd` - Aggressive Context Dehydration (rehydrate)
 
 pub mod executor;
+pub mod acd;
 pub mod file_ops;
 pub mod memory;
 pub mod misc;

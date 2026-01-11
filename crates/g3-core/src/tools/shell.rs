@@ -61,7 +61,17 @@ pub async fn execute_shell<W: UiWriter>(tool_call: &ToolCall, ctx: &ToolContext<
                     result.stdout.trim().to_string()
                 })
             } else {
-                Ok(format!("❌ {}", result.stderr.trim()))
+                // Build error message with available information
+                let stderr = result.stderr.trim();
+                let stdout = result.stdout.trim();
+                if !stderr.is_empty() {
+                    Ok(format!("❌ {}", stderr))
+                } else if !stdout.is_empty() {
+                    // Sometimes error info is in stdout
+                    Ok(format!("❌ Exit code {}: {}", result.exit_code, stdout))
+                } else {
+                    Ok(format!("❌ Command failed with exit code {}", result.exit_code))
+                }
             }
         }
         Err(e) => Ok(format!("❌ Execution error: {}", e)),

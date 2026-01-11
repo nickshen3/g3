@@ -71,6 +71,18 @@
 - Different configs for interactive vs autonomous mode
 - **Risk**: Aggressive retries can hit rate limits harder
 
+### UTF-8 String Slicing (Throughout Codebase)
+
+- Rust string slices (`&s[..n]`) use **byte indices**, not character indices
+- Multi-byte UTF-8 characters (emoji, bullets `•`, `×`, `⚡`) cause panics if sliced mid-character
+- **Risk**: Runtime panic on any string containing non-ASCII characters
+- **Fix**: Use `char_indices()` to find byte boundaries:
+  ```rust
+  let byte_idx = s.char_indices().nth(char_limit).map(|(i, _)| i).unwrap_or(s.len());
+  let truncated = &s[..byte_idx];
+  ```
+- **Danger zones**: Display truncation, ACD stubs, user input handling
+
 ## Do's and Don'ts for Automated Changes
 
 ### Do
@@ -99,6 +111,7 @@
 3. **"Tool results are always small"** - File reads can return megabytes
 4. **"Sessions persist across runs"** - Sessions are ephemeral by default
 5. **"All platforms are equal"** - macOS has more features (Vision, Accessibility)
+6. **"String length equals character count"** - `s.len()` returns bytes; use `s.chars().count()` for characters
 
 ## Dependency Analysis Artifacts
 

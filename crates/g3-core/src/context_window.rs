@@ -271,6 +271,75 @@ Format this as a detailed but concise summary that can be used to resume the con
         old_chars.saturating_sub(new_chars)
     }
 
+    /// Reset context window with a summary and optional ACD stub
+    /// Preserves the original system prompt as the first message
+    /// If stub is provided, it's added as a system message before the summary
+    pub fn reset_with_summary_and_stub(
+        &mut self,
+        summary: String,
+        latest_user_message: Option<String>,
+        stub: Option<String>,
+    ) -> usize {
+        // Calculate chars saved (old history minus new summary)
+        let old_chars: usize = self
+            .conversation_history
+            .iter()
+            .map(|m| m.content.len())
+            .sum();
+
+        // Preserve the original system prompt (first message) and optionally the README (second message)
+        let original_system_prompt = self.conversation_history.first().cloned();
+        let readme_message = self.conversation_history.get(1).and_then(|msg| {
+            if matches!(msg.role, MessageRole::System)
+                && (msg.content.contains("Project README")
+                    || msg.content.contains("Agent Configuration"))
+            {
+                Some(msg.clone())
+            } else {
+                None
+            }
+        });
+
+        // Clear the conversation history
+        self.conversation_history.clear();
+        self.used_tokens = 0;
+
+        // Re-add the original system prompt first (critical invariant)
+        if let Some(system_prompt) = original_system_prompt {
+            self.add_message(system_prompt);
+        }
+
+        // Re-add the README message if it existed
+        if let Some(readme) = readme_message {
+            self.add_message(readme);
+        }
+
+        // Add the ACD stub if provided (before summary so LLM knows about dehydrated context)
+        if let Some(stub_content) = stub {
+            let stub_message = Message::new(MessageRole::System, stub_content);
+            self.add_message(stub_message);
+        }
+
+        // Add the summary as a system message
+        let summary_message = Message::new(
+            MessageRole::System,
+            format!("Previous conversation summary:\n\n{}", summary),
+        );
+        self.add_message(summary_message);
+
+        // Add the latest user message if provided
+        if let Some(user_msg) = latest_user_message {
+            self.add_message(Message::new(MessageRole::User, user_msg));
+        }
+
+        let new_chars: usize = self
+            .conversation_history
+            .iter()
+            .map(|m| m.content.len())
+            .sum();
+        old_chars.saturating_sub(new_chars)
+    }
+
     /// Check if we should trigger context thinning
     /// Triggers at 50%, 60%, 70%, and 80% thresholds
     pub fn should_thin(&self) -> bool {
@@ -676,7 +745,8 @@ Format this as a detailed but concise summary that can be used to resume the con
     }
 
     /// Recalculate token usage based on current conversation history
-    fn recalculate_tokens(&mut self) {
+    /// Recalculate the token count based on current conversation history.
+    pub fn recalculate_tokens(&mut self) {
         let mut total = 0;
         for message in &self.conversation_history {
             total += Self::estimate_tokens(&message.content);
