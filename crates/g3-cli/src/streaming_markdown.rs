@@ -697,7 +697,16 @@ impl StreamingMarkdownFormatter {
                 // Unclosed code block - emit as-is
                 if !self.block_buffer.is_empty() || !self.current_line.is_empty() {
                     if !self.current_line.is_empty() {
-                        self.block_buffer.push(self.current_line.clone());
+                        // Check if current_line is the closing fence (``` without trailing newline)
+                        let trimmed = self.current_line.trim_start();
+                        let leading_spaces = self.current_line.len() - trimmed.len();
+                        if trimmed == "```" && leading_spaces <= 3 {
+                            // This is the closing fence - don't include it in content
+                            // Just clear it and emit the block
+                        } else {
+                            self.block_buffer.push(self.current_line.clone());
+                        }
+                        self.current_line.clear();
                     }
                     self.emit_code_block();
                 }

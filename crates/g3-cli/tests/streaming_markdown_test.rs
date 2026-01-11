@@ -1879,3 +1879,49 @@ fn strip_ansi(s: &str) -> String {
     let re = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
     re.replace_all(s, "").to_string()
 }
+
+#[test]
+fn test_code_fence_after_blank_line() {
+    let skin = MadSkin::default();
+    let mut fmt = StreamingMarkdownFormatter::new(skin);
+    
+    // Simulate the exact input from the bug - text followed by blank line followed by code fence
+    let input = "Done! The agent mode header now looks like:\n\n```\n>> agent mode | fowler\n```\n";
+    
+    // Process character by character like streaming would
+    let mut output = String::new();
+    for ch in input.chars() {
+        let chunk = fmt.process(&ch.to_string());
+        output.push_str(&chunk);
+    }
+    output.push_str(&fmt.finish());
+    
+    println!("Input: {:?}", input);
+    println!("Output: {:?}", output);
+    
+    // Check if backticks appear literally - they shouldn't
+    assert!(!output.contains("```"), "Literal backticks should not appear in output. Got: {}", output);
+}
+
+#[test]
+fn test_code_fence_no_trailing_newline() {
+    // Test code fence without trailing newline after closing ```
+    let skin = MadSkin::default();
+    let mut fmt = StreamingMarkdownFormatter::new(skin);
+    
+    // Note: no newline after closing ```
+    let input = "Done!\n\n```\n>> agent mode | fowler\n-> ~/src/g3\n   ✓ README | ✓ AGENTS.md | ✓ Memory\n```";
+    
+    let mut output = String::new();
+    for ch in input.chars() {
+        let chunk = fmt.process(&ch.to_string());
+        output.push_str(&chunk);
+    }
+    output.push_str(&fmt.finish());
+    
+    println!("Input: {:?}", input);
+    println!("Output: {:?}", output);
+    
+    // The closing ``` should NOT appear literally
+    assert!(!output.contains("```"), "Literal backticks in output: {}", output);
+}
