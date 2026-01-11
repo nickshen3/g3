@@ -211,7 +211,8 @@ After"#;
 {"tool": "final_output", "args": {"summary": "Task completed successfully"}}"#;
 
         let result = filter_json_tool_calls(input);
-        let expected = "\n";
+        // Leading newline before tool call at start of input is suppressed
+        let expected = "";
         assert_eq!(result, expected);
     }
 
@@ -509,13 +510,13 @@ End"#;
 
         let result = filter_json_tool_calls(input);
         
-        // The tool call starts on its own line after the read_file output,
-        // so it should be filtered out. Only the read_file output should remain.
+        // The tool call starts on its own line after the read_file output.
+        // The tool call is filtered out, and extra newlines before it are suppressed.
+        // Only one newline remains (the line ending after "1ms").
         let expected = r#"┌─ read_file | ./crates/g3-cli/src/ui_writer_impl.rs [13000..13300]
 │     }
 │ (11 lines)
 └─ ⚡️ 1ms
-
 "#;
         assert_eq!(
             result, expected,
@@ -538,9 +539,10 @@ End"#;
         let result = filter_json_tool_calls(input);
         
         // The shell tool call starts at line beginning, so it should be filtered out
-        // Only the surrounding text should remain
-        // Note: The tool call is on its own line, so filtering leaves an empty line
-        let expected = "Let me create a test case:\n\n\n\nDone.";
+        // Only the surrounding text should remain.
+        // Extra newlines before the tool call are suppressed (one blank line before
+        // becomes just the line ending), but newlines after are preserved.
+        let expected = "Let me create a test case:\n\n\nDone.";
         
         assert_eq!(
             result, expected,

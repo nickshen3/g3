@@ -53,6 +53,8 @@ struct FilterState {
     at_line_start: bool,
     /// Whitespace seen after newline (before potential {)
     pending_whitespace: String,
+    /// Newlines accumulated at line start (before potential tool call)
+    pending_newlines: String,
 }
 
 impl FilterState {
@@ -65,6 +67,7 @@ impl FilterState {
             escape_next: false,
             at_line_start: true, // Start of input counts as line start
             pending_whitespace: String::new(),
+            pending_newlines: String::new(),
         }
     }
 
@@ -76,6 +79,7 @@ impl FilterState {
         self.escape_next = false;
         self.at_line_start = true;
         self.pending_whitespace.clear();
+        self.pending_newlines.clear();
     }
 }
 
@@ -192,11 +196,16 @@ pub fn filter_json_tool_calls(content: &str) -> String {
 fn handle_streaming_char(state: &mut FilterState, ch: char, output: &mut String) {
     match ch {
         '\n' => {
-            // Output the newline and any pending whitespace
-            output.push_str(&state.pending_whitespace);
-            output.push(ch);
-            state.pending_whitespace.clear();
-            state.at_line_start = true;
+            // Buffer extra newlines at line start - they may precede a tool call
+            // Always output the first newline, but buffer subsequent ones
+            if state.at_line_start {
+                state.pending_newlines.push(ch);
+            } else {
+                // First newline after content - output it and enter line start mode
+                output.push(ch);
+                state.at_line_start = true;
+                state.pending_newlines.clear(); // Reset - this newline was output
+            }
         }
         ' ' | '\t' if state.at_line_start => {
             // Accumulate whitespace at line start
@@ -208,10 +217,12 @@ fn handle_streaming_char(state: &mut FilterState, ch: char, output: &mut String)
             state.state = State::Buffering;
             state.buffer.clear();
             state.buffer.push(ch);
-            // Don't output pending_whitespace yet - we might need to suppress it
+            // Don't output pending_newlines or pending_whitespace yet - we might need to suppress them
         }
         _ => {
-            // Regular character - output any pending whitespace first
+            // Regular character - output any pending newlines and whitespace first
+            output.push_str(&state.pending_newlines);
+            state.pending_newlines.clear();
             output.push_str(&state.pending_whitespace);
             state.pending_whitespace.clear();
             output.push(ch);
@@ -233,15 +244,18 @@ fn handle_buffering_char(state: &mut FilterState, ch: char, output: &mut String)
             state.brace_depth = 1; // We already have the opening {
             state.in_string = true; // We're inside the "tool" value string
             state.escape_next = false;
-            // Discard pending_whitespace (it's part of the tool call line)
+            // Discard pending_newlines and pending_whitespace (they're part of the tool call)
+            state.pending_newlines.clear();
             state.pending_whitespace.clear();
             state.buffer.clear();
         }
         Some(false) => {
             // Not a tool call - release buffered content
             debug!("Not a tool call - releasing buffer");
+            output.push_str(&state.pending_newlines);
             output.push_str(&state.pending_whitespace);
             output.push_str(&state.buffer);
+            state.pending_newlines.clear();
             state.pending_whitespace.clear();
             state.buffer.clear();
             state.state = State::Streaming;
@@ -252,8 +266,10 @@ fn handle_buffering_char(state: &mut FilterState, ch: char, output: &mut String)
             if state.buffer.len() > MAX_BUFFER_FOR_DETECTION {
                 // Too long without confirmation - not a tool call
                 debug!("Buffer exceeded max length - not a tool call");
+                output.push_str(&state.pending_newlines);
                 output.push_str(&state.pending_whitespace);
                 output.push_str(&state.buffer);
+                state.pending_newlines.clear();
                 state.pending_whitespace.clear();
                 state.buffer.clear();
                 state.state = State::Streaming;
@@ -347,6 +363,24 @@ pub fn reset_json_tool_state() {
     });
 }
 
+/// Flushes any pending content from the JSON filter.
+///
+/// Call this at the end of streaming to ensure any buffered newlines
+/// or whitespace that wasn't followed by a tool call gets output.
+pub fn flush_json_tool_filter() -> String {
+    JSON_TOOL_STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        let mut output = String::new();
+        // Output any pending newlines and whitespace
+        output.push_str(&state.pending_newlines);
+        output.push_str(&state.pending_whitespace);
+        output.push_str(&state.buffer);
+        state.pending_newlines.clear();
+        state.pending_whitespace.clear();
+        state.buffer.clear();
+        output
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -437,5 +471,29 @@ mod tests {
         
         // The tool call should be filtered out
         assert_eq!(result, "Text\n\nMore");
+    }
+
+    #[test]
+    fn test_multiple_newlines_before_tool_call_suppressed() {
+        // This test verifies that extra blank lines before a tool call are suppressed.
+        // This fixes the visual issue where many blank lines appeared before tool calls.
+        reset_json_tool_state();
+        
+        // Input has 4 newlines before the tool call (3 blank lines)
+        let input = "Before\n\n\n\n{\"tool\": \"shell\", \"args\": {}}\nAfter";
+        let result = filter_json_tool_calls(input);
+        
+        // Only one newline should remain before where the tool call was
+        // (the first newline after "Before" is preserved, extra ones are suppressed)
+        assert_eq!(result, "Before\n\nAfter");
+    }
+
+    #[test]
+    fn test_single_newline_before_tool_call_preserved() {
+        // A single newline before a tool call should be preserved
+        reset_json_tool_state();
+        let input = "Before\n{\"tool\": \"shell\", \"args\": {}}\nAfter";
+        let result = filter_json_tool_calls(input);
+        assert_eq!(result, "Before\n\nAfter");
     }
 }

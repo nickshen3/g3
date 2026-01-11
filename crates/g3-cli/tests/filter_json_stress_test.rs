@@ -3,7 +3,7 @@
 //! These tests hammer the filter with malformed JSON, partial tool calls,
 //! edge cases, and adversarial inputs to ensure robustness.
 
-use g3_cli::filter_json::{filter_json_tool_calls, reset_json_tool_state};
+use g3_cli::filter_json::{filter_json_tool_calls, flush_json_tool_filter, reset_json_tool_state};
 
 // ============================================================================
 // Malformed JSON Tests
@@ -478,7 +478,9 @@ fn test_empty_input() {
 #[test]
 fn test_just_newline() {
     reset_json_tool_state();
-    assert_eq!(filter_json_tool_calls("\n"), "\n");
+    let result = filter_json_tool_calls("\n");
+    let flushed = flush_json_tool_filter();
+    assert_eq!(format!("{}{}", result, flushed), "\n");
 }
 
 #[test]
