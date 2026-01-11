@@ -797,11 +797,29 @@ async fn run_agent_mode(
     // Note: allow_multiple_tool_calls parameter is deprecated but kept for API compatibility
     let system_prompt = get_agent_system_prompt(&agent_prompt, true);
     
-    // Read README if present
-    let readme_content = std::fs::read_to_string(workspace_dir.join("README.md")).ok();
-    let readme_for_prompt = readme_content.map(|content| {
-        format!("📚 Project README (from README.md):\n\n{}", content)
-    });
+    // Load AGENTS.md, README, and memory - same as normal mode
+    let agents_content = read_agents_config(&workspace_dir);
+    let readme_content = read_project_readme(&workspace_dir);
+    let memory_content = read_project_memory(&workspace_dir);
+    
+    // Combine all content for the agent's context
+    let combined_content = {
+        let mut parts = Vec::new();
+        if let Some(agents) = agents_content {
+            parts.push(agents);
+        }
+        if let Some(readme) = readme_content {
+            parts.push(readme);
+        }
+        if let Some(memory) = memory_content {
+            parts.push(memory);
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
+        }
+    };
     
     // Create agent with custom system prompt
     let ui_writer = ConsoleUiWriter::new();
@@ -811,7 +829,7 @@ async fn run_agent_mode(
         config,
         ui_writer,
         system_prompt,
-        readme_for_prompt,
+        combined_content,
     ).await?;
     
     // Set agent mode for session tracking
