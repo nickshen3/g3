@@ -444,21 +444,6 @@ pub async fn run() -> Result<()> {
         .await;
     }
 
-    // Check if agent mode is enabled
-    if let Some(agent_name) = &cli.agent {
-        return run_agent_mode(
-            agent_name,
-            cli.workspace.clone(),
-            cli.config.as_deref(),
-            cli.quiet,
-            cli.new_session,
-            cli.task.clone(),
-            cli.chrome_headless,
-            cli.safari,
-        )
-        .await;
-    }
-
     // Only initialize logging if not in retro mode
     if !cli.machine {
         // Initialize logging with filtering
