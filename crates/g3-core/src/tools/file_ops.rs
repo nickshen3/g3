@@ -104,11 +104,8 @@ pub async fn execute_read_file<W: UiWriter>(
                 let fallback_content = &content[fallback_start..];
                 let line_count = fallback_content.lines().count();
                 return Ok(format!(
-                    "⚠️ Start position {} exceeds file length {}. Reading last {} chars instead.\n\
-                     🔍 {} lines read (chars {}-{}):\n{}",
-                    user_start, total_file_len,
-                    total_file_len - fallback_start,
-                    line_count, fallback_start, total_file_len, fallback_content
+                    "{}\n🔍 {} lines read (start {} exceeded length {}, showing last {} chars)",
+                    fallback_content, line_count, user_start, total_file_len, total_file_len - fallback_start
                 ));
             }
             
@@ -164,18 +161,16 @@ pub async fn execute_read_file<W: UiWriter>(
                 // Token-aware truncation header
                 let context_pct = (ctx.context_used_tokens as f32 / ctx.context_total_tokens as f32 * 100.0) as u32;
                 Ok(format!(
-                    "⚠️ TRUNCATED: chars {}-{} of {} (exceeds 20% context, at {}%)\n\
-                     🔍 {} lines read:\n{}",
-                    start_boundary, end_boundary, total_file_len, context_pct,
-                    line_count, partial_content
+                    "{}\n🔍 {} lines read (truncated, chars {}-{} of {}, context {}%)",
+                    partial_content, line_count, start_boundary, end_boundary, total_file_len, context_pct
                 ))
             } else if start_char.is_some() || end_char.is_some() {
                 Ok(format!(
-                    "🔍 {} lines read (chars {}-{}):\n{}",
-                    line_count, start_boundary, end_boundary, partial_content
+                    "{}\n🔍 {} lines read (chars {}-{})",
+                    partial_content, line_count, start_boundary, end_boundary
                 ))
             } else {
-                Ok(format!("🔍 {} lines read:\n{}", line_count, content))
+                Ok(format!("{}\n🔍 {} lines read", content, line_count))
             }
         }
         Err(e) => Ok(format!("❌ Failed to read file '{}': {}", path_str, e)),
