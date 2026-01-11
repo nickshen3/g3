@@ -110,13 +110,13 @@ pub async fn execute_read_file<W: UiWriter>(
             }
             
             let user_end = end_char.unwrap_or(total_file_len);
-            if user_end > total_file_len {
-                return Ok(format!(
-                    "❌ End position {} exceeds file length {}",
-                    user_end,
-                    total_file_len
-                ));
-            }
+            // Clamp end position to file length (don't error, just read what's available)
+            let (user_end, end_was_clamped) = if user_end > total_file_len {
+                (total_file_len, true)
+            } else {
+                (user_end, false)
+            };
+            
             if user_start > user_end {
                 return Ok(format!(
                     "❌ Start position {} is greater than end position {}",
@@ -163,6 +163,12 @@ pub async fn execute_read_file<W: UiWriter>(
                 Ok(format!(
                     "{}\n🔍 {} lines read (truncated, chars {}-{} of {}, context {}%)",
                     partial_content, line_count, start_boundary, end_boundary, total_file_len, context_pct
+                ))
+            } else if end_was_clamped {
+                // End position exceeded file length, clamped to actual length
+                Ok(format!(
+                    "{}\n🔍 {} lines read (chars {}-{}, end clamped from {} to file length {})",
+                    partial_content, line_count, start_boundary, end_boundary, end_char.unwrap(), total_file_len
                 ))
             } else if start_char.is_some() || end_char.is_some() {
                 Ok(format!(
