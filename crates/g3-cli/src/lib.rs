@@ -539,7 +539,7 @@ async fn run_agent_mode(
         ))?
     };
     
-    output.print(&format!("🤖 Running as agent: {}", agent_name));
+    output.print(&format!(">> agent mode | {}", agent_name));
     // Format workspace path, replacing home dir with ~
     let workspace_display = {
         let path_str = workspace_dir.display().to_string();

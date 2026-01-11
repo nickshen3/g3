@@ -130,10 +130,6 @@ pub struct Agent<W: UiWriter> {
 }
 
 impl<W: UiWriter> Agent<W> {
-    /// Minimum tokens for summary requests to avoid API errors when context is nearly full.
-    /// This ensures max_tokens is never 0 even when context usage is 90%+.
-    const SUMMARY_MIN_TOKENS: u32 = 1000;
-
     pub async fn new(config: Config, ui_writer: W) -> Result<Self> {
         Self::new_with_mode(config, ui_writer, false, false).await
     }
@@ -366,10 +362,6 @@ impl<W: UiWriter> Agent<W> {
     }
 
     /// Get the thinking budget tokens for Anthropic provider, if configured.
-    fn get_thinking_budget_tokens(&self, provider_name: &str) -> Option<u32> {
-        provider_config::get_thinking_budget_tokens(&self.config, provider_name)
-    }
-
     /// Pre-flight check to validate max_tokens for thinking.budget_tokens constraint.
     fn preflight_validate_max_tokens(&self, provider_name: &str, proposed_max_tokens: u32) -> (u32, bool) {
         provider_config::preflight_validate_max_tokens(&self.config, provider_name, proposed_max_tokens)
@@ -388,11 +380,6 @@ impl<W: UiWriter> Agent<W> {
     /// Apply the fallback sequence to free up context space for thinking budget.
     fn apply_max_tokens_fallback_sequence(&mut self, provider_name: &str, initial_max_tokens: u32, hard_coded_minimum: u32) -> u32 {
         self.apply_fallback_sequence_impl(provider_name, Some(initial_max_tokens), hard_coded_minimum)
-    }
-
-    /// Apply the fallback sequence for summary requests to free up context space.
-    fn apply_summary_fallback_sequence(&mut self, provider_name: &str) -> u32 {
-        self.apply_fallback_sequence_impl(provider_name, None, 5000)
     }
 
     /// Unified implementation of the fallback sequence for freeing context space.
