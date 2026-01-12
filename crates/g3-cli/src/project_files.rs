@@ -85,12 +85,17 @@ pub fn read_project_memory(workspace_dir: &Path) -> Option<String> {
 /// Combine AGENTS.md, README, and memory content into a single string.
 ///
 /// Returns None if all inputs are None, otherwise joins non-None parts with double newlines.
+/// Prepends the current working directory to help the LLM avoid path hallucinations.
 pub fn combine_project_content(
     agents_content: Option<String>,
     readme_content: Option<String>,
     memory_content: Option<String>,
+    workspace_dir: &Path,
 ) -> Option<String> {
-    let parts: Vec<String> = [agents_content, readme_content, memory_content]
+    // Always include working directory to prevent LLM from hallucinating paths
+    let cwd_info = format!("📂 Working Directory: {}", workspace_dir.display());
+    
+    let parts: Vec<String> = [Some(cwd_info), agents_content, readme_content, memory_content]
         .into_iter()
         .flatten()
         .collect();
@@ -201,23 +206,37 @@ mod tests {
 
     #[test]
     fn test_combine_project_content_all_some() {
+        let workspace = std::path::PathBuf::from("/test/workspace");
         let result = combine_project_content(
             Some("agents".to_string()),
             Some("readme".to_string()),
             Some("memory".to_string()),
+            &workspace,
         );
-        assert_eq!(result, Some("agents\n\nreadme\n\nmemory".to_string()));
+        assert!(result.is_some());
+        let content = result.unwrap();
+        assert!(content.contains("📂 Working Directory: /test/workspace"));
+        assert!(content.contains("agents"));
+        assert!(content.contains("readme"));
+        assert!(content.contains("memory"));
     }
 
     #[test]
     fn test_combine_project_content_partial() {
-        let result = combine_project_content(None, Some("readme".to_string()), None);
-        assert_eq!(result, Some("readme".to_string()));
+        let workspace = std::path::PathBuf::from("/test/workspace");
+        let result = combine_project_content(None, Some("readme".to_string()), None, &workspace);
+        assert!(result.is_some());
+        let content = result.unwrap();
+        assert!(content.contains("📂 Working Directory: /test/workspace"));
+        assert!(content.contains("readme"));
     }
 
     #[test]
     fn test_combine_project_content_all_none() {
-        let result = combine_project_content(None, None, None);
-        assert_eq!(result, None);
+        let workspace = std::path::PathBuf::from("/test/workspace");
+        let result = combine_project_content(None, None, None, &workspace);
+        // Now always returns Some because we always include the working directory
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("📂 Working Directory: /test/workspace"));
     }
 }

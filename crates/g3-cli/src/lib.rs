@@ -106,7 +106,7 @@ pub async fn run() -> Result<()> {
     let config = load_config_with_cli_overrides(&cli)?;
 
     // Combine AGENTS.md, README, and memory content
-    let combined_content = combine_project_content(agents_content, readme_content, memory_content);
+    let combined_content = combine_project_content(agents_content, readme_content, memory_content, &workspace_dir);
 
     run_console_mode(cli, config, project, combined_content, workspace_dir).await
 }

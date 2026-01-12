@@ -181,6 +181,7 @@ pub async fn run_agent_mode(
         agents_content_opt,
         readme_content_opt,
         memory_content_opt,
+        &workspace_dir,
     );
 
     // Create agent with custom system prompt
