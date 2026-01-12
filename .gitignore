@@ -31,3 +31,6 @@ logs/
 requirements.md
 todo.g3.md
 tmp/
+
+# Studio worktrees
+.worktrees/
