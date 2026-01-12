@@ -38,6 +38,14 @@ pub trait UiWriter: Send + Sync {
     /// Print tool output summary (when output is truncated)
     fn print_tool_output_summary(&self, hidden_count: usize);
 
+    /// Print a compact single-line tool output (for file operations)
+    /// Format: " ● tool_name | path [range] | summary | tokens ◉ time"
+    /// Returns true if the tool was handled in compact format, false to use normal format
+    fn print_tool_compact(&self, _tool_name: &str, _summary: &str, _duration_str: &str, _tokens_delta: u32, _context_percentage: f32) -> bool {
+        // Default: don't use compact format
+        false
+    }
+
     /// Print tool execution timing
     fn print_tool_timing(&self, duration_str: &str, tokens_delta: u32, context_percentage: f32);
 

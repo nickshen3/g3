@@ -220,7 +220,10 @@ async fn run_console_mode(
         let result = agent
             .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
             .await?;
-        output.print_smart(&result.response);
+        // Only print response if it's not empty (streaming already displayed it)
+        if !result.response.trim().is_empty() {
+            output.print_smart(&result.response);
+        }
 
         if let Err(e) = agent.send_auto_memory_reminder().await {
             debug!("Auto-memory reminder failed: {}", e);

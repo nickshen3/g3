@@ -12,6 +12,8 @@ pub struct ConsoleUiWriter {
     current_output_line: std::sync::Mutex<Option<String>>,
     output_line_printed: std::sync::Mutex<bool>,
     is_agent_mode: std::sync::Mutex<bool>,
+    /// Track if we're in shell compact mode (for appending timing to output line)
+    is_shell_compact: std::sync::Mutex<bool>,
     /// Streaming markdown formatter for agent responses
     markdown_formatter: Mutex<Option<StreamingMarkdownFormatter>>,
 }
@@ -24,6 +26,7 @@ impl ConsoleUiWriter {
             current_output_line: std::sync::Mutex::new(None),
             output_line_printed: std::sync::Mutex::new(false),
             is_agent_mode: std::sync::Mutex::new(false),
+            is_shell_compact: std::sync::Mutex::new(false),
             markdown_formatter: Mutex::new(None),
         }
     }
@@ -116,6 +119,8 @@ impl UiWriter for ConsoleUiWriter {
         // Reset output_line_printed at the start of a new tool output
         // This ensures the header isn't cleared by update_tool_output_line
         *self.output_line_printed.lock().unwrap() = false;
+        // Reset shell compact mode
+        *self.is_shell_compact.lock().unwrap() = false;
         // Now print the tool header with the most important arg
         // Use light gray/silver in agent mode, bold green otherwise
         let is_agent_mode = *self.is_agent_mode.lock().unwrap();
@@ -173,6 +178,17 @@ impl UiWriter for ConsoleUiWriter {
                     String::new()
                 };
 
+                // Check if this is a shell command - use compact format
+                if tool_name == "shell" {
+                    *self.is_shell_compact.lock().unwrap() = true;
+                    // Print compact shell header: "● shell | command"
+                    println!(
+                        " \x1b[2m●\x1b[0m {}{} \x1b[2m|\x1b[0m \x1b[35m{}\x1b[0m",
+                        tool_color, tool_name, display_value
+                    );
+                    return;
+                }
+
                 // Print with tool name in color (royal blue for agent mode, green otherwise)
                 println!(
                     "┌─{} {}\x1b[0m\x1b[35m | {}{}\x1b[0m",
@@ -191,11 +207,17 @@ impl UiWriter for ConsoleUiWriter {
         const MAX_LINE_WIDTH: usize = 120;
         let mut current_line = self.current_output_line.lock().unwrap();
         let mut line_printed = self.output_line_printed.lock().unwrap();
+        let is_shell = *self.is_shell_compact.lock().unwrap();
 
         // If we've already printed a line, clear it first
         if *line_printed {
-            // Move cursor up one line and clear it
-            print!("\x1b[1A\x1b[2K");
+            if is_shell {
+                // For shell, we printed without newline, so just clear the line
+                print!("\r\x1b[2K");
+            } else {
+                // Move cursor up one line and clear it
+                print!("\x1b[1A\x1b[2K");
+            }
         }
 
         // Truncate line if needed to prevent wrapping
@@ -206,7 +228,13 @@ impl UiWriter for ConsoleUiWriter {
             line.to_string()
         };
 
-        println!("│ \x1b[2m{}\x1b[0m", display_line);
+        // Use different prefix for shell (└─) vs other tools (│)
+        if is_shell {
+            // For shell, print without newline so timing can be appended
+            print!("   \x1b[2m└─ {}\x1b[0m", display_line);
+        } else {
+            println!("│ \x1b[2m{}\x1b[0m", display_line);
+        }
         let _ = io::stdout().flush();
 
         // Update state
@@ -223,11 +251,96 @@ impl UiWriter for ConsoleUiWriter {
     }
 
     fn print_tool_output_summary(&self, count: usize) {
+        let is_shell = *self.is_shell_compact.lock().unwrap();
+        if is_shell {
+            // For shell, append to the same line (no newline)
+            print!(" \x1b[2m({} line{})\x1b[0m", count, if count == 1 { "" } else { "s" });
+            let _ = io::stdout().flush();
+        } else {
+            println!(
+                "│ \x1b[2m({} line{})\x1b[0m",
+                count,
+                if count == 1 { "" } else { "s" }
+            );
+        }
+    }
+
+    fn print_tool_compact(&self, tool_name: &str, summary: &str, duration_str: &str, tokens_delta: u32, _context_percentage: f32) -> bool {
+        // Only handle file operation tools in compact format
+        let is_compact_tool = matches!(tool_name, "read_file" | "write_file" | "str_replace");
+        if !is_compact_tool {
+            return false;
+        }
+
+        let args = self.current_tool_args.lock().unwrap();
+        let is_agent_mode = *self.is_agent_mode.lock().unwrap();
+
+        // Get file path
+        let file_path = args
+            .iter()
+            .find(|(k, _)| k == "file_path")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("?");
+
+        // Truncate long paths
+        let display_path = if file_path.len() > 60 {
+            let truncate_at = file_path
+                .char_indices()
+                .nth(57)
+                .map(|(i, _)| i)
+                .unwrap_or(file_path.len());
+            format!("{}...", &file_path[..truncate_at])
+        } else {
+            file_path.to_string()
+        };
+
+        // Build range suffix for read_file
+        let range_suffix = if tool_name == "read_file" {
+            let has_start = args.iter().any(|(k, _)| k == "start");
+            let has_end = args.iter().any(|(k, _)| k == "end");
+            if has_start || has_end {
+                let start_val = args
+                    .iter()
+                    .find(|(k, _)| k == "start")
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("0");
+                let end_val = args
+                    .iter()
+                    .find(|(k, _)| k == "end")
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("end");
+                format!(" [{}..{}]", start_val, end_val)
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Color for tool name
+        let tool_color = if is_agent_mode { "\x1b[38;5;250m" } else { "\x1b[32m" };
+
+        // Print compact single line:
+        // " ● read_file | path [range] | summary | tokens ◉ time"
         println!(
-            "│ \x1b[2m({} line{})\x1b[0m",
-            count,
-            if count == 1 { "" } else { "s" }
+            " \x1b[2m●\x1b[0m {}{} \x1b[2m|\x1b[0m \x1b[35m{}{}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
+            tool_color,
+            tool_name,
+            display_path,
+            range_suffix,
+            summary,
+            tokens_delta,
+            duration_str
         );
+
+        // Clear the stored tool info
+        drop(args); // Release the lock before clearing
+        *self.current_tool_name.lock().unwrap() = None;
+        self.current_tool_args.lock().unwrap().clear();
+        *self.current_output_line.lock().unwrap() = None;
+        *self.output_line_printed.lock().unwrap() = false;
+
+        true
     }
 
     fn print_tool_timing(&self, duration_str: &str, tokens_delta: u32, context_percentage: f32) {
@@ -278,13 +391,24 @@ impl UiWriter for ConsoleUiWriter {
                 println!();
             }
         }
-        println!("└─ ⚡️ {}{}\x1b[0m  \x1b[2m{} ◉ | {:.0}%\x1b[0m", color_code, duration_str, tokens_delta, context_percentage);
-        println!();
+        
+        // Check if we're in shell compact mode - append timing to the output line
+        let is_shell = *self.is_shell_compact.lock().unwrap();
+        if is_shell {
+            // Append timing to the same line as shell output
+            println!(" \x1b[2m| {} ◉ {}{}\x1b[0m", tokens_delta, color_code, duration_str);
+            println!();
+        } else {
+            println!("└─ ⚡️ {}{}\x1b[0m  \x1b[2m{} ◉ | {:.0}%\x1b[0m", color_code, duration_str, tokens_delta, context_percentage);
+            println!();
+        }
+        
         // Clear the stored tool info
         *self.current_tool_name.lock().unwrap() = None;
         self.current_tool_args.lock().unwrap().clear();
         *self.current_output_line.lock().unwrap() = None;
         *self.output_line_printed.lock().unwrap() = false;
+        *self.is_shell_compact.lock().unwrap() = false;
     }
 
     fn print_agent_prompt(&self) {

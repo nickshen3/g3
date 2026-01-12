@@ -289,7 +289,28 @@ pub fn format_read_file_summary(line_count: usize, char_count: usize) -> String 
     } else {
         format!("{}", char_count)
     };
-    format!("🔍 {} lines read ({} chars)", line_count, char_display)
+    format!("{} lines ({} chars)", line_count, char_display)
+}
+
+/// Format a write_file result summary.
+pub fn format_write_file_summary(line_count: usize, char_count: usize) -> String {
+    let char_display = if char_count >= 1000 {
+        format!("{:.1}k", char_count as f64 / 1000.0)
+    } else {
+        format!("{}", char_count)
+    };
+    format!("✏️  {} lines ({} chars)", line_count, char_display)
+}
+
+/// Format a str_replace result summary.
+pub fn format_str_replace_summary(insertions: i32, deletions: i32) -> String {
+    if insertions > 0 && deletions > 0 {
+        format!("\x1b[32m+{}\x1b[0m \x1b[2m|\x1b[0m \x1b[31m-{}\x1b[0m", insertions, deletions)
+    } else if insertions > 0 {
+        format!("\x1b[32m+{}\x1b[0m", insertions)
+    } else {
+        format!("\x1b[31m-{}\x1b[0m", deletions)
+    }
 }
 
 /// Determine if a response is essentially empty (whitespace or timing only)
@@ -367,8 +388,8 @@ mod tests {
 
     #[test]
     fn test_format_read_file_summary() {
-        assert_eq!(format_read_file_summary(42, 500), "🔍 42 lines read (500 chars)");
-        assert_eq!(format_read_file_summary(100, 1500), "🔍 100 lines read (1.5k chars)");
+        assert_eq!(format_read_file_summary(42, 500), "42 lines (500 chars)");
+        assert_eq!(format_read_file_summary(100, 1500), "100 lines (1.5k chars)");
     }
 
     #[test]

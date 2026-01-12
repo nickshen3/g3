@@ -418,7 +418,10 @@ async fn execute_player_turn(
         {
             Ok(result) => {
                 output.print("📝 Player implementation completed:");
-                output.print_smart(&result.response);
+                // Only print response if it's not empty (streaming already displayed it)
+                if !result.response.trim().is_empty() {
+                    output.print_smart(&result.response);
+                }
                 return PlayerTurnResult::Success;
             }
             Err(e) => {

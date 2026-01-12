@@ -2142,7 +2142,14 @@ impl<W: UiWriter> Agent<W> {
                                     self.ui_writer.print_tool_arg(key, &value_str);
                                 }
                             }
-                            self.ui_writer.print_tool_output_header();
+
+                            // Check if this is a compact tool (file operations)
+                            let is_compact_tool = matches!(tool_call.tool.as_str(), "read_file" | "write_file" | "str_replace");
+                            
+                            // Only print output header for non-compact tools
+                            if !is_compact_tool {
+                                self.ui_writer.print_tool_output_header();
+                            }
 
                             // Clone working_dir to avoid borrow checker issues
                             let working_dir = self.working_dir.clone();
@@ -2172,7 +2179,7 @@ impl<W: UiWriter> Agent<W> {
                             ));
 
                             // Display tool execution result with proper indentation
-                            {
+                            let compact_summary = {
                                 let output_lines: Vec<&str> = tool_result.lines().collect();
 
                                 // Check if UI wants full output (machine mode) or truncated (human mode)
@@ -2186,14 +2193,26 @@ impl<W: UiWriter> Agent<W> {
                                 let is_todo_tool =
                                     tool_call.tool == "todo_read" || tool_call.tool == "todo_write";
 
-                                // For read_file, show a summary instead of file contents
-                                let is_read_file = tool_call.tool == "read_file";
-
-                                if is_read_file && tool_success {
-                                    let summary = streaming::format_read_file_summary(output_len, tool_result.len());
-                                    self.ui_writer.update_tool_output_line(&summary);
+                                if is_compact_tool && tool_success {
+                                    // Generate appropriate summary based on tool type
+                                    match tool_call.tool.as_str() {
+                                        "read_file" => Some(streaming::format_read_file_summary(output_len, tool_result.len())),
+                                        "write_file" => {
+                                            // Parse the result to get line/char counts
+                                            // Result format: "✅ +N insertions | -M deletions" or similar
+                                            Some(streaming::format_write_file_summary(output_len, tool_result.len()))
+                                        }
+                                        "str_replace" => {
+                                            // Parse insertions/deletions from result
+                                            // Result format: "✅ +N insertions | -M deletions"
+                                            let (ins, del) = parse_diff_stats(&tool_result);
+                                            Some(streaming::format_str_replace_summary(ins, del))
+                                        }
+                                        _ => Some(streaming::format_read_file_summary(output_len, tool_result.len()))
+                                    }
                                 } else if is_todo_tool {
                                     // Skip - todo tools print their own content
+                                    None
                                 } else {
                                     let max_lines_to_show = if wants_full { output_len } else { MAX_LINES };
 
@@ -2208,8 +2227,9 @@ impl<W: UiWriter> Agent<W> {
                                     if !wants_full && output_len > MAX_LINES {
                                         self.ui_writer.print_tool_output_summary(output_len);
                                     }
+                                    None
                                 }
-                            }
+                            };
 
                             // Add the tool call and result to the context window using RAW unfiltered content
                             // This ensures the log file contains the true raw content including JSON tool calls
@@ -2272,10 +2292,22 @@ impl<W: UiWriter> Agent<W> {
 
                             // Closure marker with timing
                             let tokens_delta = self.context_window.used_tokens.saturating_sub(tokens_before);
-                            self.ui_writer
-                                .print_tool_timing(&streaming::format_duration(exec_duration),
+                            
+                            // Use compact format for file operations, normal format for others
+                            if let Some(summary) = compact_summary {
+                                self.ui_writer.print_tool_compact(
+                                    &tool_call.tool,
+                                    &summary,
+                                    &streaming::format_duration(exec_duration),
                                     tokens_delta,
-                                    self.context_window.percentage_used());
+                                    self.context_window.percentage_used(),
+                                );
+                            } else {
+                                self.ui_writer
+                                    .print_tool_timing(&streaming::format_duration(exec_duration),
+                                        tokens_delta,
+                                        self.context_window.percentage_used());
+                            }
                             self.ui_writer.print_agent_prompt();
 
                             // Update the request with the new context for next iteration
@@ -2751,6 +2783,9 @@ impl<W: UiWriter> Agent<W> {
                     full_response
                 };
 
+                // Finish streaming markdown before returning
+                self.ui_writer.finish_streaming_markdown();
+
                 // Dehydrate context - the function extracts the summary from context itself
                 self.dehydrate_context();
 
@@ -2862,6 +2897,25 @@ impl<W: UiWriter> Agent<W> {
 // Re-export utility functions
 pub use utils::apply_unified_diff_to_string;
 use utils::truncate_to_word_boundary;
+
+/// Parse insertions and deletions from a str_replace result.
+/// Result format: "✅ +N insertions | -M deletions"
+fn parse_diff_stats(result: &str) -> (i32, i32) {
+    let mut insertions = 0i32;
+    let mut deletions = 0i32;
+    
+    // Look for "+N insertions" pattern
+    if let Some(pos) = result.find("+") {
+        let after_plus = &result[pos + 1..];
+        insertions = after_plus.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    }
+    // Look for "-M deletions" pattern  
+    if let Some(pos) = result.find("-") {
+        let after_minus = &result[pos + 1..];
+        deletions = after_minus.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    }
+    (insertions, deletions)
+}
 
 // Implement Drop to clean up safaridriver process
 impl<W: UiWriter> Drop for Agent<W> {
