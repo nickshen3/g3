@@ -5,6 +5,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use termimad::MadSkin;
 
 mod git;
 mod session;
@@ -270,7 +271,9 @@ fn cmd_status(session_id: &str) -> Result<()> {
         if let Some(summary) = extract_session_summary(&session) {
             println!();
             println!("Summary:");
-            println!("{}", summary);
+            println!("{}", "─".repeat(60));
+            let skin = MadSkin::default();
+            skin.print_text(&summary);
         }
     }
 
@@ -387,20 +390,22 @@ fn extract_session_summary(session: &Session) -> Option<String> {
 
     // Parse JSON and extract the last assistant message as summary
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let messages = json.get("messages")?.as_array()?;
+    
+    // Try the new format first: context_window.conversation_history
+    // Fall back to old format: messages
+    let messages = json
+        .get("context_window")
+        .and_then(|cw| cw.get("conversation_history"))
+        .and_then(|ch| ch.as_array())
+        .or_else(|| json.get("messages").and_then(|m| m.as_array()))?;
 
     // Find the last assistant message
     for msg in messages.iter().rev() {
         if msg.get("role")?.as_str()? == "assistant" {
             if let Some(content) = msg.get("content") {
                 if let Some(text) = content.as_str() {
-                    // Truncate if too long
-                    let summary = if text.len() > 500 {
-                        format!("{}...", &text[..500])
-                    } else {
-                        text.to_string()
-                    };
-                    return Some(summary);
+                    // Return the full summary text
+                    return Some(text.to_string());
                 }
             }
         }
