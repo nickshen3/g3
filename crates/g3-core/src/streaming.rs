@@ -302,6 +302,23 @@ pub fn format_write_file_summary(line_count: usize, char_count: usize) -> String
     format!("✏️  {} lines ({} chars)", line_count, char_display)
 }
 
+/// Format a write_file result for compact display.
+/// Parses the tool result which is in format: "✅ wrote N lines | M chars"
+/// Returns a compact summary like "✏️  N lines (M chars)"
+pub fn format_write_file_result(tool_result: &str) -> String {
+    // Parse "✅ wrote N lines | M chars" or "✅ wrote N lines | M.Mk chars"
+    if let Some(rest) = tool_result.strip_prefix("✅ wrote ") {
+        // rest is "N lines | M chars" or "N lines | M.Mk chars"
+        if let Some((lines_part, chars_part)) = rest.split_once(" | ") {
+            let lines = lines_part.trim_end_matches(" lines");
+            let chars = chars_part.trim_end_matches(" chars");
+            return format!("✏️  {} lines ({} chars)", lines, chars);
+        }
+    }
+    // Fallback: return the original result if parsing fails
+    tool_result.to_string()
+}
+
 /// Format a str_replace result summary.
 pub fn format_str_replace_summary(insertions: i32, deletions: i32) -> String {
     if insertions > 0 && deletions > 0 {

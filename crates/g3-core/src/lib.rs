@@ -2204,9 +2204,9 @@ impl<W: UiWriter> Agent<W> {
                                     match tool_call.tool.as_str() {
                                         "read_file" => Some(streaming::format_read_file_summary(output_len, tool_result.len())),
                                         "write_file" => {
-                                            // Parse the result to get line/char counts
-                                            // Result format: "✅ +N insertions | -M deletions" or similar
-                                            Some(streaming::format_write_file_summary(output_len, tool_result.len()))
+                                            // The tool result already contains the formatted summary
+                                            // Format: "✅ wrote N lines | M chars"
+                                            Some(streaming::format_write_file_result(&tool_result))
                                         }
                                         "str_replace" => {
                                             // Parse insertions/deletions from result
