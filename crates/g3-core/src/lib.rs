@@ -1452,8 +1452,6 @@ impl<W: UiWriter> Agent<W> {
             return; // Don't modify context if save failed
         }
         
-        println!("💾 Dehydrated {} messages to fragment {}", fragment.message_count, fragment.fragment_id);
-
         // Now replace the context: keep system messages + previous stubs/summaries, add new stub, add new summary
         // Extract messages to keep: system messages + everything up to (but not including) dehydrate_start
         let messages_to_keep: Vec<_> = self.context_window
@@ -1524,7 +1522,7 @@ impl<W: UiWriter> Agent<W> {
         let tools_called = std::mem::take(&mut self.tool_calls_this_turn);
         
         debug!("Auto-memory: Sending reminder to LLM ({} tools called this turn: {:?})", tools_called.len(), tools_called);
-        self.ui_writer.print_context_status("\n*memory checkpoint:* ");
+        self.ui_writer.print_context_status("\nMemory checkpoint: ");
         
         let reminder = "SYSTEM REMINDER: You used tools during this turn. If you discovered any key code locations, patterns, or entry points that aren't already in Project Memory, please call the `remember` tool now to save them. If you didn't discover anything new worth remembering, you can skip this. Respond briefly after deciding.";
 

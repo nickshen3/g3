@@ -275,20 +275,3 @@ fn test_quiet_option_accepted() {
         "--quiet option should be recognized"
     );
 }
-
-// =============================================================================
-// Test: Machine mode option is accepted
-// =============================================================================
-
-#[test]
-fn test_machine_option_accepted() {
-    let output = Command::new(get_g3_binary())
-        .args(["--machine", "--help"])
-        .output()
-        .expect("Failed to execute g3 with machine option");
-
-    assert!(
-        output.status.success(),
-        "--machine option should be recognized"
-    );
-}

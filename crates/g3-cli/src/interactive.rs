@@ -10,10 +10,9 @@ use tracing::{debug, error};
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
-use crate::machine_ui_writer::MachineUiWriter;
 use crate::project_files::extract_readme_heading;
 use crate::simple_output::SimpleOutput;
-use crate::task_execution::{execute_task_with_retry, OutputMode};
+use crate::task_execution::execute_task_with_retry;
 use crate::utils::display_context_progress;
 
 /// Run interactive mode with console output.
@@ -206,7 +205,7 @@ pub async fn run_interactive<W: UiWriter>(
                         &input,
                         show_prompt,
                         show_code,
-                        OutputMode::Console(&output),
+                        &output,
                     )
                     .await;
 
@@ -242,7 +241,7 @@ pub async fn run_interactive<W: UiWriter>(
                         &input,
                         show_prompt,
                         show_code,
-                        OutputMode::Console(&output),
+                        &output,
                     )
                     .await;
 
@@ -284,95 +283,6 @@ pub async fn run_interactive<W: UiWriter>(
     agent.save_session_continuation(None);
 
     output.print("👋 Goodbye!");
-    Ok(())
-}
-
-/// Run interactive mode with machine-friendly output.
-pub async fn run_interactive_machine(
-    mut agent: Agent<MachineUiWriter>,
-    show_prompt: bool,
-    show_code: bool,
-) -> Result<()> {
-    println!("INTERACTIVE_MODE_STARTED");
-
-    // Display provider and model information
-    match agent.get_provider_info() {
-        Ok((provider, model)) => {
-            println!("PROVIDER: {}", provider);
-            println!("MODEL: {}", model);
-        }
-        Err(e) => {
-            println!("ERROR: Failed to get provider info: {}", e);
-        }
-    }
-
-    // Initialize rustyline editor with history
-    let mut rl = DefaultEditor::new()?;
-
-    // Try to load history from a file in the user's home directory
-    let history_file = dirs::home_dir().map(|mut path| {
-        path.push(".g3_history");
-        path
-    });
-
-    if let Some(ref history_path) = history_file {
-        let _ = rl.load_history(history_path);
-    }
-
-    loop {
-        let readline = rl.readline("");
-        match readline {
-            Ok(line) => {
-                let input = line.trim().to_string();
-
-                if input.is_empty() {
-                    continue;
-                }
-
-                if input == "exit" || input == "quit" {
-                    break;
-                }
-
-                // Add to history
-                rl.add_history_entry(&input)?;
-
-                // Check for control commands
-                if input.starts_with('/') {
-                    if handle_machine_command(&input, &mut agent).await? {
-                        continue;
-                    }
-                }
-
-                // Execute task
-                println!("TASK_START");
-                execute_task_with_retry(&mut agent, &input, show_prompt, show_code, OutputMode::Machine)
-                    .await;
-
-                // Send auto-memory reminder if enabled and tools were called
-                if let Err(e) = agent.send_auto_memory_reminder().await {
-                    debug!("Auto-memory reminder failed: {}", e);
-                }
-
-                println!("TASK_END");
-            }
-            Err(ReadlineError::Interrupted) => continue,
-            Err(ReadlineError::Eof) => break,
-            Err(err) => {
-                println!("ERROR: {:?}", err);
-                break;
-            }
-        }
-    }
-
-    // Save history before exiting
-    if let Some(ref history_path) = history_file {
-        let _ = rl.save_history(history_path);
-    }
-
-    // Save session continuation for resume capability
-    agent.save_session_continuation(None);
-
-    println!("INTERACTIVE_MODE_ENDED");
     Ok(())
 }
 
@@ -644,207 +554,6 @@ async fn handle_command<W: UiWriter>(
                 "❌ Unknown command: {}. Type /help for available commands.",
                 input
             ));
-            Ok(true)
-        }
-    }
-}
-
-/// Handle a control command in machine mode. Returns true if the command was handled.
-async fn handle_machine_command(
-    input: &str,
-    agent: &mut Agent<MachineUiWriter>,
-) -> Result<bool> {
-    match input {
-        "/compact" => {
-            println!("COMMAND: compact");
-            match agent.force_compact().await {
-                Ok(true) => println!("RESULT: Compaction completed"),
-                Ok(false) => println!("RESULT: Compaction failed"),
-                Err(e) => println!("ERROR: {}", e),
-            }
-            Ok(true)
-        }
-        "/thinnify" => {
-            println!("COMMAND: thinnify");
-            let summary = agent.force_thin();
-            println!("{}", summary);
-            Ok(true)
-        }
-        "/skinnify" => {
-            println!("COMMAND: skinnify");
-            let summary = agent.force_thin_all();
-            println!("{}", summary);
-            Ok(true)
-        }
-        "/fragments" => {
-            println!("COMMAND: fragments");
-            if let Some(session_id) = agent.get_session_id() {
-                match g3_core::acd::list_fragments(session_id) {
-                    Ok(fragments) => {
-                        println!("FRAGMENT_COUNT: {}", fragments.len());
-                        for fragment in &fragments {
-                            println!("FRAGMENT_ID: {}", fragment.fragment_id);
-                            println!("FRAGMENT_MESSAGES: {}", fragment.message_count);
-                            println!("FRAGMENT_TOKENS: {}", fragment.estimated_tokens);
-                        }
-                    }
-                    Err(e) => {
-                        println!("ERROR: {}", e);
-                    }
-                }
-            } else {
-                println!("ERROR: No active session");
-            }
-            Ok(true)
-        }
-        cmd if cmd.starts_with("/rehydrate") => {
-            println!("COMMAND: rehydrate");
-            let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
-            if parts.len() < 2 || parts[1].trim().is_empty() {
-                println!("ERROR: Usage: /rehydrate <fragment_id>");
-            } else {
-                let fragment_id = parts[1].trim();
-                println!("FRAGMENT_ID: {}", fragment_id);
-                println!("RESULT: Use the rehydrate tool to restore fragment content");
-            }
-            Ok(true)
-        }
-        "/dump" => {
-            println!("COMMAND: dump");
-            let dump_dir = std::path::Path::new("tmp");
-            if !dump_dir.exists() {
-                if let Err(e) = std::fs::create_dir_all(dump_dir) {
-                    println!("ERROR: Failed to create tmp directory: {}", e);
-                    return Ok(true);
-                }
-            }
-
-            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-            let dump_path = dump_dir.join(format!("context_dump_{}.txt", timestamp));
-
-            let context = agent.get_context_window();
-            let mut dump_content = String::new();
-            dump_content.push_str("# Context Window Dump\n");
-            dump_content.push_str(&format!("# Timestamp: {}\n", chrono::Utc::now()));
-            dump_content.push_str(&format!(
-                "# Messages: {}\n",
-                context.conversation_history.len()
-            ));
-            dump_content.push_str(&format!(
-                "# Used tokens: {} / {} ({:.1}%)\n\n",
-                context.used_tokens,
-                context.total_tokens,
-                context.percentage_used()
-            ));
-
-            for (i, msg) in context.conversation_history.iter().enumerate() {
-                dump_content.push_str(&format!(
-                    "=== Message {} ===\nRole: {:?}\nKind: {:?}\nContent ({} chars):\n{}\n\n",
-                    i,
-                    msg.role,
-                    msg.kind,
-                    msg.content.len(),
-                    msg.content
-                ));
-            }
-
-            match std::fs::write(&dump_path, &dump_content) {
-                Ok(_) => println!("RESULT: Context dumped to {}", dump_path.display()),
-                Err(e) => println!("ERROR: Failed to write dump: {}", e),
-            }
-            Ok(true)
-        }
-        "/clear" => {
-            println!("COMMAND: clear");
-            agent.clear_session();
-            println!("RESULT: Session cleared");
-            Ok(true)
-        }
-        "/readme" => {
-            println!("COMMAND: readme");
-            match agent.reload_readme() {
-                Ok(true) => println!("RESULT: README content reloaded successfully"),
-                Ok(false) => println!("RESULT: No README was loaded at startup, cannot reload"),
-                Err(e) => println!("ERROR: {}", e),
-            }
-            Ok(true)
-        }
-        "/stats" => {
-            println!("COMMAND: stats");
-            let stats = agent.get_stats();
-            // Emit stats as structured data (name: value pairs)
-            println!("{}", stats);
-            Ok(true)
-        }
-        "/help" => {
-            println!("COMMAND: help");
-            println!("AVAILABLE_COMMANDS: /compact /thinnify /skinnify /clear /dump /fragments /rehydrate /resume /readme /stats /help");
-            Ok(true)
-        }
-        "/resume" => {
-            println!("COMMAND: resume");
-            match g3_core::list_sessions_for_directory() {
-                Ok(sessions) => {
-                    if sessions.is_empty() {
-                        println!("RESULT: No sessions found");
-                        return Ok(true);
-                    }
-
-                    println!("SESSIONS_START");
-                    for (i, session) in sessions.iter().enumerate() {
-                        let time_str = g3_core::format_session_time(&session.created_at);
-                        let has_todos = if session.has_incomplete_todos() {
-                            "true"
-                        } else {
-                            "false"
-                        };
-                        println!(
-                            "SESSION: {} | {} | {} | {:.0}% | {}",
-                            i + 1,
-                            session.session_id,
-                            time_str,
-                            session.context_percentage,
-                            has_todos
-                        );
-                    }
-                    println!("SESSIONS_END");
-                    println!("HINT: Use /resume <number> to switch to a session");
-                }
-                Err(e) => println!("ERROR: {}", e),
-            }
-            Ok(true)
-        }
-        _ => {
-            // Check for /resume <number> pattern
-            if input.starts_with("/resume ") {
-                let num_str = input.strip_prefix("/resume ").unwrap().trim();
-                if let Ok(num) = num_str.parse::<usize>() {
-                    println!("COMMAND: resume {}", num);
-                    match g3_core::list_sessions_for_directory() {
-                        Ok(sessions) => {
-                            if num >= 1 && num <= sessions.len() {
-                                let selected = &sessions[num - 1];
-                                match agent.switch_to_session(selected) {
-                                    Ok(true) => println!(
-                                        "RESULT: Full context restored from session {}",
-                                        selected.session_id
-                                    ),
-                                    Ok(false) => println!(
-                                        "RESULT: Session {} restored from summary",
-                                        selected.session_id
-                                    ),
-                                    Err(e) => println!("ERROR: {}", e),
-                                }
-                            } else {
-                                println!("ERROR: Invalid session number");
-                            }
-                        }
-                        Err(e) => println!("ERROR: {}", e),
-                    }
-                    return Ok(true);
-                }
-            }
-            println!("ERROR: Unknown command: {}", input);
             Ok(true)
         }
     }

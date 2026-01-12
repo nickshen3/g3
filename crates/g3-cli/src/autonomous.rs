@@ -11,7 +11,6 @@ use g3_core::project::Project;
 use g3_core::{Agent, DiscoveryOptions};
 
 use crate::coach_feedback;
-use crate::machine_ui_writer::MachineUiWriter;
 use crate::metrics::{format_elapsed_time, generate_turn_histogram, TurnMetrics};
 use crate::simple_output::SimpleOutput;
 use crate::ui_writer_impl::ConsoleUiWriter;
@@ -262,60 +261,6 @@ pub async fn run_autonomous(
     agent.save_session_continuation(None);
 
     Ok(agent)
-}
-
-/// Run autonomous mode with machine-friendly output.
-pub async fn run_autonomous_machine(
-    mut agent: Agent<MachineUiWriter>,
-    project: Project,
-    show_prompt: bool,
-    show_code: bool,
-    max_turns: usize,
-    _quiet: bool,
-    _codebase_fast_start: Option<PathBuf>,
-) -> Result<()> {
-    println!("AUTONOMOUS_MODE_STARTED");
-    println!("WORKSPACE: {}", project.workspace().display());
-    println!("MAX_TURNS: {}", max_turns);
-
-    // Check if requirements exist
-    if !project.has_requirements() {
-        println!("ERROR: requirements.md not found in workspace directory");
-        return Ok(());
-    }
-
-    // Read requirements
-    let requirements = match project.read_requirements()? {
-        Some(content) => content,
-        None => {
-            println!("ERROR: Could not read requirements");
-            return Ok(());
-        }
-    };
-
-    println!("REQUIREMENTS_LOADED");
-
-    // For now, just execute a simple autonomous loop
-    // This is a simplified version - full implementation would need coach-player loop
-    let task = format!(
-        "You are G3 in implementation mode. Read and implement the following requirements:\n\n{}\n\nImplement this step by step, creating all necessary files and code.",
-        requirements
-    );
-
-    println!("TASK_START");
-    let result = agent
-        .execute_task_with_timing(&task, None, false, show_prompt, show_code, true, None)
-        .await?;
-    println!("AGENT_RESPONSE:");
-    println!("{}", result.response);
-    println!("END_AGENT_RESPONSE");
-    println!("TASK_END");
-
-    // Save session continuation for resume capability
-    agent.save_session_continuation(Some(result.response.clone()));
-
-    println!("AUTONOMOUS_MODE_ENDED");
-    Ok(())
 }
 
 // --- Helper types and functions ---

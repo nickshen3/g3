@@ -1,30 +1,18 @@
 /// Simple output helper for printing messages
 #[derive(Clone)]
-pub struct SimpleOutput {
-    machine_mode: bool,
-}
+pub struct SimpleOutput;
 
 impl SimpleOutput {
     pub fn new() -> Self {
-        SimpleOutput {
-            machine_mode: false,
-        }
-    }
-
-    pub fn new_with_mode(machine_mode: bool) -> Self {
-        SimpleOutput { machine_mode }
+        SimpleOutput
     }
 
     pub fn print(&self, message: &str) {
-        if !self.machine_mode {
-            println!("{}", message);
-        }
+        println!("{}", message);
     }
 
     pub fn print_smart(&self, message: &str) {
-        if !self.machine_mode {
-            println!("{}", message);
-        }
+        println!("{}", message);
     }
 }
 

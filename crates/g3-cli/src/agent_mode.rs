@@ -209,9 +209,6 @@ pub async fn run_agent_mode(
     // This prompts the LLM to save discoveries to project memory after each turn
     agent.set_auto_memory(true);
 
-    // Enable ACD in agent mode for longer sessions
-    agent.set_acd_enabled(true);
-
     // If resuming a session, restore context and TODO
     let initial_task = if let Some(ref incomplete_session) = resuming_session {
         // Restore the session context

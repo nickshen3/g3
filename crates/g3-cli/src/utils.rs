@@ -67,7 +67,7 @@ pub fn display_context_progress<W: UiWriter>(agent: &Agent<W>, _output: &SimpleO
 
 /// Set up the workspace directory for autonomous mode.
 /// Uses G3_WORKSPACE environment variable or defaults to ~/tmp/workspace.
-pub fn setup_workspace_directory(machine_mode: bool) -> Result<PathBuf> {
+pub fn setup_workspace_directory() -> Result<PathBuf> {
     let workspace_dir = if let Ok(env_workspace) = std::env::var("G3_WORKSPACE") {
         PathBuf::from(env_workspace)
     } else {
@@ -80,7 +80,7 @@ pub fn setup_workspace_directory(machine_mode: bool) -> Result<PathBuf> {
     // Create the directory if it doesn't exist
     if !workspace_dir.exists() {
         std::fs::create_dir_all(&workspace_dir)?;
-        let output = SimpleOutput::new_with_mode(machine_mode);
+        let output = SimpleOutput::new();
         output.print(&format!(
             "📁 Created workspace directory: {}",
             workspace_dir.display()

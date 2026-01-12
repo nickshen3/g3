@@ -55,10 +55,6 @@ pub struct Cli {
     #[arg(long)]
     pub chat: bool,
 
-    /// Enable machine-friendly output mode with JSON markers and stats
-    #[arg(long)]
-    pub machine: bool,
-
     /// Override the configured provider (anthropic, databricks, embedded, openai)
     #[arg(long, value_name = "PROVIDER")]
     pub provider: Option<String>,

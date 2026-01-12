@@ -11,7 +11,6 @@ mod autonomous;
 mod cli_args;
 mod coach_feedback;
 mod interactive;
-mod machine_ui_writer;
 mod simple_output;
 mod task_execution;
 mod ui_writer_impl;
@@ -30,9 +29,8 @@ use clap::Parser;
 
 use accumulative::run_accumulative_mode;
 use agent_mode::run_agent_mode;
-use autonomous::{run_autonomous, run_autonomous_machine};
-use interactive::{run_interactive, run_interactive_machine};
-use machine_ui_writer::MachineUiWriter;
+use autonomous::run_autonomous;
+use interactive::run_interactive;
 use project_files::{read_agents_config, read_project_memory, read_project_readme};
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
@@ -110,12 +108,7 @@ pub async fn run() -> Result<()> {
     // Combine AGENTS.md, README, and memory content
     let combined_content = combine_project_content(agents_content, readme_content, memory_content);
 
-    // Execute based on mode
-    if cli.machine {
-        run_machine_mode(cli, config, project, combined_content).await
-    } else {
-        run_console_mode(cli, config, project, combined_content, workspace_dir).await
-    }
+    run_console_mode(cli, config, project, combined_content, workspace_dir).await
 }
 
 // --- Helper functions ---
@@ -123,10 +116,7 @@ pub async fn run() -> Result<()> {
 fn initialize_logging(cli: &Cli) {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-    let filter = if cli.machine {
-        // In machine mode, suppress ALL logs
-        EnvFilter::from_default_env().add_directive("off".parse().unwrap())
-    } else if cli.verbose {
+    let filter = if cli.verbose {
         EnvFilter::from_default_env()
             .add_directive(format!("{}=debug", env!("CARGO_PKG_NAME")).parse().unwrap())
             .add_directive("g3_core=debug".parse().unwrap())
@@ -154,7 +144,7 @@ fn determine_workspace_dir(cli: &Cli) -> Result<PathBuf> {
     if let Some(ws) = &cli.workspace {
         Ok(ws.clone())
     } else if cli.autonomous {
-        setup_workspace_directory(cli.machine)
+        setup_workspace_directory()
     } else {
         Ok(std::env::current_dir()?)
     }
@@ -240,69 +230,6 @@ fn combine_project_content(
         None
     } else {
         Some(parts.join("\n\n"))
-    }
-}
-
-async fn run_machine_mode(
-    cli: Cli,
-    config: Config,
-    project: Project,
-    combined_content: Option<String>,
-) -> Result<()> {
-    let ui_writer = MachineUiWriter::new();
-
-    let mut agent = if cli.autonomous {
-        Agent::new_autonomous_with_readme_and_quiet(
-            config.clone(),
-            ui_writer,
-            combined_content.clone(),
-            cli.quiet,
-        )
-        .await?
-    } else {
-        Agent::new_with_readme_and_quiet(
-            config.clone(),
-            ui_writer,
-            combined_content.clone(),
-            cli.quiet,
-        )
-        .await?
-    };
-
-    if cli.auto_memory {
-        agent.set_auto_memory(true);
-    }
-    if cli.acd {
-        agent.set_acd_enabled(true);
-    }
-
-    if cli.autonomous {
-        run_autonomous_machine(
-            agent,
-            project,
-            cli.show_prompt,
-            cli.show_code,
-            cli.max_turns,
-            cli.quiet,
-            cli.codebase_fast_start.clone(),
-        )
-        .await
-    } else if let Some(task) = cli.task {
-        // Single-shot mode
-        let result = agent
-            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
-            .await?;
-        println!("AGENT_RESPONSE:");
-        println!("{}", result.response);
-        println!("END_AGENT_RESPONSE");
-
-        if let Err(e) = agent.send_auto_memory_reminder().await {
-            debug!("Auto-memory reminder failed: {}", e);
-        }
-        agent.save_session_continuation(Some(result.response.clone()));
-        Ok(())
-    } else {
-        run_interactive_machine(agent, cli.show_prompt, cli.show_code).await
     }
 }
 
