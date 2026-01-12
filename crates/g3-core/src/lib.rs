@@ -360,6 +360,21 @@ impl<W: UiWriter> Agent<W> {
             .count()
     }
 
+    /// Get the cache control config for the current provider (if Anthropic with cache enabled).
+    fn get_provider_cache_control(&self) -> Option<CacheControl> {
+        let provider = self.providers.get(None).ok()?;
+        let provider_name = provider.name();
+        let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
+        
+        match provider_type {
+            "anthropic" => self.config.providers.anthropic
+                .get(config_name)
+                .and_then(|c| c.cache_config.as_ref())
+                .and_then(|config| Self::parse_cache_control(config)),
+            _ => None,
+        }
+    }
+
     /// Resolve the max_tokens to use for a given provider, applying fallbacks.
     fn resolve_max_tokens(&self, provider_name: &str) -> u32 {
         provider_config::resolve_max_tokens(&self.config, provider_name)
@@ -699,30 +714,19 @@ impl<W: UiWriter> Agent<W> {
 
         // Add user message to context window
         let mut user_message = {
-            // Check if we should use cache control (every 10 tool calls)
-            // But only if we haven't already added 4 cache_control annotations
             let provider = self.providers.get(None)?;
-            let provider_name = provider.name();
-            let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
-            if let Some(cache_config) = match provider_type {
-                "anthropic" => {
-                    self.config
-                        .providers
-                        .anthropic
-                        .get(config_name)
-                        .and_then(|c| c.cache_config.as_ref())
-                        .and_then(|config| Self::parse_cache_control(config))
-                }
-                _ => None,
-            } {
+            let content = format!("Task: {}", description);
+            
+            // Apply cache control if provider supports it
+            if let Some(cache_config) = self.get_provider_cache_control() {
                 Message::with_cache_control_validated(
                     MessageRole::User,
-                    format!("Task: {}", description),
+                    content,
                     cache_config,
                     provider,
                 )
             } else {
-                Message::new(MessageRole::User, format!("Task: {}", description))
+                Message::new(MessageRole::User, content)
             }
         };
         
@@ -2142,26 +2146,11 @@ impl<W: UiWriter> Agent<W> {
                             self.ui_writer.print_tool_header(&tool_call.tool, Some(&tool_call.args));
                             if let Some(args_obj) = tool_call.args.as_object() {
                                 for (key, value) in args_obj {
-                                    let value_str = match value {
-                                        serde_json::Value::String(s) => {
-                                            if tool_call.tool == "shell" && key == "command" {
-                                                if let Some(first_line) = s.lines().next() {
-                                                    if s.lines().count() > 1 {
-                                                        format!("{}...", first_line)
-                                                    } else {
-                                                        first_line.to_string()
-                                                    }
-                                                } else {
-                                                    s.clone()
-                                                }
-                                            } else if s.chars().count() > 100 {
-                                                streaming::truncate_for_display(s, 100)
-                                            } else {
-                                                s.clone()
-                                            }
-                                        }
-                                        _ => value.to_string(),
-                                    };
+                                    let value_str = streaming::format_tool_arg_value(
+                                        &tool_call.tool,
+                                        key,
+                                        value,
+                                    );
                                     self.ui_writer.print_tool_arg(key, &value_str);
                                 }
                             }
@@ -2213,14 +2202,7 @@ impl<W: UiWriter> Agent<W> {
                                 let is_read_file = tool_call.tool == "read_file";
 
                                 if is_read_file && tool_success {
-                                    // Calculate summary: lines and chars
-                                    let char_count = tool_result.len();
-                                    let char_display = if char_count >= 1000 {
-                                        format!("{:.1}k", char_count as f64 / 1000.0)
-                                    } else {
-                                        format!("{}", char_count)
-                                    };
-                                    let summary = format!("✅ read {} lines | {} chars", output_len, char_display);
+                                    let summary = streaming::format_read_file_summary(output_len, tool_result.len());
                                     self.ui_writer.update_tool_output_line(&summary);
                                 } else if is_todo_tool {
                                     // Skip - todo tools print their own content
@@ -2264,43 +2246,27 @@ impl<W: UiWriter> Agent<W> {
                                 )
                             };
                             let mut result_message = {
-                                // Check if we should use cache control (every 10 tool calls)
-                                // But only if we haven't already added 4 cache_control annotations
-                                if self.tool_call_count > 0
+                                let content = format!("Tool result: {}", tool_result);
+                                
+                                // Apply cache control every 10 tool calls (max 4 annotations)
+                                let should_cache = self.tool_call_count > 0
                                     && self.tool_call_count % 10 == 0
-                                    && self.count_cache_controls_in_history() < 4
-                                {
+                                    && self.count_cache_controls_in_history() < 4;
+                                
+                                if should_cache {
                                     let provider = self.providers.get(None)?;
-                                    let provider_name = provider.name();
-                                    let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
-                                    if let Some(cache_config) = match provider_type {
-                                        "anthropic" => {
-                                            self.config
-                                                .providers
-                                                .anthropic
-                                                .get(config_name)
-                                                .and_then(|c| c.cache_config.as_ref())
-                                                .and_then(|config| Self::parse_cache_control(config))
-                                        }
-                                        _ => None,
-                                    } {
+                                    if let Some(cache_config) = self.get_provider_cache_control() {
                                         Message::with_cache_control_validated(
                                             MessageRole::User,
-                                            format!("Tool result: {}", tool_result),
+                                            content,
                                             cache_config,
                                             provider,
                                         )
                                     } else {
-                                        Message::new(
-                                            MessageRole::User,
-                                            format!("Tool result: {}", tool_result),
-                                        )
+                                        Message::new(MessageRole::User, content)
                                     }
                                 } else {
-                                    Message::new(
-                                        MessageRole::User,
-                                        format!("Tool result: {}", tool_result),
-                                    )
+                                    Message::new(MessageRole::User, content)
                                 }
                             };
 

@@ -248,6 +248,50 @@ pub fn are_tool_calls_duplicate(tc1: &ToolCall, tc2: &ToolCall) -> bool {
     tc1.tool == tc2.tool && tc1.args == tc2.args
 }
 
+/// Format a tool argument value for display (truncated for readability).
+/// Special handling for shell commands (show first line only if multiline).
+pub fn format_tool_arg_value(tool_name: &str, key: &str, value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => {
+            if tool_name == "shell" && key == "command" {
+                // For shell commands, show first line only if multiline
+                match s.lines().next() {
+                    Some(first_line) if s.lines().count() > 1 => format!("{}...", first_line),
+                    Some(first_line) => first_line.to_string(),
+                    None => s.clone(),
+                }
+            } else if s.chars().count() > 100 {
+                truncate_for_display(s, 100)
+            } else {
+                s.clone()
+            }
+        }
+        _ => value.to_string(),
+    }
+}
+
+/// Format tool output lines for display, respecting machine vs human mode.
+pub fn format_tool_output_summary(output: &str, max_lines: usize, max_width: usize, wants_full: bool) -> Vec<String> {
+    let lines: Vec<&str> = output.lines().collect();
+    let limit = if wants_full { lines.len() } else { max_lines };
+    
+    lines
+        .iter()
+        .take(limit)
+        .map(|line| truncate_line(line, max_width, !wants_full))
+        .collect()
+}
+
+/// Format a read_file result summary (e.g., "✅ read 42 lines | 1.2k chars").
+pub fn format_read_file_summary(line_count: usize, char_count: usize) -> String {
+    let char_display = if char_count >= 1000 {
+        format!("{:.1}k", char_count as f64 / 1000.0)
+    } else {
+        format!("{}", char_count)
+    };
+    format!("🔍 {} lines read ({} chars)", line_count, char_display)
+}
+
 /// Determine if a response is essentially empty (whitespace or timing only)
 pub fn is_empty_response(response: &str) -> bool {
     response.trim().is_empty()
@@ -301,5 +345,37 @@ mod tests {
         assert!(is_connection_error("unexpected EOF during read"));
         assert!(is_connection_error("connection reset"));
         assert!(!is_connection_error("invalid JSON"));
+    }
+
+    #[test]
+    fn test_format_tool_arg_value_shell_command() {
+        let val = serde_json::json!("echo hello\necho world");
+        assert_eq!(format_tool_arg_value("shell", "command", &val), "echo hello...");
+        
+        let single_line = serde_json::json!("ls -la");
+        assert_eq!(format_tool_arg_value("shell", "command", &single_line), "ls -la");
+    }
+
+    #[test]
+    fn test_format_tool_arg_value_truncation() {
+        let long_str = "a".repeat(150);
+        let val = serde_json::json!(long_str);
+        let result = format_tool_arg_value("read_file", "path", &val);
+        assert!(result.len() < 110); // 100 chars + "..."
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_format_read_file_summary() {
+        assert_eq!(format_read_file_summary(42, 500), "🔍 42 lines read (500 chars)");
+        assert_eq!(format_read_file_summary(100, 1500), "🔍 100 lines read (1.5k chars)");
+    }
+
+    #[test]
+    fn test_format_tool_output_summary() {
+        let output = "line1\nline2\nline3\nline4\nline5\nline6";
+        let lines = format_tool_output_summary(output, 3, 80, false);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "line1");
     }
 }
