@@ -64,10 +64,10 @@ pub fn read_project_readme(workspace_dir: &Path) -> Option<String> {
     None
 }
 
-/// Read project memory from .g3/memory.md in the workspace directory.
+/// Read project memory from analysis/memory.md in the workspace directory.
 /// Returns formatted content with emoji prefix and size info, or None if not found.
 pub fn read_project_memory(workspace_dir: &Path) -> Option<String> {
-    let memory_path = workspace_dir.join(".g3").join("memory.md");
+    let memory_path = workspace_dir.join("analysis").join("memory.md");
 
     if !memory_path.exists() {
         return None;

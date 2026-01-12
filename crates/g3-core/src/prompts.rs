@@ -99,7 +99,7 @@ Do not explain what you're going to do - just do it by calling the tools.
 
 # Project Memory
 
-Project memory is automatically loaded at startup alongside README.md and AGENTS.md. It contains an index of features -> code locations, patterns, and entry points. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file .g3/memory.md`.
+Project memory is automatically loaded at startup alongside README.md and AGENTS.md. It contains an index of features -> code locations, patterns, and entry points. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file analysis/memory.md`.
 
 **IMPORTANT**: After completing a task where you discovered code locations, you **MUST** call the `remember` tool to save them..
 
@@ -321,7 +321,7 @@ If you can complete it with 1-2 tool calls, skip TODO.
 
 # Project Memory
 
-Project memory (if available) is automatically loaded at startup. It contains feature locations and patterns discovered in previous sessions. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file .g3/memory.md`.
+Project memory (if available) is automatically loaded at startup. It contains feature locations and patterns discovered in previous sessions. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file analysis/memory.md`.
 
 **ALWAYS** call `remember` at the END of your turn when you discovered:
 - A feature's location (file + char range + function/struct names)

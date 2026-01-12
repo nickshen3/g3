@@ -14,12 +14,12 @@ use crate::ToolCall;
 use super::executor::ToolContext;
 
 /// Get the path to the memory file.
-/// Memory is stored at `.g3/memory.md` in the working directory.
+/// Memory is stored at `analysis/memory.md` in the working directory (version controlled).
 fn get_memory_path(working_dir: Option<&str>) -> PathBuf {
     let base = working_dir
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    base.join(".g3").join("memory.md")
+    base.join("analysis").join("memory.md")
 }
 
 /// Format the file size in a human-readable way.
@@ -45,7 +45,7 @@ pub async fn execute_remember<W: UiWriter>(
 
     let memory_path = get_memory_path(ctx.working_dir);
 
-    // Ensure .g3 directory exists
+    // Ensure analysis directory exists
     if let Some(parent) = memory_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
