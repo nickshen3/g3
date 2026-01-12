@@ -2194,7 +2194,12 @@ impl<W: UiWriter> Agent<W> {
                                 let is_todo_tool =
                                     tool_call.tool == "todo_read" || tool_call.tool == "todo_write";
 
-                                if is_compact_tool && tool_success {
+                                if is_compact_tool {
+                                    // For failed compact tools, show truncated error message
+                                    if !tool_success {
+                                        let error_msg = streaming::truncate_for_display(&tool_result, 60);
+                                        Some(error_msg)
+                                    } else {
                                     // Generate appropriate summary based on tool type
                                     match tool_call.tool.as_str() {
                                         "read_file" => Some(streaming::format_read_file_summary(output_len, tool_result.len())),
@@ -2226,6 +2231,7 @@ impl<W: UiWriter> Agent<W> {
                                             Some(streaming::format_rehydrate_summary(&tool_result))
                                         }
                                         _ => Some(format!("✅ completed"))
+                                    }
                                     }
                                 } else if is_todo_tool {
                                     // Skip - todo tools print their own content
