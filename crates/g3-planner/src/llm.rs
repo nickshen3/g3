@@ -324,15 +324,13 @@ pub async fn call_refinement_llm_with_tools(
     let ui_writer = PlannerUiWriter::new();
     
     // CRITICAL FIX: Use the actual workspace directory, NOT codepath!
-    // The workspace is where logs should be written (e.g., /tmp/g3_test_workspace)
+    // The workspace is where session data should be written (e.g., /tmp/g3_test_workspace)
     // The codepath is where the source code lives (e.g., ~/RustroverProjects/g3)
-    // Previous bug: was using codepath as workspace, causing logs to go to wrong location
     let workspace_path = std::path::PathBuf::from(workspace);
     let project = Project::new(workspace_path.clone());
     project.ensure_workspace_exists()?;
     project.enter_workspace()?;
-    
-    project.ensure_logs_dir()?;
+
     // Create agent - not autonomous mode, just regular agent with tools
     let mut agent = Agent::new_with_readme_and_quiet(
         planner_config,

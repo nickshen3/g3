@@ -1,8 +1,8 @@
 //! Path utilities for G3 session and workspace management.
 //!
 //! This module centralizes all path-related logic for:
-//! - TODO file location
-//! - Logs directory
+//! - TODO file location  
+//! - Error logs directory
 //! - Session directories and files
 //! - Thinned content storage
 
@@ -33,22 +33,29 @@ pub fn get_session_todo_path(session_id: &str) -> PathBuf {
     get_session_logs_dir(session_id).join("todo.g3.md")
 }
 
-/// Get the path to the logs directory.
+/// Get the path to the errors directory.
 ///
-/// Checks for G3_WORKSPACE_PATH environment variable first (used by planning mode),
-/// then falls back to "logs" in the current directory.
-pub fn get_logs_dir() -> PathBuf {
-    if let Ok(workspace_path) = std::env::var(G3_WORKSPACE_PATH_ENV) {
-        PathBuf::from(workspace_path).join("logs")
-    } else {
-        std::env::current_dir().unwrap_or_default().join("logs")
-    }
+/// Returns `.g3/errors/` in the workspace or current directory.
+pub fn get_errors_dir() -> PathBuf {
+    get_g3_dir().join("errors")
 }
 
-/// Public accessor for the logs directory path (for use by submodules).
-/// Alias for `get_logs_dir()` for backward compatibility.
-pub fn logs_dir() -> PathBuf {
-    get_logs_dir()
+/// Get the path to the background processes directory.
+///
+/// Returns `.g3/background_processes/` in the workspace or current directory.
+pub fn get_background_processes_dir() -> PathBuf {
+    get_g3_dir().join("background_processes")
+}
+
+/// Get the path to the discovery logs directory (for planner mode).
+///
+/// Returns `.g3/discovery/` in the workspace or current directory.
+pub fn get_discovery_dir() -> PathBuf {
+    if let Ok(workspace_path) = std::env::var(G3_WORKSPACE_PATH_ENV) {
+        PathBuf::from(workspace_path).join(".g3").join("discovery")
+    } else {
+        get_g3_dir().join("discovery")
+    }
 }
 
 /// Get the base .g3 directory path.

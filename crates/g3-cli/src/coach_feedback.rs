@@ -54,12 +54,7 @@ pub fn extract_from_logs(
 
 /// Resolve the log file path, trying new path first then falling back to old.
 fn resolve_log_path(session_id: &str) -> std::path::PathBuf {
-    let new_path = g3_core::get_session_file(session_id);
-    if new_path.exists() {
-        new_path
-    } else {
-        Path::new("logs").join(format!("g3_session_{}.json", session_id))
-    }
+    g3_core::get_session_file(session_id)
 }
 
 /// Extract feedback from a session log file.

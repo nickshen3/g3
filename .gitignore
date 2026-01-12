@@ -23,8 +23,7 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Session logs directory
-logs/
+# G3 session data directory
 .g3/
 
 # g3 artifacts

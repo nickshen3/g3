@@ -60,7 +60,7 @@ G3 includes robust error handling with automatic retry logic:
 - **Recoverable Error Detection**: Automatically identifies recoverable errors (rate limits, network issues, server errors, timeouts)
 - **Exponential Backoff with Jitter**: Implements intelligent retry delays to avoid overwhelming services
 - **Detailed Error Logging**: Captures comprehensive error context including stack traces, request/response data, and session information
-- **Error Persistence**: Saves detailed error logs to `logs/errors/` for post-mortem analysis
+- **Error Persistence**: Saves detailed error logs to `.g3/errors/` for post-mortem analysis
 - **Graceful Degradation**: Non-recoverable errors are logged with full context before terminating
 
 ### Tool Call Duplicate Detection
@@ -316,12 +316,12 @@ G3 can interact with your computer's GUI for automation tasks:
 
 ## Session Logs
 
-G3 automatically saves session logs for each interaction in the `logs/` directory. These logs contain:
+G3 automatically saves session logs for each interaction in the `.g3/sessions/` directory. These logs contain:
 - Complete conversation history
 - Token usage statistics
 - Timestamps and session status
 
-The `logs/` directory is created automatically on first use and is excluded from version control.
+The `.g3/` directory is created automatically on first use and is excluded from version control.
 
 ## Documentation Map
 

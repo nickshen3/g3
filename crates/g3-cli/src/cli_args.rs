@@ -63,7 +63,7 @@ pub struct Cli {
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
-    /// Disable log file creation (no logs/ directory or session logs)
+    /// Disable session log file creation (no .g3/sessions/ or error logs)
     #[arg(long)]
     pub quiet: bool,
 

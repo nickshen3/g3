@@ -8,10 +8,9 @@
 //!
 //! Used by both autonomous mode (g3-cli) and planning mode (g3-planner).
 
-use crate::{logs_dir, Agent, TaskResult};
+use crate::{Agent, TaskResult};
 use crate::ui_writer::UiWriter;
 use serde_json::Value;
-use std::path::PathBuf;
 use tracing::{debug, warn};
 
 /// Result of feedback extraction with source information
@@ -60,8 +59,6 @@ impl ExtractedFeedback {
 pub struct FeedbackExtractionConfig {
     /// Whether to print debug information
     pub verbose: bool,
-    /// Custom logs directory (overrides default)
-    pub logs_dir: Option<PathBuf>,
     /// Default feedback message if extraction fails
     pub default_feedback: String,
 }
@@ -70,7 +67,6 @@ impl Default for FeedbackExtractionConfig {
     fn default() -> Self {
         Self {
             verbose: false,
-            logs_dir: None,
             default_feedback: "The implementation needs review. Please ensure all requirements are met and the code compiles without errors.".to_string(),
         }
     }
@@ -149,17 +145,10 @@ fn try_extract_last_assistant_message(
     session_id: &str,
     config: &FeedbackExtractionConfig,
 ) -> Option<String> {
-    // Try new .g3/sessions/<session_id>/session.json path first
-    let log_file_path = crate::get_session_file(session_id);
+    let _ = config; // config no longer used but kept for API compatibility
     
-    // Fall back to old logs/ path if new path doesn't exist
-    let log_file_path = if log_file_path.exists() {
-        log_file_path
-    } else {
-        let logs_path = config.logs_dir.clone().unwrap_or_else(logs_dir);
-        logs_path.join(format!("g3_session_{}.json", session_id))
-    };
-
+    // Use .g3/sessions/<session_id>/session.json path
+    let log_file_path = crate::get_session_file(session_id);
     if !log_file_path.exists() {
         debug!("Session log file not found: {:?}", log_file_path);
         return None;
@@ -214,17 +203,10 @@ fn try_extract_from_session_log(
     session_id: &str,
     config: &FeedbackExtractionConfig,
 ) -> Option<String> {
-    // Try new .g3/sessions/<session_id>/session.json path first
-    let log_file_path = crate::get_session_file(session_id);
+    let _ = config; // config no longer used but kept for API compatibility
     
-    // Fall back to old logs/ path if new path doesn't exist
-    let log_file_path = if log_file_path.exists() {
-        log_file_path
-    } else {
-        let logs_path = config.logs_dir.clone().unwrap_or_else(logs_dir);
-        logs_path.join(format!("g3_session_{}.json", session_id))
-    };
-
+    // Use .g3/sessions/<session_id>/session.json path
+    let log_file_path = crate::get_session_file(session_id);
     if !log_file_path.exists() {
         debug!("Session log file not found: {:?}", log_file_path);
         return None;
@@ -358,17 +340,10 @@ fn try_extract_from_conversation_history(
     session_id: &str,
     config: &FeedbackExtractionConfig,
 ) -> Option<String> {
-    // Try new .g3/sessions/<session_id>/session.json path first
-    let log_file_path = crate::get_session_file(session_id);
+    let _ = config; // config no longer used but kept for API compatibility
     
-    // Fall back to old logs/ path if new path doesn't exist
-    let log_file_path = if log_file_path.exists() {
-        log_file_path
-    } else {
-        let logs_path = config.logs_dir.clone().unwrap_or_else(logs_dir);
-        logs_path.join(format!("g3_session_{}.json", session_id))
-    };
-
+    // Use .g3/sessions/<session_id>/session.json path
+    let log_file_path = crate::get_session_file(session_id);
     if !log_file_path.exists() {
         return None;
     }
@@ -652,7 +627,6 @@ mod tests {
     fn test_feedback_extraction_config_default() {
         let config = FeedbackExtractionConfig::default();
         assert!(!config.verbose);
-        assert!(config.logs_dir.is_none());
         assert!(config.default_feedback.contains("review"));
     }
 }

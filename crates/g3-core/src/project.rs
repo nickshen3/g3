@@ -127,18 +127,4 @@ impl Project {
         std::env::set_current_dir(&self.workspace_dir)?;
         Ok(())
     }
-
-    /// Get the logs directory for the project
-    pub fn logs_dir(&self) -> PathBuf {
-        self.workspace_dir.join("logs")
-    }
-
-    /// Ensure the logs directory exists
-    pub fn ensure_logs_dir(&self) -> Result<()> {
-        let logs_dir = self.logs_dir();
-        if !logs_dir.exists() {
-            std::fs::create_dir_all(&logs_dir)?;
-        }
-        Ok(())
-    }
 }

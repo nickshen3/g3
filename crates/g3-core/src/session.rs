@@ -5,7 +5,7 @@
 //! operations from the Agent, keeping the Agent as a thin orchestrator.
 
 use crate::context_window::ContextWindow;
-use crate::paths::{ensure_session_dir, get_context_summary_file, get_g3_dir, get_logs_dir, get_session_file};
+use crate::paths::{ensure_session_dir, get_context_summary_file, get_g3_dir, get_session_file};
 use g3_providers::MessageRole;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -90,7 +90,7 @@ pub fn generate_session_id(description: &str, agent_name: Option<&str>) -> Strin
 /// Save the context window to a session file.
 ///
 /// If session_id is provided, saves to `.g3/sessions/<session_id>/session.json`.
-/// Otherwise, falls back to `logs/g3_context_<timestamp>.json`.
+/// Otherwise, saves to `.g3/sessions/anonymous_<timestamp>/session.json`.
 pub fn save_context_window(
     session_id: Option<&str>,
     context_window: &ContextWindow,
@@ -110,13 +110,13 @@ pub fn save_context_window(
         }
         get_session_file(id)
     } else {
-        // Fallback to old logs/ directory for sessions without ID
-        let logs_dir = get_logs_dir();
-        if let Err(e) = std::fs::create_dir_all(&logs_dir) {
-            error!("Failed to create logs directory: {}", e);
+        // Create anonymous session for sessions without ID
+        let anonymous_id = format!("anonymous_{}", timestamp);
+        if let Err(e) = ensure_session_dir(&anonymous_id) {
+            error!("Failed to create anonymous session directory: {}", e);
             return;
         }
-        logs_dir.join(format!("g3_context_{}.json", timestamp))
+        get_session_file(&anonymous_id)
     };
 
     let context_data = serde_json::json!({
@@ -252,8 +252,8 @@ pub fn log_error_to_session(
         .unwrap_or_default()
         .as_secs();
 
-    let logs_dir = get_logs_dir();
-    let filename = logs_dir.join(format!("g3_session_{}.json", session_id));
+    // Use the new .g3/sessions/<session_id>/session.json path
+    let filename = get_session_file(session_id);
 
     // Read existing session log
     let mut session_data: serde_json::Value = if filename.exists() {

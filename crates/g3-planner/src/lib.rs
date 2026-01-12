@@ -66,7 +66,7 @@ pub async fn get_initial_discovery_messages(
     // Step 1: Run explore_codebase to get the codebase report
     let codebase_report = explore_codebase(codebase_path);
 
-    // Write the codebase report to logs directory
+    // Write the codebase report to discovery directory
     write_code_report(&codebase_report)?;
 
     // Step 2: Build the prompt with the codebase report appended
@@ -112,7 +112,7 @@ pub async fn get_initial_discovery_messages(
         shell_commands.len()
     ));
 
-    // Write the discovery commands to logs directory
+    // Write the discovery commands to discovery directory
     write_discovery_commands(&shell_commands)?;
 
     // Step 6: Format as tool messages
@@ -194,21 +194,21 @@ pub fn extract_summary(response: &str) -> Option<String> {
     }
 }
 
-/// Write the codebase report to logs directory
+/// Write the codebase report to discovery directory
 fn write_code_report(report: &str) -> Result<()> {
-    // Get logs directory from workspace path or current dir
-    let logs_dir = if let Ok(workspace_path) = std::env::var("G3_WORKSPACE_PATH") {
-        std::path::PathBuf::from(workspace_path).join("logs")
+    // Get discovery directory from workspace path or current dir
+    let discovery_dir = if let Ok(workspace_path) = std::env::var("G3_WORKSPACE_PATH") {
+        std::path::PathBuf::from(workspace_path).join(".g3").join("discovery")
     } else {
-        std::env::current_dir().unwrap_or_default().join("logs")
+        std::env::current_dir().unwrap_or_default().join(".g3").join("discovery")
     };
     
-    // Ensure logs directory exists  
-    fs::create_dir_all(&logs_dir)?;
+    // Ensure discovery directory exists  
+    fs::create_dir_all(&discovery_dir)?;
 
     // Generate timestamp in same format as tool_calls log
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let filename = logs_dir.join(format!("code_report_{}.log", timestamp));
+    let filename = discovery_dir.join(format!("code_report_{}.log", timestamp));
 
     // Write the report to file
     let mut file = OpenOptions::new()
@@ -223,21 +223,21 @@ fn write_code_report(report: &str) -> Result<()> {
     Ok(())
 }
 
-/// Write the discovery commands to logs directory
+/// Write the discovery commands to discovery directory
 fn write_discovery_commands(commands: &[String]) -> Result<()> {
-    // Get logs directory from workspace path or current dir
-    let logs_dir = if let Ok(workspace_path) = std::env::var("G3_WORKSPACE_PATH") {
-        std::path::PathBuf::from(workspace_path).join("logs")
+    // Get discovery directory from workspace path or current dir
+    let discovery_dir = if let Ok(workspace_path) = std::env::var("G3_WORKSPACE_PATH") {
+        std::path::PathBuf::from(workspace_path).join(".g3").join("discovery")
     } else {
-        std::env::current_dir().unwrap_or_default().join("logs")
+        std::env::current_dir().unwrap_or_default().join(".g3").join("discovery")
     };
     
-    // Ensure logs directory exists
-    fs::create_dir_all(&logs_dir)?;
+    // Ensure discovery directory exists
+    fs::create_dir_all(&discovery_dir)?;
 
     // Generate timestamp in same format as tool_calls log
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let filename = logs_dir.join(format!("discovery_commands_{}.log", timestamp));
+    let filename = discovery_dir.join(format!("discovery_commands_{}.log", timestamp));
 
     // Write the commands to file
     let mut file = OpenOptions::new()

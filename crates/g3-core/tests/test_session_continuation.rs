@@ -91,7 +91,7 @@ fn test_save_and_load_continuation() {
         "save_load_test".to_string(),
         None,
         Some("Test summary content".to_string()),
-        "/logs/g3_session_save_load_test.json".to_string(),
+        "/.g3/sessions/save_load_test/session.json".to_string(),
         35.5,
         Some("- [ ] Pending task".to_string()),
         temp_dir.path().to_string_lossy().to_string(),
@@ -321,9 +321,9 @@ fn test_has_valid_continuation_with_existing_session_log() {
     let (temp_dir, original_dir) = setup_test_env();
 
     // Create a fake session log file
-    let logs_dir = temp_dir.path().join("logs");
-    fs::create_dir_all(&logs_dir).expect("Failed to create logs dir");
-    let session_log_path = logs_dir.join("g3_session_valid_test.json");
+    let session_dir = temp_dir.path().join(".g3").join("sessions").join("valid_test");
+    fs::create_dir_all(&session_dir).expect("Failed to create session dir");
+    let session_log_path = session_dir.join("session.json");
     fs::write(&session_log_path, "{}").expect("Failed to write session log");
 
     // Create a continuation pointing to the existing session log

@@ -82,7 +82,6 @@ fn test_extracted_feedback_approval_detection() {
 fn test_feedback_extraction_config_default() {
     let config = FeedbackExtractionConfig::default();
     assert!(!config.verbose);
-    assert!(config.logs_dir.is_none());
     assert!(config.default_feedback.contains("review"));
 }
 
@@ -90,14 +89,9 @@ fn test_feedback_extraction_config_default() {
 fn test_feedback_extraction_config_custom() {
     let config = FeedbackExtractionConfig {
         verbose: true,
-        logs_dir: Some(std::path::PathBuf::from("/tmp/test_logs")),
         default_feedback: "Custom fallback message for testing".to_string(),
     };
     assert!(config.verbose);
-    assert_eq!(
-        config.logs_dir,
-        Some(std::path::PathBuf::from("/tmp/test_logs"))
-    );
     assert!(config.default_feedback.contains("Custom fallback"));
 }
 

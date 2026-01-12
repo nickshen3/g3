@@ -777,13 +777,13 @@ pub async fn run_planning_mode(
     // Set G3_WORKSPACE_PATH environment variable EARLY for all logging
     std::env::set_var("G3_WORKSPACE_PATH", workspace_dir.display().to_string());
     
-    // Create logs directory and verify it exists
-    let logs_dir = workspace_dir.join("logs");
-    if !logs_dir.exists() {
-        fs::create_dir_all(&logs_dir)
-            .context("Failed to create logs directory")?;
+    // Create .g3 directory and verify it exists
+    let g3_dir = workspace_dir.join(".g3");
+    if !g3_dir.exists() {
+        fs::create_dir_all(&g3_dir)
+            .context("Failed to create .g3 directory")?;
     }
-    print_msg(&format!("📁 Logs directory: {}", logs_dir.display()));
+    print_msg(&format!("📁 G3 directory: {}", g3_dir.display()));
     
     // Create the LLM provider for planning
     print_msg("🔧 Initializing planner provider...");

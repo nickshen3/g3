@@ -29,7 +29,7 @@ echo "Done!"
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755)).unwrap();
     }
     
-    let log_dir = test_dir.join("logs");
+    let log_dir = test_dir.join(".g3").join("background_processes");
     let manager = BackgroundProcessManager::new(log_dir);
     
     println!("\n=== Background Process Demo ===");

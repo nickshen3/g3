@@ -4,15 +4,17 @@ use tempfile::TempDir;
 
 #[test]
 fn test_extract_coach_feedback_with_timing_message() {
-    // Create a temporary directory for logs
+    // Create a temporary directory for session logs
     let temp_dir = TempDir::new().unwrap();
-    let logs_dir = temp_dir.path().join("logs");
-    fs::create_dir(&logs_dir).unwrap();
+    let sessions_dir = temp_dir.path().join(".g3").join("sessions");
+    fs::create_dir_all(&sessions_dir).unwrap();
 
     // Create a mock session log with the problematic conversation history
     // where timing message appears after the tool result
     let session_id = "test_session_123";
-    let log_file_path = logs_dir.join(format!("g3_session_{}.json", session_id));
+    let session_dir = sessions_dir.join(session_id);
+    fs::create_dir_all(&session_dir).unwrap();
+    let log_file_path = session_dir.join("session.json");
 
     let log_content = json!({
         "session_id": session_id,
@@ -93,11 +95,13 @@ fn test_extract_coach_feedback_with_timing_message() {
 fn test_extract_only_final_output_tool_results() {
     // Test that we only extract tool results from final_output, not from other tools
     let temp_dir = TempDir::new().unwrap();
-    let logs_dir = temp_dir.path().join("logs");
-    fs::create_dir(&logs_dir).unwrap();
+    let sessions_dir = temp_dir.path().join(".g3").join("sessions");
+    fs::create_dir_all(&sessions_dir).unwrap();
 
     let session_id = "test_session_final_output_only";
-    let log_file_path = logs_dir.join(format!("g3_session_{}.json", session_id));
+    let session_dir = sessions_dir.join(session_id);
+    fs::create_dir_all(&session_dir).unwrap();
+    let log_file_path = session_dir.join("session.json");
 
     let log_content = json!({
         "session_id": session_id,
@@ -184,14 +188,16 @@ fn test_extract_only_final_output_tool_results() {
 
 #[test]
 fn test_extract_coach_feedback_without_timing_message() {
-    // Create a temporary directory for logs
+    // Create a temporary directory for session logs
     let temp_dir = TempDir::new().unwrap();
-    let logs_dir = temp_dir.path().join("logs");
-    fs::create_dir(&logs_dir).unwrap();
+    let sessions_dir = temp_dir.path().join(".g3").join("sessions");
+    fs::create_dir_all(&sessions_dir).unwrap();
 
     // Test the case where there's no timing message (backward compatibility)
     let session_id = "test_session_456";
-    let log_file_path = logs_dir.join(format!("g3_session_{}.json", session_id));
+    let session_dir = sessions_dir.join(session_id);
+    fs::create_dir_all(&session_dir).unwrap();
+    let log_file_path = session_dir.join("session.json");
 
     let log_content = json!({
         "session_id": session_id,
@@ -256,11 +262,13 @@ fn test_extract_coach_feedback_without_timing_message() {
 fn test_extract_coach_feedback_with_multiple_tool_results() {
     // Test that we get the LAST tool result when there are multiple
     let temp_dir = TempDir::new().unwrap();
-    let logs_dir = temp_dir.path().join("logs");
-    fs::create_dir(&logs_dir).unwrap();
+    let sessions_dir = temp_dir.path().join(".g3").join("sessions");
+    fs::create_dir_all(&sessions_dir).unwrap();
 
     let session_id = "test_session_789";
-    let log_file_path = logs_dir.join(format!("g3_session_{}.json", session_id));
+    let session_dir = sessions_dir.join(session_id);
+    fs::create_dir_all(&session_dir).unwrap();
+    let log_file_path = session_dir.join("session.json");
 
     let log_content = json!({
         "session_id": session_id,

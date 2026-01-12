@@ -53,7 +53,7 @@ done
             fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let log_dir = test_dir.join("logs");
+        let log_dir = test_dir.join(".g3").join("background_processes");
         let manager = BackgroundProcessManager::new(log_dir);
 
         // Start the process
@@ -116,7 +116,7 @@ sleep 30
             fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let log_dir = test_dir.join("logs");
+        let log_dir = test_dir.join(".g3").join("background_processes");
         let manager = BackgroundProcessManager::new(log_dir);
 
         // Start a process
@@ -151,7 +151,7 @@ sleep 30
         let _ = fs::remove_dir_all(&test_dir);
         fs::create_dir_all(&test_dir).unwrap();
 
-        let log_dir = test_dir.join("logs");
+        let log_dir = test_dir.join(".g3").join("background_processes");
         let manager = BackgroundProcessManager::new(log_dir);
 
         // Getting a process that doesn't exist should return None

@@ -735,8 +735,8 @@ async fn run_segment(
         segment_status.errors += 1;
     }
 
-    // Try to extract metrics from session log if available
-    let log_dir = segment_dir.join("logs");
+    // Try to extract metrics from session log if available (check .g3/sessions/)
+    let log_dir = segment_dir.join(".g3").join("sessions");
     if log_dir.exists() {
         if let Ok(entries) = std::fs::read_dir(&log_dir) {
             for entry in entries.flatten() {

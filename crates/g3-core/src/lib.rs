@@ -53,10 +53,11 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
-// Re-export path utilities for backward compatibility
+// Re-export path utilities
 pub use paths::{
-    G3_WORKSPACE_PATH_ENV, ensure_session_dir, get_context_summary_file, get_g3_dir, get_logs_dir,
-    get_session_file, get_session_logs_dir, get_session_todo_path, get_thinned_dir, logs_dir,
+    G3_WORKSPACE_PATH_ENV, ensure_session_dir, get_context_summary_file, get_g3_dir,
+    get_session_file, get_session_logs_dir, get_session_todo_path, get_thinned_dir,
+    get_errors_dir, get_background_processes_dir, get_discovery_dir,
 };
 use paths::get_todo_path;
 
@@ -291,7 +292,7 @@ impl<W: UiWriter> Agent<W> {
             working_dir: None,
             background_process_manager: std::sync::Arc::new(
                 background_process::BackgroundProcessManager::new(
-                    paths::get_logs_dir().join("background_processes")
+                    paths::get_background_processes_dir()
                 )),
             pending_images: Vec::new(),
             is_agent_mode: false,

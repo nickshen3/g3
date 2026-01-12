@@ -129,8 +129,7 @@ impl ErrorContext {
             return;
         }
 
-        let base_logs_dir = crate::logs_dir();
-        let logs_dir = base_logs_dir.join("errors");
+        let logs_dir = crate::paths::get_errors_dir();
         if !logs_dir.exists() {
             if let Err(e) = std::fs::create_dir_all(&logs_dir) {
                 error!("Failed to create error logs directory: {}", e);
