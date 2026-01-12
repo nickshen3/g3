@@ -5,161 +5,38 @@ pub mod metrics;
 pub mod project_files;
 pub mod streaming_markdown;
 
+mod accumulative;
+mod agent_mode;
+mod autonomous;
+mod cli_args;
 mod coach_feedback;
+mod interactive;
 mod machine_ui_writer;
 mod simple_output;
+mod task_execution;
 mod ui_writer_impl;
+mod utils;
 
 use anyhow::Result;
-use crossterm::style::{Color, ResetColor, SetForegroundColor};
-use clap::Parser;
-use g3_config::Config;
-use g3_core::{project::Project, ui_writer::UiWriter, Agent, DiscoveryOptions};
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
-use sha2::{Digest, Sha256};
-use std::path::Path;
 use std::path::PathBuf;
-use std::process::exit;
-use std::time::Instant;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::debug;
 
-use g3_core::error_handling::{classify_error, ErrorType, RecoverableError};
+use g3_config::Config;
+use g3_core::project::Project;
+use g3_core::Agent;
+
+pub use cli_args::Cli;
+use clap::Parser;
+
+use accumulative::run_accumulative_mode;
+use agent_mode::run_agent_mode;
+use autonomous::{run_autonomous, run_autonomous_machine};
+use interactive::{run_interactive, run_interactive_machine};
 use machine_ui_writer::MachineUiWriter;
-use metrics::{format_elapsed_time, generate_turn_histogram, TurnMetrics};
-use project_files::{extract_readme_heading, read_agents_config, read_project_memory, read_project_readme};
+use project_files::{read_agents_config, read_project_memory, read_project_readme};
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
-
-#[derive(Parser, Clone)]
-#[command(name = "g3")]
-#[command(about = "A modular, composable AI coding agent")]
-#[command(version)]
-pub struct Cli {
-    /// Enable verbose logging
-    #[arg(short, long)]
-    pub verbose: bool,
-
-    /// Enable manual control of context compaction (disables auto-compact at 90%)
-    #[arg(long = "manual-compact")]
-    pub manual_compact: bool,
-
-    /// Show the system prompt being sent to the LLM
-    #[arg(long)]
-    pub show_prompt: bool,
-
-    /// Show the generated code before execution
-    #[arg(long)]
-    pub show_code: bool,
-
-    /// Configuration file path
-    #[arg(short, long)]
-    pub config: Option<String>,
-
-    /// Workspace directory (defaults to current directory)
-    #[arg(short, long)]
-    pub workspace: Option<PathBuf>,
-
-    /// Task to execute (if provided, runs in single-shot mode instead of interactive)
-    pub task: Option<String>,
-
-    /// Enable autonomous mode with coach-player feedback loop
-    #[arg(long)]
-    pub autonomous: bool,
-
-    /// Maximum number of turns in autonomous mode (default: 5)
-    #[arg(long, default_value = "5")]
-    pub max_turns: usize,
-
-    /// Override requirements text for autonomous mode (instead of reading from requirements.md)
-    #[arg(long, value_name = "TEXT")]
-    pub requirements: Option<String>,
-
-    /// Enable accumulative autonomous mode (default is chat mode)
-    #[arg(long)]
-    pub auto: bool,
-
-    /// Enable interactive chat mode (no autonomous runs)
-    #[arg(long)]
-    pub chat: bool,
-
-    /// Enable machine-friendly output mode with JSON markers and stats
-    #[arg(long)]
-    pub machine: bool,
-
-    /// Override the configured provider (anthropic, databricks, embedded, openai)
-    #[arg(long, value_name = "PROVIDER")]
-    pub provider: Option<String>,
-
-    /// Override the model for the selected provider
-    #[arg(long, value_name = "MODEL")]
-    pub model: Option<String>,
-
-    /// Disable log file creation (no logs/ directory or session logs)
-    #[arg(long)]
-    pub quiet: bool,
-
-    /// Enable WebDriver browser automation tools
-    #[arg(long)]
-    pub webdriver: bool,
-
-    /// Use Chrome in headless mode for WebDriver (instead of Safari)
-    #[arg(long)]
-    pub chrome_headless: bool,
-
-    /// Use Safari for WebDriver (this is the default)
-    #[arg(long)]
-    pub safari: bool,
-
-    /// Enable flock mode - parallel multi-agent development
-    #[arg(long, requires = "flock_workspace", requires = "segments")]
-    pub project: Option<PathBuf>,
-
-    /// Flock workspace directory (where segment copies will be created)
-    #[arg(long, requires = "project")]
-    pub flock_workspace: Option<PathBuf>,
-
-    /// Number of segments to partition work into (for flock mode)
-    #[arg(long, requires = "project")]
-    pub segments: Option<usize>,
-
-    /// Maximum turns per segment in flock mode (default: 5)
-    #[arg(long, default_value = "5")]
-    pub flock_max_turns: usize,
-
-    /// Enable planning mode for requirements-driven development
-    #[arg(long, conflicts_with_all = ["autonomous", "auto", "chat"])]
-    pub planning: bool,
-
-    /// Path to the codebase to work on (for planning mode)
-    #[arg(long, value_name = "PATH")]
-    pub codepath: Option<String>,
-
-    /// Disable git operations in planning mode
-    #[arg(long)]
-    pub no_git: bool,
-
-    /// Enable fast codebase discovery before first LLM turn
-    #[arg(long, value_name = "PATH")]
-    pub codebase_fast_start: Option<PathBuf>,
-
-    /// Run as a specialized agent (loads prompt from agents/<name>.md)
-    #[arg(long, value_name = "NAME", conflicts_with_all = ["autonomous", "auto", "chat", "planning"])]
-    pub agent: Option<String>,
-
-    /// Skip session resumption and force a new session (for agent mode)
-    #[arg(long)]
-    pub new_session: bool,
-
-    /// Automatically remind LLM to call remember tool after turns with tool calls
-    #[arg(long)]
-    pub auto_memory: bool,
-
-    /// Enable aggressive context dehydration (save context to disk on compaction)
-    #[arg(long)]
-    pub acd: bool,
-}
+use utils::setup_workspace_directory;
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
@@ -168,7 +45,6 @@ pub async fn run() -> Result<()> {
     if let (Some(project_dir), Some(flock_workspace), Some(num_segments)) =
         (&cli.project, &cli.flock_workspace, cli.segments)
     {
-        // Run flock mode
         return run_flock_mode(
             project_dir.clone(),
             flock_workspace.clone(),
@@ -177,16 +53,14 @@ pub async fn run() -> Result<()> {
         )
         .await;
     }
+
     if cli.codebase_fast_start.is_some() {
         print!("codebase_fast_start is temporarily disabled.");
-        exit(1);
+        std::process::exit(1);
     }
-    // Otherwise, continue with normal mode
 
     // Check if planning mode is enabled
     if cli.planning {
-        // Expand ~ in codepath if provided
-        // The expand_codepath function in g3_planner handles tilde expansion
         let codepath = cli.codepath.clone();
         return g3_planner::run_planning_mode(
             codepath,
@@ -212,87 +86,93 @@ pub async fn run() -> Result<()> {
         .await;
     }
 
-    // Only initialize logging if not in retro mode
-    if !cli.machine {
-        // Initialize logging with filtering
-        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-
-        // Create a filter that suppresses llama_cpp logs unless in verbose mode
-        let filter = if cli.verbose {
-            EnvFilter::from_default_env()
-                .add_directive(format!("{}=debug", env!("CARGO_PKG_NAME")).parse().unwrap())
-                .add_directive("g3_core=debug".parse().unwrap())
-                .add_directive("g3_cli=debug".parse().unwrap())
-                .add_directive("g3_execution=debug".parse().unwrap())
-                .add_directive("g3_providers=debug".parse().unwrap())
-        } else {
-            EnvFilter::from_default_env()
-                .add_directive(format!("{}=info", env!("CARGO_PKG_NAME")).parse().unwrap())
-                .add_directive("g3_core=info".parse().unwrap())
-                .add_directive("g3_cli=info".parse().unwrap())
-                .add_directive("g3_execution=info".parse().unwrap())
-                .add_directive("g3_providers=info".parse().unwrap())
-                .add_directive("llama_cpp=off".parse().unwrap()) // Suppress all llama_cpp logs
-                .add_directive("llama=off".parse().unwrap()) // Suppress all llama.cpp logs
-        };
-
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer())
-            .with(filter)
-            .init();
-    } else {
-        // In retro mode, we don't want any logging output to interfere with the TUI
-        // We'll use a no-op subscriber
-        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-
-        // Create a filter that suppresses ALL logs in retro mode
-        let filter = EnvFilter::from_default_env().add_directive("off".parse().unwrap()); // Turn off all logging
-
-        tracing_subscriber::registry().with(filter).init();
-    }
+    // Initialize logging
+    initialize_logging(&cli);
 
     // Set up workspace directory
-    let workspace_dir = if let Some(ws) = &cli.workspace {
-        ws.clone()
-    } else if cli.autonomous {
-        // For autonomous mode, use G3_WORKSPACE env var or default
-        setup_workspace_directory(cli.machine)?
-    } else {
-        // Default to current directory for interactive/single-shot mode
-        std::env::current_dir()?
-    };
+    let workspace_dir = determine_workspace_dir(&cli)?;
 
-    // Check if we're in a project directory and read README and AGENTS.md if available
-    // Load AGENTS.md first (if present) to provide agent-specific instructions
+    // Load project context files
     let agents_content = read_agents_config(&workspace_dir);
-
-    // Then load README for project context
     let readme_content = read_project_readme(&workspace_dir);
-
-    // Load project memory if available
     let memory_content = read_project_memory(&workspace_dir);
 
     // Create project model
-    let project = if cli.autonomous {
-        if let Some(requirements_text) = &cli.requirements {
-            // Use requirements text override
-            Project::new_autonomous_with_requirements(
-                workspace_dir.clone(),
-                requirements_text.clone(),
-            )?
-        } else {
-            // Use traditional requirements.md file
-            Project::new_autonomous(workspace_dir.clone())?
-        }
-    } else {
-        Project::new(workspace_dir.clone())
-    };
+    let project = create_project(&cli, &workspace_dir)?;
 
     // Ensure workspace exists and enter it
     project.ensure_workspace_exists()?;
     project.enter_workspace()?;
 
     // Load configuration with CLI overrides
+    let config = load_config_with_cli_overrides(&cli)?;
+
+    // Combine AGENTS.md, README, and memory content
+    let combined_content = combine_project_content(agents_content, readme_content, memory_content);
+
+    // Execute based on mode
+    if cli.machine {
+        run_machine_mode(cli, config, project, combined_content).await
+    } else {
+        run_console_mode(cli, config, project, combined_content, workspace_dir).await
+    }
+}
+
+// --- Helper functions ---
+
+fn initialize_logging(cli: &Cli) {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+    let filter = if cli.machine {
+        // In machine mode, suppress ALL logs
+        EnvFilter::from_default_env().add_directive("off".parse().unwrap())
+    } else if cli.verbose {
+        EnvFilter::from_default_env()
+            .add_directive(format!("{}=debug", env!("CARGO_PKG_NAME")).parse().unwrap())
+            .add_directive("g3_core=debug".parse().unwrap())
+            .add_directive("g3_cli=debug".parse().unwrap())
+            .add_directive("g3_execution=debug".parse().unwrap())
+            .add_directive("g3_providers=debug".parse().unwrap())
+    } else {
+        EnvFilter::from_default_env()
+            .add_directive(format!("{}=info", env!("CARGO_PKG_NAME")).parse().unwrap())
+            .add_directive("g3_core=info".parse().unwrap())
+            .add_directive("g3_cli=info".parse().unwrap())
+            .add_directive("g3_execution=info".parse().unwrap())
+            .add_directive("g3_providers=info".parse().unwrap())
+            .add_directive("llama_cpp=off".parse().unwrap())
+            .add_directive("llama=off".parse().unwrap())
+    };
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
+        .init();
+}
+
+fn determine_workspace_dir(cli: &Cli) -> Result<PathBuf> {
+    if let Some(ws) = &cli.workspace {
+        Ok(ws.clone())
+    } else if cli.autonomous {
+        setup_workspace_directory(cli.machine)
+    } else {
+        Ok(std::env::current_dir()?)
+    }
+}
+
+fn create_project(cli: &Cli, workspace_dir: &PathBuf) -> Result<Project> {
+    if cli.autonomous {
+        if let Some(requirements_text) = &cli.requirements {
+            Project::new_autonomous_with_requirements(workspace_dir.clone(), requirements_text.clone())
+        } else {
+            Project::new_autonomous(workspace_dir.clone())
+        }
+    } else {
+        Ok(Project::new(workspace_dir.clone()))
+    }
+}
+
+fn load_config_with_cli_overrides(cli: &Cli) -> Result<Config> {
     let mut config = Config::load_with_overrides(
         cli.config.as_deref(),
         cli.provider.clone(),
@@ -310,15 +190,9 @@ pub async fn run() -> Result<()> {
         config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
 
         // Run Chrome diagnostics on first use
-        let report = g3_computer_control::run_chrome_diagnostics(
-            config.webdriver.chrome_binary.as_deref(),
-        );
-        
-        // Display the diagnostic report
+        let report =
+            g3_computer_control::run_chrome_diagnostics(config.webdriver.chrome_binary.as_deref());
         println!("{}", report.format_report());
-        
-        // If there are errors, the user can ask g3 to help fix them
-        // We continue anyway to let the user decide
     }
 
     // Apply safari flag override
@@ -344,362 +218,169 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    // Initialize agent
-    // ui_writer will be created conditionally based on machine mode
-
-    // Combine AGENTS.md, README, and memory content if they exist
-    let combined_content = {
-        let mut parts = Vec::new();
-        if let Some(agents) = agents_content.clone() {
-            parts.push(agents);
-        }
-        if let Some(readme) = readme_content.clone() {
-            parts.push(readme);
-        }
-        if let Some(memory) = memory_content.clone() {
-            parts.push(memory);
-        }
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join("\n\n"))
-        }
-    };
-
-    // Execute task, autonomous mode, or start interactive mode based on machine mode
-    if cli.machine {
-        // Machine mode - use MachineUiWriter
-
-        let ui_writer = MachineUiWriter::new();
-
-        let mut agent = if cli.autonomous {
-            Agent::new_autonomous_with_readme_and_quiet(
-                config.clone(),
-                ui_writer,
-                combined_content.clone(),
-                cli.quiet,
-            )
-            .await?
-        } else {
-            Agent::new_with_readme_and_quiet(
-                config.clone(),
-                ui_writer,
-                combined_content.clone(),
-                cli.quiet,
-            )
-            .await?
-        };
-
-        // Apply auto-memory flag if enabled
-        if cli.auto_memory {
-            agent.set_auto_memory(true);
-        }
-        // Apply ACD flag if enabled
-        if cli.acd {
-            agent.set_acd_enabled(true);
-        }
-
-        run_with_machine_mode(agent, cli, project).await?;
-    } else {
-        // Normal mode - use ConsoleUiWriter
-
-        // DEFAULT: Chat mode for interactive sessions
-        // It runs when:
-        // 1. No task is provided (not single-shot)
-        // 2. Not in autonomous mode
-        // 3. Not explicitly enabled with --auto flag
-        let use_accumulative = cli.task.is_none() && !cli.autonomous && cli.auto;
-
-        if use_accumulative {
-            // Run accumulative mode and return early
-            run_accumulative_mode(workspace_dir.clone(), cli.clone(), combined_content.clone())
-                .await?;
-            return Ok(());
-        }
-
-        let ui_writer = ConsoleUiWriter::new();
-
-        let mut agent = if cli.autonomous {
-            Agent::new_autonomous_with_readme_and_quiet(
-                config.clone(),
-                ui_writer,
-                combined_content.clone(),
-                cli.quiet,
-            )
-            .await?
-        } else {
-            Agent::new_with_readme_and_quiet(
-                config.clone(),
-                ui_writer,
-                combined_content.clone(),
-                cli.quiet,
-            )
-            .await?
-        };
-
-        // Apply auto-memory flag if enabled
-        if cli.auto_memory {
-            agent.set_auto_memory(true);
-        }
-        // Apply ACD flag if enabled
-        if cli.acd {
-            agent.set_acd_enabled(true);
-        }
-
-        run_with_console_mode(agent, cli, project, combined_content).await?;
-    }
-
-    Ok(())
+    Ok(config)
 }
 
-/// Run agent mode - loads a specialized agent prompt and executes a single task
-async fn run_agent_mode(
-    agent_name: &str,
-    workspace: Option<PathBuf>,
-    config_path: Option<&str>,
-    _quiet: bool,
-    new_session: bool,
-    task: Option<String>,
-    chrome_headless: bool,
-    safari: bool,
-) -> Result<()> {
-    use g3_core::get_agent_system_prompt;
-    use g3_core::find_incomplete_agent_session;
-    
-    // Initialize logging
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    let filter = EnvFilter::from_default_env()
-        .add_directive("g3_core=info".parse().unwrap())
-        .add_directive("g3_cli=info".parse().unwrap())
-        .add_directive("llama_cpp=off".parse().unwrap())
-        .add_directive("llama=off".parse().unwrap());
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(filter)
-        .init();
-
-    let output = SimpleOutput::new();
-    
-    // Determine workspace directory (current dir if not specified)
-    let workspace_dir = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    
-    // Change to the workspace directory first so session scanning works correctly
-    std::env::set_current_dir(&workspace_dir)?;
-    
-    // Check for incomplete agent sessions before starting a new one (unless --new-session is set)
-    let resuming_session = if new_session {
-        output.print("\n🆕 Starting new session (--new-session flag set)");
-        output.print("");
+fn combine_project_content(
+    agents_content: Option<String>,
+    readme_content: Option<String>,
+    memory_content: Option<String>,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(agents) = agents_content {
+        parts.push(agents);
+    }
+    if let Some(readme) = readme_content {
+        parts.push(readme);
+    }
+    if let Some(memory) = memory_content {
+        parts.push(memory);
+    }
+    if parts.is_empty() {
         None
     } else {
-        find_incomplete_agent_session(agent_name).ok().flatten()
-    };
-    
-    if let Some(ref incomplete_session) = resuming_session {
-        output.print(&format!(
-            "\n🔄 Found incomplete session for agent '{}'",
-            agent_name
-        ));
-        output.print(&format!(
-            "   Session: {}",
-            incomplete_session.session_id
-        ));
-        output.print(&format!(
-            "   Created: {}",
-            incomplete_session.created_at
-        ));
-        if let Some(ref todo) = incomplete_session.todo_snapshot {
-            // Show first few lines of TODO
-            let preview: String = todo.lines().take(5).collect::<Vec<_>>().join("\n");
-            output.print(&format!("   TODO preview:\n{}", preview));
-        }
-        output.print("");
-        output.print("   Resuming incomplete session...");
-        output.print("");
+        Some(parts.join("\n\n"))
     }
-    
-    // Load agent prompt from agents/<name>.md
-    let agent_prompt_path = workspace_dir.join("agents").join(format!("{}.md", agent_name));
-    
-    // Also check in the g3 installation directory
-    let agent_prompt = if agent_prompt_path.exists() {
-        std::fs::read_to_string(&agent_prompt_path)
-            .map_err(|e| anyhow::anyhow!("Failed to read agent prompt from {:?}: {}", agent_prompt_path, e))?
+}
+
+async fn run_machine_mode(
+    cli: Cli,
+    config: Config,
+    project: Project,
+    combined_content: Option<String>,
+) -> Result<()> {
+    let ui_writer = MachineUiWriter::new();
+
+    let mut agent = if cli.autonomous {
+        Agent::new_autonomous_with_readme_and_quiet(
+            config.clone(),
+            ui_writer,
+            combined_content.clone(),
+            cli.quiet,
+        )
+        .await?
     } else {
-        // Try to find agents/ relative to the executable or in common locations
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-        
-        let possible_paths = [
-            exe_dir.as_ref().map(|d| d.join("agents").join(format!("{}.md", agent_name))),
-            Some(PathBuf::from(format!("agents/{}.md", agent_name))),
-        ];
-        
-        let mut found_prompt = None;
-        for path_opt in possible_paths.iter().flatten() {
-            if path_opt.exists() {
-                found_prompt = Some(std::fs::read_to_string(path_opt)
-                    .map_err(|e| anyhow::anyhow!("Failed to read agent prompt from {:?}: {}", path_opt, e))?);
-                break;
-            }
-        }
-        
-        found_prompt.ok_or_else(|| anyhow::anyhow!(
-            "Agent prompt not found: agents/{}.md\nSearched in: {:?} and current directory",
-            agent_name, agent_prompt_path
-        ))?
+        Agent::new_with_readme_and_quiet(
+            config.clone(),
+            ui_writer,
+            combined_content.clone(),
+            cli.quiet,
+        )
+        .await?
     };
-    
-    output.print(&format!(">> agent mode | {}", agent_name));
-    // Format workspace path, replacing home dir with ~
-    let workspace_display = {
-        let path_str = workspace_dir.display().to_string();
-        dirs::home_dir()
-            .and_then(|home| path_str.strip_prefix(&home.display().to_string()).map(|s| format!("~{}", s)))
-            .unwrap_or(path_str)
-    };
-    output.print(&format!("-> {}", workspace_display));
-    
-    // Load config
-    let mut config = g3_config::Config::load(config_path)?;
-    
-    // Apply chrome-headless flag override
-    if chrome_headless {
-        config.webdriver.enabled = true;
-        config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
+
+    if cli.auto_memory {
+        agent.set_auto_memory(true);
     }
-    
-    // Apply safari flag override
-    if safari {
-        config.webdriver.enabled = true;
-        config.webdriver.browser = g3_config::WebDriverBrowser::Safari;
+    if cli.acd {
+        agent.set_acd_enabled(true);
     }
-    
-    // Generate the combined system prompt (agent prompt + tool instructions)
-    // Note: allow_multiple_tool_calls parameter is deprecated but kept for API compatibility
-    let system_prompt = get_agent_system_prompt(&agent_prompt, true);
-    
-    // Load AGENTS.md, README, and memory - same as normal mode
-    let agents_content_opt = read_agents_config(&workspace_dir);
-    let readme_content_opt = read_project_readme(&workspace_dir);
-    let memory_content_opt = read_project_memory(&workspace_dir);
-    
-    // Show what was loaded
-    let readme_status = if readme_content_opt.is_some() { "✓" } else { "·" };
-    let agents_status = if agents_content_opt.is_some() { "✓" } else { "·" };
-    let memory_status = if memory_content_opt.is_some() { "✓" } else { "·" };
-    output.print(&format!("   {} README | {} AGENTS.md | {} Memory",
-        readme_status, agents_status, memory_status));
-    
-    // Combine all content for the agent's context
-    let combined_content = {
-        let mut parts = Vec::new();
-        if let Some(agents) = agents_content_opt {
-            parts.push(agents);
+
+    if cli.autonomous {
+        run_autonomous_machine(
+            agent,
+            project,
+            cli.show_prompt,
+            cli.show_code,
+            cli.max_turns,
+            cli.quiet,
+            cli.codebase_fast_start.clone(),
+        )
+        .await
+    } else if let Some(task) = cli.task {
+        // Single-shot mode
+        let result = agent
+            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
+            .await?;
+        println!("AGENT_RESPONSE:");
+        println!("{}", result.response);
+        println!("END_AGENT_RESPONSE");
+
+        if let Err(e) = agent.send_auto_memory_reminder().await {
+            debug!("Auto-memory reminder failed: {}", e);
         }
-        if let Some(readme) = readme_content_opt {
-            parts.push(readme);
-        }
-        if let Some(memory) = memory_content_opt {
-            parts.push(memory);
-        }
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join("\n\n"))
-        }
-    };
-    
-    // Create agent with custom system prompt
+        agent.save_session_continuation(Some(result.response.clone()));
+        Ok(())
+    } else {
+        run_interactive_machine(agent, cli.show_prompt, cli.show_code).await
+    }
+}
+
+async fn run_console_mode(
+    cli: Cli,
+    config: Config,
+    project: Project,
+    combined_content: Option<String>,
+    workspace_dir: PathBuf,
+) -> Result<()> {
+    // Check for accumulative mode
+    let use_accumulative = cli.task.is_none() && !cli.autonomous && cli.auto;
+    if use_accumulative {
+        return run_accumulative_mode(workspace_dir, cli, combined_content).await;
+    }
+
     let ui_writer = ConsoleUiWriter::new();
-    // Set agent mode on UI writer for visual differentiation (light gray tool names)
-    ui_writer.set_agent_mode(true);
-    let mut agent = Agent::new_with_custom_prompt(
-        config,
-        ui_writer,
-        system_prompt,
-        combined_content,
-    ).await?;
-    
-    // Set agent mode for session tracking
-    agent.set_agent_mode(agent_name);
-    
-    // Auto-memory is always enabled in agent mode
-    // This prompts the LLM to save discoveries to project memory after each turn
-    agent.set_auto_memory(true);
-    
-    // Enable ACD in agent mode for longer sessions
-    agent.set_acd_enabled(true);
-    
-    // If resuming a session, restore context and TODO
-    let initial_task = if let Some(ref incomplete_session) = resuming_session {
-        // Restore the session context
-        match agent.restore_from_continuation(incomplete_session) {
-            Ok(full_restore) => {
-                if full_restore {
-                    output.print("   ✅ Full context restored from previous session");
-                } else {
-                    output.print("   ⚠️ Restored from summary (context was > 80%)");
-                }
-            }
-            Err(e) => {
-                output.print(&format!("   ⚠️ Could not restore context: {}", e));
-            }
-        }
-        
-        // Copy TODO from old session to new session directory
-        let todo_content = if let Some(ref content) = incomplete_session.todo_snapshot {
-            Some(content.clone())
-        } else {
-            // Fallback: read from the actual todo.g3.md file in the old session directory
-            let old_session_dir = std::path::Path::new(".g3/sessions").join(&incomplete_session.session_id);
-            let old_todo_path = old_session_dir.join("todo.g3.md");
-            if old_todo_path.exists() {
-                std::fs::read_to_string(&old_todo_path).ok()
-            } else {
-                None
-            }
-        };
-        
-        if let Some(ref content) = todo_content {
-            if let Some(session_id) = agent.get_session_id() {
-                let new_todo_path = g3_core::paths::get_session_todo_path(session_id);
-                let _ = g3_core::paths::ensure_session_dir(session_id);
-                if let Err(e) = std::fs::write(&new_todo_path, content) {
-                    output.print(&format!("   ⚠️ Could not restore TODO: {}", e));
-                } else {
-                    output.print("   ✅ TODO list restored");
-                }
-            }
-        }
-        output.print("");
-        
-        // Resume message instead of fresh start
-        "Continue working on the incomplete tasks. Use todo_read to see the current TODO list and resume from where you left off."
+
+    let mut agent = if cli.autonomous {
+        Agent::new_autonomous_with_readme_and_quiet(
+            config.clone(),
+            ui_writer,
+            combined_content.clone(),
+            cli.quiet,
+        )
+        .await?
     } else {
-        // Fresh start - the agent prompt should contain instructions to start working immediately
-        "Begin your analysis and work on the current project. Follow your mission and workflow as specified in your instructions."
+        Agent::new_with_readme_and_quiet(
+            config.clone(),
+            ui_writer,
+            combined_content.clone(),
+            cli.quiet,
+        )
+        .await?
     };
-    // Use provided task if available, otherwise use the default initial_task
-    let final_task = task.as_deref().unwrap_or(initial_task);
-    
-    let _result = agent.execute_task(final_task, None, true).await?;
-    
-    // Send auto-memory reminder if enabled and tools were called
-    if let Err(e) = agent.send_auto_memory_reminder().await {
-        debug!("Auto-memory reminder failed: {}", e);
+
+    if cli.auto_memory {
+        agent.set_auto_memory(true);
     }
-    
-    // Save session continuation for resume capability
-    agent.save_session_continuation(None);
-    
-    // Don't print completion message for scout agent - it needs the last line
-    // to be the report file path for the research tool to read
-    if agent_name != "scout" {
-        output.print("\n✅ Agent mode completed");
+    if cli.acd {
+        agent.set_acd_enabled(true);
     }
-    Ok(())
+
+    if cli.autonomous {
+        let _agent = run_autonomous(
+            agent,
+            project,
+            cli.show_prompt,
+            cli.show_code,
+            cli.max_turns,
+            cli.quiet,
+            cli.codebase_fast_start.clone(),
+        )
+        .await?;
+        Ok(())
+    } else if let Some(task) = cli.task {
+        // Single-shot mode
+        let output = SimpleOutput::new();
+        let result = agent
+            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
+            .await?;
+        output.print_smart(&result.response);
+
+        if let Err(e) = agent.send_auto_memory_reminder().await {
+            debug!("Auto-memory reminder failed: {}", e);
+        }
+        agent.save_session_continuation(Some(result.response.clone()));
+        Ok(())
+    } else {
+        run_interactive(
+            agent,
+            cli.show_prompt,
+            cli.show_code,
+            combined_content,
+            project.workspace(),
+        )
+        .await
+    }
 }
 
 /// Run flock mode - parallel multi-agent development
@@ -720,11 +401,9 @@ async fn run_flock_mode(
     output.print(&format!("🔄 Max Turns per Segment: {}", max_turns));
     output.print("");
 
-    // Create flock configuration
     let config = g3_ensembles::FlockConfig::new(project_dir, flock_workspace, num_segments)?
         .with_max_turns(max_turns);
 
-    // Create and run flock mode
     let mut flock = g3_ensembles::FlockMode::new(config)?;
 
     match flock.run().await {
@@ -733,2234 +412,4 @@ async fn run_flock_mode(
     }
 
     Ok(())
-}
-
-/// Accumulative autonomous mode: accumulates requirements from user input
-/// and runs autonomous mode after each input
-async fn run_accumulative_mode(
-    workspace_dir: PathBuf,
-    cli: Cli,
-    combined_content: Option<String>,
-) -> Result<()> {
-    let output = SimpleOutput::new();
-
-    output.print("");
-    output.print("g3 programming agent - autonomous mode");
-    output.print("      >> describe what you want, I'll build it iteratively");
-    output.print("");
-    print!(
-        "{}workspace: {}{}\n",
-        SetForegroundColor(Color::DarkGrey),
-        workspace_dir.display(),
-        ResetColor
-    );
-    output.print("");
-    output.print("💡 Each input you provide will be added to requirements");
-    output.print("   and I'll automatically work on implementing them. You can");
-    output.print("   interrupt at any time (Ctrl+C) to add clarifications or more requirements.");
-    output.print("");
-    output.print("   Type '/help' for commands, 'exit' or 'quit' to stop, Ctrl+D to finish");
-    output.print("");
-
-    // Initialize rustyline editor with history
-    let mut rl = DefaultEditor::new()?;
-    let history_file = dirs::home_dir().map(|mut path| {
-        path.push(".g3_accumulative_history");
-        path
-    });
-
-    if let Some(ref history_path) = history_file {
-        let _ = rl.load_history(history_path);
-    }
-
-    // Accumulated requirements stored in memory
-    let mut accumulated_requirements = Vec::new();
-    let mut turn_number = 0;
-
-    loop {
-        output.print(&format!("\n{}", "=".repeat(60)));
-        if accumulated_requirements.is_empty() {
-            output.print("📝 What would you like me to build? (describe your requirements)");
-        } else {
-            output.print(&format!(
-                "📝 Turn {} - What's next? (add more requirements or refinements)",
-                turn_number + 1
-            ));
-        }
-        output.print(&format!("{}", "=".repeat(60)));
-
-        let readline = rl.readline("requirement> ");
-        match readline {
-            Ok(line) => {
-                let input = line.trim().to_string();
-
-                if input.is_empty() {
-                    continue;
-                }
-
-                if input == "exit" || input == "quit" {
-                    output.print("\n👋 Goodbye!");
-                    break;
-                }
-
-                // Check for slash commands
-                if input.starts_with('/') {
-                    match input.as_str() {
-                        "/help" => {
-                            output.print("");
-                            output.print("📖 Available Commands:");
-                            output.print("  /requirements - Show all accumulated requirements");
-                            output.print("  /chat         - Switch to interactive chat mode");
-                            output.print("  /help         - Show this help message");
-                            output.print("  exit/quit     - Exit the session");
-                            output.print("");
-                            continue;
-                        }
-                        "/requirements" => {
-                            output.print("");
-                            if accumulated_requirements.is_empty() {
-                                output.print("📋 No requirements accumulated yet");
-                            } else {
-                                output.print("📋 Accumulated Requirements:");
-                                output.print("");
-                                for req in &accumulated_requirements {
-                                    output.print(&format!("   {}", req));
-                                }
-                            }
-                            output.print("");
-                            continue;
-                        }
-                        "/chat" => {
-                            output.print("");
-                            output.print("🔄 Switching to interactive chat mode...");
-                            output.print("");
-
-                            // Build context message with accumulated requirements
-                            let requirements_context = if accumulated_requirements.is_empty() {
-                                None
-                            } else {
-                                Some(format!(
-                                    "📋 Context from Accumulative Mode:\n\n\
-                                    We were working on these requirements. There may be unstaged or in-progress changes or recent changes to this branch. This is for your information.\n\n\
-                                    Requirements:\n{}\n",
-                                    accumulated_requirements.join("\n")
-                                ))
-                            };
-
-                            // Combine with existing content (README/AGENTS.md)
-                            let chat_combined_content =
-                                match (requirements_context, combined_content.clone()) {
-                                    (Some(req_ctx), Some(existing)) => {
-                                        Some(format!("{}\n\n{}", req_ctx, existing))
-                                    }
-                                    (Some(req_ctx), None) => Some(req_ctx),
-                                    (None, existing) => existing,
-                                };
-
-                            // Load configuration
-                            let mut config = Config::load_with_overrides(
-                                cli.config.as_deref(),
-                                cli.provider.clone(),
-                                cli.model.clone(),
-                            )?;
-
-                            // Apply webdriver flag override
-                            if cli.webdriver {
-                                config.webdriver.enabled = true;
-                            }
-
-                            // Apply chrome-headless flag override
-                            if cli.chrome_headless {
-                                config.webdriver.enabled = true;
-                                config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
-                            }
-
-                            // Apply safari flag override
-                            if cli.safari {
-                                config.webdriver.enabled = true;
-                                config.webdriver.browser = g3_config::WebDriverBrowser::Safari;
-                            }
-
-                            // Apply no-auto-compact flag override
-                            if cli.manual_compact {
-                                config.agent.auto_compact = false;
-                            }
-
-                            // Create agent for interactive mode with requirements context
-                            let ui_writer = ConsoleUiWriter::new();
-                            let agent = Agent::new_with_readme_and_quiet(
-                                config,
-                                ui_writer,
-                                chat_combined_content.clone(),
-                                cli.quiet,
-                            )
-                            .await?;
-
-                            // Run interactive mode
-                            run_interactive(
-                                agent,
-                                cli.show_prompt,
-                                cli.show_code,
-                                chat_combined_content,
-                                &workspace_dir,
-                            )
-                            .await?;
-
-                            // After returning from interactive mode, exit
-                            output.print("\n👋 Goodbye!");
-                            break;
-                        }
-                        _ => {
-                            output.print(&format!(
-                                "❌ Unknown command: {}. Type /help for available commands.",
-                                input
-                            ));
-                            continue;
-                        }
-                    }
-                }
-
-                // Add to history
-                rl.add_history_entry(&input)?;
-
-                // Add this requirement to accumulated list
-                turn_number += 1;
-                accumulated_requirements.push(format!("{}. {}", turn_number, input));
-
-                // Build the complete requirements document
-                let requirements_doc = format!(
-                    "# Project Requirements\n\n\
-                    ## Current Instructions and Requirements:\n\n\
-                    {}\n\n\
-                    ## Latest Requirement (Turn {}):\n\n\
-                    {}",
-                    accumulated_requirements.join("\n"),
-                    turn_number,
-                    input
-                );
-
-                output.print("");
-                output.print(&format!(
-                    "📋 Current instructions and requirements (Turn {}):",
-                    turn_number
-                ));
-                output.print(&format!("   {}", input));
-                output.print("");
-                output.print("🚀 Starting autonomous implementation...");
-                output.print("");
-
-                // Create a project with the accumulated requirements
-                let project = Project::new_autonomous_with_requirements(
-                    workspace_dir.clone(),
-                    requirements_doc.clone(),
-                )?;
-
-                // Ensure workspace exists and enter it
-                project.ensure_workspace_exists()?;
-                project.enter_workspace()?;
-
-                // Load configuration with CLI overrides
-                let mut config = Config::load_with_overrides(
-                    cli.config.as_deref(),
-                    cli.provider.clone(),
-                    cli.model.clone(),
-                )?;
-
-                // Apply webdriver flag override
-                if cli.webdriver {
-                    config.webdriver.enabled = true;
-                }
-
-                // Apply chrome-headless flag override
-                if cli.chrome_headless {
-                    config.webdriver.enabled = true;
-                    config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
-                }
-
-                // Apply safari flag override
-                if cli.safari {
-                    config.webdriver.enabled = true;
-                    config.webdriver.browser = g3_config::WebDriverBrowser::Safari;
-                }
-
-                // Apply no-auto-compact flag override
-                if cli.manual_compact {
-                    config.agent.auto_compact = false;
-                }
-
-                // Create agent for this autonomous run
-                let ui_writer = ConsoleUiWriter::new();
-                let agent = Agent::new_autonomous_with_readme_and_quiet(
-                    config.clone(),
-                    ui_writer,
-                    combined_content.clone(),
-                    cli.quiet,
-                )
-                .await?;
-
-                // Run autonomous mode with the accumulated requirements
-                let autonomous_result = tokio::select! {
-                    result = run_autonomous(
-                        agent,
-                        project,
-                        cli.show_prompt,
-                        cli.show_code,
-                        cli.max_turns,
-                        cli.quiet,
-                        cli.codebase_fast_start.clone(),
-                    ) => result.map(Some),
-                    _ = tokio::signal::ctrl_c() => {
-                        output.print("\n⚠️  Autonomous run cancelled by user (Ctrl+C)");
-                        // Agent was moved into run_autonomous and is now dropped
-                        // We can't save continuation here, but the next iteration will create a new agent
-                        Ok(None)
-                    }
-                };
-
-                match autonomous_result {
-                    Ok(Some(_returned_agent)) => {
-                        // Session continuation was already saved by run_autonomous
-                        output.print("");
-                        output.print("✅ Autonomous run completed");
-                    }
-                    Ok(None) => {
-                        // Ctrl+C case - agent was dropped, continuation not saved
-                        output.print("   (session continuation not saved due to cancellation)");
-                    }
-                    Err(e) => {
-                        output.print("");
-                        output.print(&format!("❌ Autonomous run failed: {}", e));
-                        output.print("   You can provide more requirements to continue.");
-                    }
-                }
-            }
-            Err(ReadlineError::Interrupted) => {
-                output.print("\n👋 Interrupted. Goodbye!");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                output.print("\n👋 Goodbye!");
-                break;
-            }
-            Err(err) => {
-                error!("Error: {:?}", err);
-                break;
-            }
-        }
-    }
-
-    // Save history before exiting
-    if let Some(ref history_path) = history_file {
-        let _ = rl.save_history(history_path);
-    }
-
-    Ok(())
-}
-
-// Simplified machine mode version of autonomous mode
-async fn run_autonomous_machine(
-    mut agent: Agent<MachineUiWriter>,
-    project: Project,
-    show_prompt: bool,
-    show_code: bool,
-    max_turns: usize,
-    _quiet: bool,
-    _codebase_fast_start: Option<PathBuf>,
-) -> Result<()> {
-    println!("AUTONOMOUS_MODE_STARTED");
-    println!("WORKSPACE: {}", project.workspace().display());
-    println!("MAX_TURNS: {}", max_turns);
-
-    // Check if requirements exist
-    if !project.has_requirements() {
-        println!("ERROR: requirements.md not found in workspace directory");
-        return Ok(());
-    }
-
-    // Read requirements
-    let requirements = match project.read_requirements()? {
-        Some(content) => content,
-        None => {
-            println!("ERROR: Could not read requirements");
-            return Ok(());
-        }
-    };
-
-    println!("REQUIREMENTS_LOADED");
-
-    // For now, just execute a simple autonomous loop
-    // This is a simplified version - full implementation would need coach-player loop
-    let task = format!(
-        "You are G3 in implementation mode. Read and implement the following requirements:\n\n{}\n\nImplement this step by step, creating all necessary files and code.",
-        requirements
-    );
-
-    println!("TASK_START");
-    let result = agent
-        .execute_task_with_timing(&task, None, false, show_prompt, show_code, true, None)
-        .await?;
-    println!("AGENT_RESPONSE:");
-    println!("{}", result.response);
-    println!("END_AGENT_RESPONSE");
-    println!("TASK_END");
-
-    // Save session continuation for resume capability
-    agent.save_session_continuation(Some(result.response.clone()));
-
-    println!("AUTONOMOUS_MODE_ENDED");
-    Ok(())
-}
-
-async fn run_with_console_mode(
-    mut agent: Agent<ConsoleUiWriter>,
-    cli: Cli,
-    project: Project,
-    combined_content: Option<String>,
-) -> Result<()> {
-    // Execute task, autonomous mode, or start interactive mode
-    if cli.autonomous {
-        // Autonomous mode with coach-player feedback loop
-        let _agent = run_autonomous(
-            agent,
-            project,
-            cli.show_prompt,
-            cli.show_code,
-            cli.max_turns,
-            cli.quiet,
-            cli.codebase_fast_start.clone(),
-        )
-        .await?;
-    } else if let Some(task) = cli.task {
-        // Single-shot mode
-        let output = SimpleOutput::new();
-        let result = agent
-            .execute_task_with_timing(
-                &task,
-                None,
-                false,
-                cli.show_prompt,
-                cli.show_code,
-                true,
-                None,
-            )
-            .await?;
-        output.print_smart(&result.response);
-        
-        // Send auto-memory reminder if enabled and tools were called
-        if let Err(e) = agent.send_auto_memory_reminder().await {
-            debug!("Auto-memory reminder failed: {}", e);
-        }
-        // Save session continuation for resume capability
-        agent.save_session_continuation(Some(result.response.clone()));
-    } else {
-        // Interactive mode (default)
-        run_interactive(
-            agent,
-            cli.show_prompt,
-            cli.show_code,
-            combined_content,
-            project.workspace(),
-        )
-        .await?;
-    }
-
-    Ok(())
-}
-
-async fn run_with_machine_mode(
-    mut agent: Agent<MachineUiWriter>,
-    cli: Cli,
-    project: Project,
-) -> Result<()> {
-    if cli.autonomous {
-        // Autonomous mode with coach-player feedback loop
-        run_autonomous_machine(
-            agent,
-            project,
-            cli.show_prompt,
-            cli.show_code,
-            cli.max_turns,
-            cli.quiet,
-            cli.codebase_fast_start.clone(),
-        )
-        .await?;
-    } else if let Some(task) = cli.task {
-        // Single-shot mode
-        let result = agent
-            .execute_task_with_timing(
-                &task,
-                None,
-                false,
-                cli.show_prompt,
-                cli.show_code,
-                true,
-                None,
-            )
-            .await?;
-        println!("AGENT_RESPONSE:");
-        println!("{}", result.response);
-        println!("END_AGENT_RESPONSE");
-        
-        // Send auto-memory reminder if enabled and tools were called
-        if let Err(e) = agent.send_auto_memory_reminder().await {
-            debug!("Auto-memory reminder failed: {}", e);
-        }
-        // Save session continuation for resume capability
-        agent.save_session_continuation(Some(result.response.clone()));
-    } else {
-        // Interactive mode
-        run_interactive_machine(agent, cli.show_prompt, cli.show_code).await?;
-    }
-
-    Ok(())
-}
-
-/// Check if we're in a project directory and read AGENTS.md if available
-async fn run_interactive<W: UiWriter>(
-    mut agent: Agent<W>,
-    show_prompt: bool,
-    show_code: bool,
-    combined_content: Option<String>,
-    workspace_path: &Path,
-) -> Result<()> {
-    let output = SimpleOutput::new();
-
-    // Check for session continuation
-    if let Ok(Some(continuation)) = g3_core::load_continuation() {
-        output.print("");
-        output.print("🔄 Previous session detected!");
-        output.print(&format!(
-            "   Session: {}",
-            &continuation.session_id[..continuation.session_id.len().min(20)]
-        ));
-        output.print(&format!(
-            "   Context: {:.1}% used",
-            continuation.context_percentage
-        ));
-        if let Some(ref summary) = continuation.summary {
-            let preview: String = summary.chars().take(80).collect();
-            output.print(&format!("   Last output: {}...", preview));
-        }
-        output.print("");
-        output.print("Resume this session? [Y/n] ");
-        
-        // Read user input
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_lowercase();
-        
-        if input.is_empty() || input == "y" || input == "yes" {
-            // Resume the session
-            match agent.restore_from_continuation(&continuation) {
-                Ok(true) => {
-                    output.print("✅ Full context restored from previous session");
-                }
-                Ok(false) => {
-                    output.print("✅ Session resumed with summary (context was > 80%)");
-                }
-                Err(e) => {
-                    output.print(&format!("⚠️ Could not restore session: {}", e));
-                    output.print("Starting fresh session instead.");
-                    // Clear the invalid continuation
-                    let _ = g3_core::clear_continuation();
-                }
-            }
-        } else {
-            // User declined, clear the continuation
-            output.print("🧹 Starting fresh session...");
-            let _ = g3_core::clear_continuation();
-        }
-        output.print("");
-    }
-
-    output.print("");
-    output.print("g3 programming agent");
-    output.print("      >> what shall we build today?");
-    output.print("");
-
-    // Display provider and model information
-    match agent.get_provider_info() {
-        Ok((provider, model)) => {
-            print!(
-                "🔧 {}{}{} | {}{}{}\n",
-                SetForegroundColor(Color::Cyan),
-                provider,
-                ResetColor,
-                SetForegroundColor(Color::Yellow),
-                model,
-                ResetColor
-            );
-        }
-        Err(e) => {
-            error!("Failed to get provider info: {}", e);
-        }
-    }
-
-    // Display message if AGENTS.md or README was loaded
-    if let Some(ref content) = combined_content {
-        // Check what was loaded
-        let has_agents = content.contains("Agent Configuration");
-        let has_readme = content.contains("Project README");
-        let has_memory = content.contains("Project Memory");
-
-        if has_agents {
-            print!(
-                "{}🤖 AGENTS.md configuration loaded{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                ResetColor
-            );
-        }
-
-        if has_readme {
-            // Extract the first heading or title from the README
-            let readme_snippet = extract_readme_heading(content)
-                .unwrap_or_else(|| "Project documentation loaded".to_string());
-
-            print!(
-                "{}📚 detected: {}{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                readme_snippet,
-                ResetColor
-            );
-        }
-
-        if has_memory {
-            print!(
-                "{}🧠 Project memory loaded{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                ResetColor
-            );
-        }
-    }
-
-    // Display workspace path
-    print!(
-        "{}workspace: {}{}\n",
-        SetForegroundColor(Color::DarkGrey),
-        workspace_path.display(),
-        ResetColor
-    );
-    output.print("");
-
-    // Initialize rustyline editor with history
-    let mut rl = DefaultEditor::new()?;
-
-    // Try to load history from a file in the user's home directory
-    let history_file = dirs::home_dir().map(|mut path| {
-        path.push(".g3_history");
-        path
-    });
-
-    if let Some(ref history_path) = history_file {
-        let _ = rl.load_history(history_path);
-    }
-
-    // Track multiline input
-    let mut multiline_buffer = String::new();
-    let mut in_multiline = false;
-
-    loop {
-        // Display context window progress bar before each prompt
-        display_context_progress(&agent, &output);
-
-        // Adjust prompt based on whether we're in multi-line mode
-        let prompt = if in_multiline { "... > " } else { "g3> " };
-
-        let readline = rl.readline(prompt);
-        match readline {
-            Ok(line) => {
-                let trimmed = line.trim_end();
-
-                // Check if line ends with backslash for continuation
-                if let Some(without_backslash) = trimmed.strip_suffix('\\') {
-                    // Remove the backslash and add to buffer
-                    multiline_buffer.push_str(without_backslash);
-                    multiline_buffer.push('\n');
-                    in_multiline = true;
-                    continue;
-                }
-
-                // If we're in multiline mode and no backslash, this is the final line
-                if in_multiline {
-                    multiline_buffer.push_str(&line);
-                    in_multiline = false;
-                    // Process the complete multiline input
-                    let input = multiline_buffer.trim().to_string();
-                    multiline_buffer.clear();
-
-                    if input.is_empty() {
-                        continue;
-                    }
-
-                    // Add complete multiline to history
-                    rl.add_history_entry(&input)?;
-
-                    if input == "exit" || input == "quit" {
-                        break;
-                    }
-
-                    // Process the multiline input
-                    execute_task(&mut agent, &input, show_prompt, show_code, &output).await;
-
-                    // Send auto-memory reminder if enabled and tools were called
-                    if let Err(e) = agent.send_auto_memory_reminder().await {
-                        debug!("Auto-memory reminder failed: {}", e);
-                    }
-                } else {
-                    // Single line input
-                    let input = line.trim().to_string();
-
-                    if input.is_empty() {
-                        continue;
-                    }
-
-                    if input == "exit" || input == "quit" {
-                        break;
-                    }
-
-                    // Add to history
-                    rl.add_history_entry(&input)?;
-
-                    // Check for control commands
-                    if input.starts_with('/') {
-                        match input.as_str() {
-                            "/help" => {
-                                output.print("");
-                                output.print("📖 Control Commands:");
-                                output.print("  /compact   - Trigger compaction (compacts conversation history)");
-                                output.print("  /thinnify  - Trigger context thinning (replaces large tool results with file references)");
-                                output.print("  /skinnify  - Trigger full context thinning (like /thinnify but for entire context, not just first third)");
-                                output.print("  /clear     - Clear session and start fresh (discards continuation artifacts)");
-                                output.print("  /fragments - List dehydrated context fragments (ACD)");
-                                output.print("  /rehydrate - Restore a dehydrated fragment by ID");
-                                output.print("  /resume    - List and switch to a previous session");
-                                output.print("  /dump      - Dump entire context window to file for debugging");
-                                output.print(
-                                    "  /readme    - Reload README.md and AGENTS.md from disk",
-                                );
-                                output.print("  /stats     - Show detailed context and performance statistics");
-                                output.print("  /help      - Show this help message");
-                                output.print("  exit/quit  - Exit the interactive session");
-                                output.print("");
-                                continue;
-                            }
-                            "/compact" => {
-                                output.print("🗜️ Triggering manual compaction...");
-                                match agent.force_compact().await {
-                                    Ok(true) => {
-                                        output.print("✅ Compaction completed successfully");
-                                    }
-                                    Ok(false) => {
-                                        output.print("⚠️ Compaction failed");
-                                    }
-                                    Err(e) => {
-                                        output.print(&format!(
-                                            "❌ Error during compaction: {}",
-                                            e
-                                        ));
-                                    }
-                                }
-                                continue;
-                            }
-                            "/thinnify" => {
-                                let summary = agent.force_thin();
-                                println!("{}", summary);
-                                continue;
-                            }
-                            "/skinnify" => {
-                                let summary = agent.force_thin_all();
-                                println!("{}", summary);
-                                continue;
-                            }
-                            "/fragments" => {
-                                if let Some(session_id) = agent.get_session_id() {
-                                    match g3_core::acd::list_fragments(session_id) {
-                                        Ok(fragments) => {
-                                            if fragments.is_empty() {
-                                                output.print("No dehydrated fragments found for this session.");
-                                            } else {
-                                                output.print(&format!("📦 {} dehydrated fragment(s):\n", fragments.len()));
-                                                for fragment in &fragments {
-                                                    output.print(&fragment.generate_stub());
-                                                    output.print("");
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            output.print(&format!("❌ Error listing fragments: {}", e));
-                                        }
-                                    }
-                                } else {
-                                    output.print("No active session - fragments are session-scoped.");
-                                }
-                                continue;
-                            }
-                            cmd if cmd.starts_with("/rehydrate") => {
-                                let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
-                                if parts.len() < 2 || parts[1].trim().is_empty() {
-                                    output.print("Usage: /rehydrate <fragment_id>");
-                                    output.print("Use /fragments to list available fragment IDs.");
-                                } else {
-                                    let fragment_id = parts[1].trim();
-                                    if let Some(session_id) = agent.get_session_id() {
-                                        match g3_core::acd::Fragment::load(session_id, fragment_id) {
-                                            Ok(fragment) => {
-                                                output.print(&format!("✅ Fragment '{}' loaded ({} messages, ~{} tokens)", 
-                                                    fragment_id, fragment.message_count, fragment.estimated_tokens));
-                                                output.print("");
-                                                output.print(&fragment.generate_stub());
-                                            }
-                                            Err(e) => {
-                                                output.print(&format!("❌ Failed to load fragment '{}': {}", fragment_id, e));
-                                            }
-                                        }
-                                    } else {
-                                        output.print("No active session - fragments are session-scoped.");
-                                    }
-                                }
-                                continue;
-                            }
-                            "/dump" => {
-                                // Dump entire context window to a file for debugging
-                                let dump_dir = std::path::Path::new("tmp");
-                                if !dump_dir.exists() {
-                                    if let Err(e) = std::fs::create_dir_all(dump_dir) {
-                                        output.print(&format!("❌ Failed to create tmp directory: {}", e));
-                                        continue;
-                                    }
-                                }
-                                
-                                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-                                let dump_path = dump_dir.join(format!("context_dump_{}.txt", timestamp));
-                                
-                                let context = agent.get_context_window();
-                                let mut dump_content = String::new();
-                                dump_content.push_str(&format!("# Context Window Dump\n"));
-                                dump_content.push_str(&format!("# Timestamp: {}\n", chrono::Utc::now()));
-                                dump_content.push_str(&format!("# Messages: {}\n", context.conversation_history.len()));
-                                dump_content.push_str(&format!("# Used tokens: {} / {} ({:.1}%)\n\n", 
-                                    context.used_tokens, context.total_tokens, context.percentage_used()));
-                                
-                                for (i, msg) in context.conversation_history.iter().enumerate() {
-                                    dump_content.push_str(&format!("=== Message {} ===\n", i));
-                                    dump_content.push_str(&format!("Role: {:?}\n", msg.role));
-                                    dump_content.push_str(&format!("Kind: {:?}\n", msg.kind));
-                                    dump_content.push_str(&format!("Content ({} chars):\n", msg.content.len()));
-                                    dump_content.push_str(&msg.content);
-                                    dump_content.push_str("\n\n");
-                                }
-                                
-                                match std::fs::write(&dump_path, &dump_content) {
-                                    Ok(_) => output.print(&format!("📄 Context dumped to: {}", dump_path.display())),
-                                    Err(e) => output.print(&format!("❌ Failed to write dump: {}", e)),
-                                }
-                                continue;
-                            }
-                            "/clear" => {
-                                output.print("🧹 Clearing session...");
-                                agent.clear_session();
-                                output.print("✅ Session cleared. Starting fresh.");
-                                continue;
-                            }
-                            "/readme" => {
-                                output.print("📚 Reloading README.md and AGENTS.md...");
-                                match agent.reload_readme() {
-                                    Ok(true) => {
-                                        output.print("✅ README content reloaded successfully")
-                                    }
-                                    Ok(false) => output
-                                        .print("⚠️ No README was loaded at startup, cannot reload"),
-                                    Err(e) => {
-                                        output.print(&format!("❌ Error reloading README: {}", e))
-                                    }
-                                }
-                                continue;
-                            }
-                            "/stats" => {
-                                let stats = agent.get_stats();
-                                output.print(&stats);
-                                continue;
-                            }
-                            "/resume" => {
-                                output.print("📋 Scanning for available sessions...");
-                                
-                                match g3_core::list_sessions_for_directory() {
-                                    Ok(sessions) => {
-                                        if sessions.is_empty() {
-                                            output.print("No sessions found for this directory.");
-                                            continue;
-                                        }
-                                        
-                                        // Get current session ID to mark it
-                                        let current_session_id = agent.get_session_id().map(|s| s.to_string());
-                                        
-                                        output.print("");
-                                        output.print("Available sessions:");
-                                        for (i, session) in sessions.iter().enumerate() {
-                                            let time_str = g3_core::format_session_time(&session.created_at);
-                                            let context_str = format!("{:.0}%", session.context_percentage);
-                                            let current_marker = if current_session_id.as_deref() == Some(&session.session_id) {
-                                                " (current)"
-                                            } else {
-                                                ""
-                                            };
-                                            let todo_marker = if session.has_incomplete_todos() { " 📝" } else { "" };
-                                            
-                                            // Use description if available, otherwise fall back to session ID
-                                            let display_name = match &session.description {
-                                                Some(desc) => format!("'{}'", desc),
-                                                None => if session.session_id.len() > 40 {
-                                                    format!("{}...", &session.session_id[..40])
-                                                } else {
-                                                    session.session_id.clone()
-                                                }
-                                            };
-                                            output.print(&format!(
-                                                "  {}. [{}] {} ({}){}{}",
-                                                i + 1, time_str, display_name, context_str, todo_marker, current_marker
-                                            ));
-                                        }
-                                        output.print("");
-                                        output.print("Enter session number to resume (or press Enter to cancel):");
-                                        
-                                        // Read user selection
-                                        if let Ok(selection) = rl.readline("> ") {
-                                            let selection = selection.trim();
-                                            if selection.is_empty() {
-                                                output.print("Resume cancelled.");
-                                            } else if let Ok(num) = selection.parse::<usize>() {
-                                                if num >= 1 && num <= sessions.len() {
-                                                    let selected = &sessions[num - 1];
-                                                    output.print(&format!("🔄 Switching to session: {}", selected.session_id));
-                                                    match agent.switch_to_session(selected) {
-                                                        Ok(true) => output.print("✅ Full context restored from session."),
-                                                        Ok(false) => output.print("✅ Session restored from summary."),
-                                                        Err(e) => output.print(&format!("❌ Error restoring session: {}", e)),
-                                                    }
-                                                } else {
-                                                    output.print("Invalid selection.");
-                                                }
-                                            } else {
-                                                output.print("Invalid input. Please enter a number.");
-                                            }
-                                        }
-                                    }
-                                    Err(e) => output.print(&format!("❌ Error listing sessions: {}", e)),
-                                }
-                                continue;
-                            }
-                            _ => {
-                                output.print(&format!(
-                                    "❌ Unknown command: {}. Type /help for available commands.",
-                                    input
-                                ));
-                                continue;
-                            }
-                        }
-                    }
-
-                    // Process the single line input
-                    execute_task(&mut agent, &input, show_prompt, show_code, &output).await;
-
-                    // Send auto-memory reminder if enabled and tools were called
-                    if let Err(e) = agent.send_auto_memory_reminder().await {
-                        debug!("Auto-memory reminder failed: {}", e);
-                    }
-                }
-            }
-            Err(ReadlineError::Interrupted) => {
-                // Ctrl-C pressed
-                if in_multiline {
-                    // Cancel multiline input
-                    output.print("Multi-line input cancelled");
-                    multiline_buffer.clear();
-                    in_multiline = false;
-                } else {
-                    output.print("CTRL-C");
-                }
-                continue;
-            }
-            Err(ReadlineError::Eof) => {
-                output.print("CTRL-D");
-                break;
-            }
-            Err(err) => {
-                error!("Error: {:?}", err);
-                break;
-            }
-        }
-    }
-
-    // Save history before exiting
-    if let Some(ref history_path) = history_file {
-        let _ = rl.save_history(history_path);
-    }
-
-    // Save session continuation for resume capability
-    agent.save_session_continuation(None);
-
-    output.print("👋 Goodbye!");
-    Ok(())
-}
-
-async fn execute_task<W: UiWriter>(
-    agent: &mut Agent<W>,
-    input: &str,
-    show_prompt: bool,
-    show_code: bool,
-    output: &SimpleOutput,
-) {
-    const MAX_TIMEOUT_RETRIES: u32 = 3;
-    let mut attempt = 0;
-    // Show thinking indicator immediately
-    output.print("🤔 Thinking...");
-    // Note: flush is handled internally by println
-
-    // Create cancellation token for this request
-    let cancellation_token = CancellationToken::new();
-    let cancel_token_clone = cancellation_token.clone();
-
-    loop {
-        attempt += 1;
-
-        // Execute task with cancellation support
-        let execution_result = tokio::select! {
-            result = agent.execute_task_with_timing_cancellable(
-                input, None, false, show_prompt, show_code, true, cancellation_token.clone(), None
-            ) => {
-                result
-            }
-            _ = tokio::signal::ctrl_c() => {
-                cancel_token_clone.cancel();
-                output.print("\n⚠️  Operation cancelled by user (Ctrl+C)");
-                return;
-            }
-        };
-
-        match execution_result {
-            Ok(result) => {
-                if attempt > 1 {
-                    output.print(&format!("✅ Request succeeded after {} attempts", attempt));
-                }
-                output.print_smart(&result.response);
-                return;
-            }
-            Err(e) => {
-                if e.to_string().contains("cancelled") {
-                    output.print("⚠️  Operation cancelled by user");
-                    return;
-                }
-
-                // Check if this is a timeout error that we should retry
-                let error_type = classify_error(&e);
-
-                if matches!(
-                    error_type,
-                    ErrorType::Recoverable(RecoverableError::Timeout)
-                ) && attempt < MAX_TIMEOUT_RETRIES
-                {
-                    // Calculate retry delay with exponential backoff
-                    let delay_ms = 1000 * (2_u64.pow(attempt - 1));
-                    let delay = std::time::Duration::from_millis(delay_ms);
-
-                    output.print(&format!(
-                        "⏱️  Timeout error detected (attempt {}/{}). Retrying in {:?}...",
-                        attempt, MAX_TIMEOUT_RETRIES, delay
-                    ));
-
-                    // Wait before retrying
-                    tokio::time::sleep(delay).await;
-                    continue;
-                }
-
-                // For non-timeout errors or after max retries, handle as before
-                handle_execution_error(&e, input, output, attempt);
-                return;
-            }
-        }
-    }
-}
-
-async fn run_interactive_machine(
-    mut agent: Agent<MachineUiWriter>,
-    show_prompt: bool,
-    show_code: bool,
-) -> Result<()> {
-    println!("INTERACTIVE_MODE_STARTED");
-
-    // Display provider and model information
-    match agent.get_provider_info() {
-        Ok((provider, model)) => {
-            println!("PROVIDER: {}", provider);
-            println!("MODEL: {}", model);
-        }
-        Err(e) => {
-            println!("ERROR: Failed to get provider info: {}", e);
-        }
-    }
-
-    // Initialize rustyline editor with history
-    let mut rl = DefaultEditor::new()?;
-
-    // Try to load history from a file in the user's home directory
-    let history_file = dirs::home_dir().map(|mut path| {
-        path.push(".g3_history");
-        path
-    });
-
-    if let Some(ref history_path) = history_file {
-        let _ = rl.load_history(history_path);
-    }
-
-    loop {
-        let readline = rl.readline("");
-        match readline {
-            Ok(line) => {
-                let input = line.trim().to_string();
-
-                if input.is_empty() {
-                    continue;
-                }
-
-                if input == "exit" || input == "quit" {
-                    break;
-                }
-
-                // Add to history
-                rl.add_history_entry(&input)?;
-
-                // Check for control commands
-                if input.starts_with('/') {
-                    match input.as_str() {
-                        "/compact" => {
-                            println!("COMMAND: compact");
-                            match agent.force_compact().await {
-                                Ok(true) => println!("RESULT: Compaction completed"),
-                                Ok(false) => println!("RESULT: Compaction failed"),
-                                Err(e) => println!("ERROR: {}", e),
-                            }
-                            continue;
-                        }
-                        "/thinnify" => {
-                            println!("COMMAND: thinnify");
-                            let summary = agent.force_thin();
-                            println!("{}", summary);
-                            continue;
-                        }
-                        "/skinnify" => {
-                            println!("COMMAND: skinnify");
-                            let summary = agent.force_thin_all();
-                            println!("{}", summary);
-                            continue;
-                        }
-                        "/fragments" => {
-                            println!("COMMAND: fragments");
-                            if let Some(session_id) = agent.get_session_id() {
-                                match g3_core::acd::list_fragments(session_id) {
-                                    Ok(fragments) => {
-                                        println!("FRAGMENT_COUNT: {}", fragments.len());
-                                        for fragment in &fragments {
-                                            println!("FRAGMENT_ID: {}", fragment.fragment_id);
-                                            println!("FRAGMENT_MESSAGES: {}", fragment.message_count);
-                                            println!("FRAGMENT_TOKENS: {}", fragment.estimated_tokens);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        println!("ERROR: {}", e);
-                                    }
-                                }
-                            } else {
-                                println!("ERROR: No active session");
-                            }
-                            continue;
-                        }
-                        cmd if cmd.starts_with("/rehydrate") => {
-                            println!("COMMAND: rehydrate");
-                            let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
-                            if parts.len() < 2 || parts[1].trim().is_empty() {
-                                println!("ERROR: Usage: /rehydrate <fragment_id>");
-                            } else {
-                                let fragment_id = parts[1].trim();
-                                println!("FRAGMENT_ID: {}", fragment_id);
-                                println!("RESULT: Use the rehydrate tool to restore fragment content");
-                            }
-                            continue;
-                        }
-                        "/dump" => {
-                            println!("COMMAND: dump");
-                            let dump_dir = std::path::Path::new("tmp");
-                            if !dump_dir.exists() {
-                                if let Err(e) = std::fs::create_dir_all(dump_dir) {
-                                    println!("ERROR: Failed to create tmp directory: {}", e);
-                                    continue;
-                                }
-                            }
-                            
-                            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-                            let dump_path = dump_dir.join(format!("context_dump_{}.txt", timestamp));
-                            
-                            let context = agent.get_context_window();
-                            let mut dump_content = String::new();
-                            dump_content.push_str(&format!("# Context Window Dump\n"));
-                            dump_content.push_str(&format!("# Timestamp: {}\n", chrono::Utc::now()));
-                            dump_content.push_str(&format!("# Messages: {}\n", context.conversation_history.len()));
-                            dump_content.push_str(&format!("# Used tokens: {} / {} ({:.1}%)\n\n", 
-                                context.used_tokens, context.total_tokens, context.percentage_used()));
-                            
-                            for (i, msg) in context.conversation_history.iter().enumerate() {
-                                dump_content.push_str(&format!("=== Message {} ===\nRole: {:?}\nKind: {:?}\nContent ({} chars):\n{}\n\n",
-                                    i, msg.role, msg.kind, msg.content.len(), msg.content));
-                            }
-                            
-                            match std::fs::write(&dump_path, &dump_content) {
-                                Ok(_) => println!("RESULT: Context dumped to {}", dump_path.display()),
-                                Err(e) => println!("ERROR: Failed to write dump: {}", e),
-                            }
-                            continue;
-                        }
-                        "/clear" => {
-                            println!("COMMAND: clear");
-                            agent.clear_session();
-                            println!("RESULT: Session cleared");
-                            continue;
-                        }
-                        "/readme" => {
-                            println!("COMMAND: readme");
-                            match agent.reload_readme() {
-                                Ok(true) => {
-                                    println!("RESULT: README content reloaded successfully")
-                                }
-                                Ok(false) => println!(
-                                    "RESULT: No README was loaded at startup, cannot reload"
-                                ),
-                                Err(e) => println!("ERROR: {}", e),
-                            }
-                            continue;
-                        }
-                        "/stats" => {
-                            println!("COMMAND: stats");
-                            let stats = agent.get_stats();
-                            // Emit stats as structured data (name: value pairs)
-                            println!("{}", stats);
-                            continue;
-                        }
-                        "/help" => {
-                            println!("COMMAND: help");
-                            println!("AVAILABLE_COMMANDS: /compact /thinnify /skinnify /clear /dump /fragments /rehydrate /resume /readme /stats /help");
-                            continue;
-                        }
-                        "/resume" => {
-                            println!("COMMAND: resume");
-                            match g3_core::list_sessions_for_directory() {
-                                Ok(sessions) => {
-                                    if sessions.is_empty() {
-                                        println!("RESULT: No sessions found");
-                                        continue;
-                                    }
-                                    
-                                    println!("SESSIONS_START");
-                                    for (i, session) in sessions.iter().enumerate() {
-                                        let time_str = g3_core::format_session_time(&session.created_at);
-                                        let has_todos = if session.has_incomplete_todos() { "true" } else { "false" };
-                                        println!(
-                                            "SESSION: {} | {} | {} | {:.0}% | {}",
-                                            i + 1,
-                                            session.session_id,
-                                            time_str,
-                                            session.context_percentage,
-                                            has_todos
-                                        );
-                                    }
-                                    println!("SESSIONS_END");
-                                    println!("HINT: Use /resume <number> to switch to a session");
-                                }
-                                Err(e) => println!("ERROR: {}", e),
-                            }
-                            continue;
-                        }
-                        _ => {
-                            // Check for /resume <number> pattern
-                            if input.starts_with("/resume ") {
-                                let num_str = input.strip_prefix("/resume ").unwrap().trim();
-                                if let Ok(num) = num_str.parse::<usize>() {
-                                    println!("COMMAND: resume {}", num);
-                                    match g3_core::list_sessions_for_directory() {
-                                        Ok(sessions) => {
-                                            if num >= 1 && num <= sessions.len() {
-                                                let selected = &sessions[num - 1];
-                                                match agent.switch_to_session(selected) {
-                                                    Ok(true) => println!("RESULT: Full context restored from session {}", selected.session_id),
-                                                    Ok(false) => println!("RESULT: Session {} restored from summary", selected.session_id),
-                                                    Err(e) => println!("ERROR: {}", e),
-                                                }
-                                            } else {
-                                                println!("ERROR: Invalid session number");
-                                            }
-                                        }
-                                        Err(e) => println!("ERROR: {}", e),
-                                    }
-                                    continue;
-                                }
-                            }
-                            println!("ERROR: Unknown command: {}", input);
-                            continue;
-                        }
-                    }
-                }
-
-                // Execute task
-                println!("TASK_START");
-                execute_task_machine(&mut agent, &input, show_prompt, show_code).await;
-
-                // Send auto-memory reminder if enabled and tools were called
-                if let Err(e) = agent.send_auto_memory_reminder().await {
-                    debug!("Auto-memory reminder failed: {}", e);
-                }
-
-                println!("TASK_END");
-            }
-            Err(ReadlineError::Interrupted) => continue,
-            Err(ReadlineError::Eof) => break,
-            Err(err) => {
-                println!("ERROR: {:?}", err);
-                break;
-            }
-        }
-    }
-
-    // Save history before exiting
-    if let Some(ref history_path) = history_file {
-        let _ = rl.save_history(history_path);
-    }
-
-    // Save session continuation for resume capability
-    agent.save_session_continuation(None);
-
-    println!("INTERACTIVE_MODE_ENDED");
-    Ok(())
-}
-
-async fn execute_task_machine(
-    agent: &mut Agent<MachineUiWriter>,
-    input: &str,
-    show_prompt: bool,
-    show_code: bool,
-) {
-    const MAX_TIMEOUT_RETRIES: u32 = 3;
-    let mut attempt = 0;
-
-    // Create cancellation token for this request
-    let cancellation_token = CancellationToken::new();
-    let cancel_token_clone = cancellation_token.clone();
-
-    loop {
-        attempt += 1;
-
-        // Execute task with cancellation support
-        let execution_result = tokio::select! {
-            result = agent.execute_task_with_timing_cancellable(
-                input, None, false, show_prompt, show_code, true, cancellation_token.clone(), None
-            ) => {
-                result
-            }
-            _ = tokio::signal::ctrl_c() => {
-                cancel_token_clone.cancel();
-                println!("CANCELLED");
-                return;
-            }
-        };
-
-        match execution_result {
-            Ok(result) => {
-                if attempt > 1 {
-                    println!("RETRY_SUCCESS: attempt {}", attempt);
-                }
-                println!("AGENT_RESPONSE:");
-                println!("{}", result.response);
-                println!("END_AGENT_RESPONSE");
-                return;
-            }
-            Err(e) => {
-                if e.to_string().contains("cancelled") {
-                    println!("CANCELLED");
-                    return;
-                }
-
-                // Check if this is a timeout error that we should retry
-                let error_type = classify_error(&e);
-
-                if matches!(
-                    error_type,
-                    ErrorType::Recoverable(RecoverableError::Timeout)
-                ) && attempt < MAX_TIMEOUT_RETRIES
-                {
-                    // Calculate retry delay with exponential backoff
-                    let delay_ms = 1000 * (2_u64.pow(attempt - 1));
-                    let delay = std::time::Duration::from_millis(delay_ms);
-
-                    println!(
-                        "TIMEOUT: attempt {} of {}, retrying in {:?}",
-                        attempt, MAX_TIMEOUT_RETRIES, delay
-                    );
-
-                    // Wait before retrying
-                    tokio::time::sleep(delay).await;
-                    continue;
-                }
-
-                // For non-timeout errors or after max retries
-                println!("ERROR: {}", e);
-                if attempt > 1 {
-                    println!("FAILED_AFTER_RETRIES: {}", attempt);
-                }
-                return;
-            }
-        }
-    }
-}
-
-fn handle_execution_error(e: &anyhow::Error, input: &str, output: &SimpleOutput, attempt: u32) {
-    // Enhanced error logging with detailed information
-    error!("=== TASK EXECUTION ERROR ===");
-    error!("Error: {}", e);
-    if attempt > 1 {
-        error!("Failed after {} attempts", attempt);
-    }
-
-    // Log error chain
-    let mut source = e.source();
-    let mut depth = 1;
-    while let Some(err) = source {
-        error!("  Caused by [{}]: {}", depth, err);
-        source = err.source();
-        depth += 1;
-    }
-
-    // Log additional context
-    error!("Task input: {}", input);
-    error!("Error type: {}", std::any::type_name_of_val(&e));
-
-    // Display user-friendly error message
-    output.print(&format!("❌ Error: {}", e));
-
-    // If it's a stream error, provide helpful guidance
-    if e.to_string().contains("No response received") || e.to_string().contains("timed out") {
-        output.print("💡 This may be a temporary issue. Please try again or check the logs for more details.");
-        output.print("   Log files are saved in the '.g3/sessions/' directory.");
-    }
-}
-
-fn display_context_progress<W: UiWriter>(agent: &Agent<W>, _output: &SimpleOutput) {
-    let context = agent.get_context_window();
-    let percentage = context.percentage_used();
-
-    // Create 10 dots representing context fullness
-    let total_dots: usize = 10;
-    let filled_dots = ((percentage / 100.0) * total_dots as f32).round() as usize;
-    let empty_dots = total_dots.saturating_sub(filled_dots);
-
-    let filled_str = "●".repeat(filled_dots);
-    let empty_str = "○".repeat(empty_dots);
-
-    // Determine color based on percentage
-    let color = if percentage < 40.0 {
-        Color::Green
-    } else if percentage < 60.0 {
-        Color::Yellow
-    } else if percentage < 80.0 {
-        Color::Rgb {
-            r: 255,
-            g: 165,
-            b: 0,
-        } // Orange
-    } else {
-        Color::Red
-    };
-
-    // Format tokens as compact strings (e.g., "38.5k" instead of "38531")
-    let format_tokens = |tokens: u32| -> String {
-        if tokens >= 1_000_000 {
-            format!("{:.1}m", tokens as f64 / 1_000_000.0)
-        } else if tokens >= 1_000 {
-            let k = tokens as f64 / 1000.0;
-            if k >= 100.0 {
-                format!("{:.0}k", k)
-            } else {
-                format!("{:.1}k", k)
-            }
-        } else {
-            format!("{}", tokens)
-        }
-    };
-
-    // Print with colored dots (using print! directly to handle color codes)
-    print!(
-        "{}{}{}{} {}/{} ◉ | {:.0}%\n",
-        SetForegroundColor(color),
-        filled_str,
-        empty_str,
-        ResetColor,
-        format_tokens(context.used_tokens),
-        format_tokens(context.total_tokens),
-        percentage
-    );
-}
-
-/// Set up the workspace directory for autonomous mode
-/// Uses G3_WORKSPACE environment variable or defaults to ~/tmp/workspace
-fn setup_workspace_directory(machine_mode: bool) -> Result<PathBuf> {
-    let workspace_dir = if let Ok(env_workspace) = std::env::var("G3_WORKSPACE") {
-        PathBuf::from(env_workspace)
-    } else {
-        // Default to ~/tmp/workspace
-        let home_dir = dirs::home_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-        home_dir.join("tmp").join("workspace")
-    };
-
-    // Create the directory if it doesn't exist
-    if !workspace_dir.exists() {
-        std::fs::create_dir_all(&workspace_dir)?;
-        let output = SimpleOutput::new_with_mode(machine_mode);
-        output.print(&format!(
-            "📁 Created workspace directory: {}",
-            workspace_dir.display()
-        ));
-    }
-
-    Ok(workspace_dir)
-}
-
-// Simplified autonomous mode implementation
-async fn run_autonomous(
-    mut agent: Agent<ConsoleUiWriter>,
-    project: Project,
-    show_prompt: bool,
-    show_code: bool,
-    max_turns: usize,
-    quiet: bool,
-    codebase_fast_start: Option<PathBuf>,
-) -> Result<Agent<ConsoleUiWriter>> {
-    let start_time = std::time::Instant::now();
-    let output = SimpleOutput::new();
-    let mut turn_metrics: Vec<TurnMetrics> = Vec::new();
-
-    output.print("g3 programming agent - autonomous mode");
-    output.print(&format!(
-        "📁 Using workspace: {}",
-        project.workspace().display()
-    ));
-
-    // Check if requirements exist
-    if !project.has_requirements() {
-        output.print("❌ Error: requirements.md not found in workspace directory");
-        output.print("   Please either:");
-        output.print("   1. Create a requirements.md file with your project requirements at:");
-        output.print(&format!(
-            "      {}/requirements.md",
-            project.workspace().display()
-        ));
-        output.print("   2. Or use the --requirements flag to provide requirements text directly:");
-        output.print("      g3 --autonomous --requirements \"Your requirements here\"");
-        output.print("");
-
-        // Generate final report even for early exit
-        let elapsed = start_time.elapsed();
-        let context_window = agent.get_context_window();
-
-        output.print(&format!("\n{}", "=".repeat(60)));
-        output.print("📊 AUTONOMOUS MODE SESSION REPORT");
-        output.print(&"=".repeat(60));
-
-        output.print(&format!(
-            "⏱️  Total Duration: {:.2}s",
-            elapsed.as_secs_f64()
-        ));
-        output.print(&format!("🔄 Turns Taken: 0/{}", max_turns));
-        output.print("📝 Final Status: ⚠️ NO REQUIREMENTS FILE");
-
-        output.print("\n📈 Token Usage Statistics:");
-        output.print(&format!("   • Used Tokens: {}", context_window.used_tokens));
-        output.print(&format!(
-            "   • Total Available: {}",
-            context_window.total_tokens
-        ));
-        output.print(&format!(
-            "   • Cumulative Tokens: {}",
-            context_window.cumulative_tokens
-        ));
-        output.print(&format!(
-            "   • Usage Percentage: {:.1}%",
-            context_window.percentage_used()
-        ));
-        // Add per-turn histogram
-        output.print(&generate_turn_histogram(&turn_metrics));
-        output.print(&"=".repeat(60));
-
-        return Ok(agent);
-    }
-
-    // Read requirements
-    let requirements = match project.read_requirements()? {
-        Some(content) => content,
-        None => {
-            output.print("❌ Error: Could not read requirements (neither --requirements flag nor requirements.md file provided)");
-
-            // Generate final report even for early exit
-            let elapsed = start_time.elapsed();
-            let context_window = agent.get_context_window();
-
-            output.print(&format!("\n{}", "=".repeat(60)));
-            output.print("📊 AUTONOMOUS MODE SESSION REPORT");
-            output.print(&"=".repeat(60));
-
-            output.print(&format!(
-                "⏱️  Total Duration: {:.2}s",
-                elapsed.as_secs_f64()
-            ));
-            output.print(&format!("🔄 Turns Taken: 0/{}", max_turns));
-            output.print("📝 Final Status: ⚠️ CANNOT READ REQUIREMENTS");
-
-            output.print("\n📈 Token Usage Statistics:");
-            output.print(&format!("   • Used Tokens: {}", context_window.used_tokens));
-            output.print(&format!(
-                "   • Total Available: {}",
-                context_window.total_tokens
-            ));
-            output.print(&format!(
-                "   • Cumulative Tokens: {}",
-                context_window.cumulative_tokens
-            ));
-            output.print(&format!(
-                "   • Usage Percentage: {:.1}%",
-                context_window.percentage_used()
-            ));
-            // Add per-turn histogram
-            output.print(&generate_turn_histogram(&turn_metrics));
-            output.print(&"=".repeat(60));
-
-            return Ok(agent);
-        }
-    };
-
-    // Display appropriate message based on requirements source
-    if project.requirements_text.is_some() {
-        output.print("📋 Requirements loaded from --requirements flag");
-    } else {
-        output.print("📋 Requirements loaded from requirements.md");
-    }
-
-    // Calculate SHA256 of requirements
-    let mut hasher = Sha256::new();
-    hasher.update(requirements.as_bytes());
-    let requirements_sha = hex::encode(hasher.finalize());
-
-    output.print(&format!("🔒 Requirements SHA256: {}", requirements_sha));
-
-    // Pass SHA to agent for staleness checking
-    agent.set_requirements_sha(requirements_sha.clone());
-
-    let loop_start = Instant::now();
-    output.print("🔄 Starting coach-player feedback loop...");
-
-    // Load fast-discovery messages before the loop starts (if enabled)
-    let (discovery_messages, discovery_working_dir): (Vec<g3_providers::Message>, Option<String>) =
-        if let Some(ref codebase_path) = codebase_fast_start {
-            // Canonicalize the path to ensure it's absolute
-            let canonical_path = codebase_path
-                .canonicalize()
-                .unwrap_or_else(|_| codebase_path.clone());
-            let path_str = canonical_path.to_string_lossy();
-            output.print(&format!(
-                "🔍 Fast-discovery mode: will explore codebase at {}",
-                path_str
-            ));
-            // Get the provider from the agent and use async LLM-based discovery
-            match agent.get_provider() {
-                Ok(provider) => {
-                    // Create a status callback that prints to output
-                    let output_clone = output.clone();
-                    let status_callback: g3_planner::StatusCallback = Box::new(move |msg: &str| {
-                        output_clone.print(msg);
-                    });
-                    match g3_planner::get_initial_discovery_messages(
-                        &path_str,
-                        Some(&requirements),
-                        provider,
-                        Some(&status_callback),
-                    )
-                    .await
-                    {
-                        Ok(messages) => (messages, Some(path_str.to_string())),
-                        Err(e) => {
-                            output.print(&format!(
-                                "⚠️ LLM discovery failed: {}, skipping fast-start",
-                                e
-                            ));
-                            (Vec::new(), None)
-                        }
-                    }
-                }
-                Err(e) => {
-                    output.print(&format!(
-                        "⚠️ Could not get provider: {}, skipping fast-start",
-                        e
-                    ));
-                    (Vec::new(), None)
-                }
-            }
-        } else {
-            (Vec::new(), None)
-        };
-    let has_discovery = !discovery_messages.is_empty();
-
-    let mut turn = 1;
-    let mut coach_feedback = String::new();
-    let mut implementation_approved = false;
-
-    loop {
-        let turn_start_time = Instant::now();
-        let turn_start_tokens = agent.get_context_window().used_tokens;
-
-        output.print(&format!(
-            "\n=== TURN {}/{} - PLAYER MODE ===",
-            turn, max_turns
-        ));
-
-        // Surface provider info for player agent
-        agent.print_provider_banner("Player");
-
-        // Player mode: implement requirements (with coach feedback if available)
-        let player_prompt = if coach_feedback.is_empty() {
-            format!(
-                "You are G3 in implementation mode. Read and implement the following requirements:\n\n{}\n\nRequirements SHA256: {}\n\nImplement this step by step, creating all necessary files and code.",
-                requirements, requirements_sha
-            )
-        } else {
-            format!(
-                "You are G3 in implementation mode. Address the following specific feedback from the coach:\n\n{}\n\nContext: You are improving an implementation based on these requirements:\n{}\n\nFocus on fixing the issues mentioned in the coach feedback above.",
-                coach_feedback, requirements
-            )
-        };
-
-        output.print(&format!(
-            "🎯 Starting player implementation... (elapsed: {})",
-            format_elapsed_time(loop_start.elapsed())
-        ));
-
-        // Display what feedback the player is receiving
-        // If there's no coach feedback on subsequent turns, this is an error
-        if coach_feedback.is_empty() {
-            if turn > 1 {
-                return Err(anyhow::anyhow!(
-                    "Player mode error: No coach feedback received on turn {}",
-                    turn
-                ));
-            }
-            output.print("📋 Player starting initial implementation (no prior coach feedback)");
-        } else {
-            output.print(&format!(
-                "📋 Player received coach feedback ({} chars):",
-                coach_feedback.len()
-            ));
-            output.print(&coach_feedback.to_string());
-        }
-        output.print(""); // Empty line for readability
-
-        // Execute player task with retry on error
-        let mut _player_retry_count = 0;
-        const MAX_PLAYER_RETRIES: u32 = 3;
-        let mut player_failed = false;
-
-        loop {
-            match agent
-                .execute_task_with_timing(
-                    &player_prompt,
-                    None,
-                    false,
-                    show_prompt,
-                    show_code,
-                    true,
-                    if has_discovery {
-                        Some(DiscoveryOptions {
-                            messages: &discovery_messages,
-                            fast_start_path: discovery_working_dir.as_deref(),
-                        })
-                    } else {
-                        None
-                    },
-                )
-                .await
-            {
-                Ok(result) => {
-                    // Display player's implementation result
-                    output.print("📝 Player implementation completed:");
-                    output.print_smart(&result.response);
-                    break;
-                }
-                Err(e) => {
-                    // Check if this is a context length exceeded error
-                    use g3_core::error_handling::{classify_error, ErrorType, RecoverableError};
-                    let error_type = classify_error(&e);
-
-                    if matches!(
-                        error_type,
-                        ErrorType::Recoverable(RecoverableError::ContextLengthExceeded)
-                    ) {
-                        output.print(&format!("⚠️ Context length exceeded in player turn: {}", e));
-                        output.print("📝 Logging error to session and ending current turn...");
-
-                        // Build forensic context
-                        let forensic_context = format!(
-                            "Turn: {}\n\
-                             Role: Player\n\
-                             Context tokens: {}\n\
-                             Total available: {}\n\
-                             Percentage used: {:.1}%\n\
-                             Prompt length: {} chars\n\
-                             Error occurred at: {}",
-                            turn,
-                            agent.get_context_window().used_tokens,
-                            agent.get_context_window().total_tokens,
-                            agent.get_context_window().percentage_used(),
-                            player_prompt.len(),
-                            chrono::Utc::now().to_rfc3339()
-                        );
-
-                        // Log to session JSON
-                        agent.log_error_to_session(&e, "assistant", Some(forensic_context));
-
-                        // Mark turn as failed and continue to next turn
-                        player_failed = true;
-                        break;
-                    } else if e.to_string().contains("panic") {
-                        output.print(&format!("💥 Player panic detected: {}", e));
-
-                        // Generate final report even for panic
-                        let elapsed = start_time.elapsed();
-                        let context_window = agent.get_context_window();
-
-                        output.print(&format!("\n{}", "=".repeat(60)));
-                        output.print("📊 AUTONOMOUS MODE SESSION REPORT");
-                        output.print(&"=".repeat(60));
-
-                        output.print(&format!(
-                            "⏱️  Total Duration: {:.2}s",
-                            elapsed.as_secs_f64()
-                        ));
-                        output.print(&format!("🔄 Turns Taken: {}/{}", turn, max_turns));
-                        output.print("📝 Final Status: 💥 PLAYER PANIC");
-
-                        output.print("\n📈 Token Usage Statistics:");
-                        output.print(&format!("   • Used Tokens: {}", context_window.used_tokens));
-                        output.print(&format!(
-                            "   • Total Available: {}",
-                            context_window.total_tokens
-                        ));
-                        output.print(&format!(
-                            "   • Cumulative Tokens: {}",
-                            context_window.cumulative_tokens
-                        ));
-                        output.print(&format!(
-                            "   • Usage Percentage: {:.1}%",
-                            context_window.percentage_used()
-                        ));
-                        // Add per-turn histogram
-                        output.print(&generate_turn_histogram(&turn_metrics));
-                        output.print(&"=".repeat(60));
-
-                        return Err(e);
-                    }
-
-                    _player_retry_count += 1;
-                    output.print(&format!(
-                        "⚠️ Player error (attempt {}/{}): {}",
-                        _player_retry_count, MAX_PLAYER_RETRIES, e
-                    ));
-
-                    if _player_retry_count >= MAX_PLAYER_RETRIES {
-                        output
-                            .print("🔄 Max retries reached for player, marking turn as failed...");
-                        player_failed = true;
-                        break; // Exit retry loop
-                    }
-                    output.print("🔄 Retrying player implementation...");
-                }
-            }
-        }
-
-        // If player failed after max retries, increment turn and continue
-        if player_failed {
-            output.print(&format!(
-                "⚠️ Player turn {} failed after max retries. Moving to next turn.",
-                turn
-            ));
-            // Record turn metrics before incrementing
-            let turn_duration = turn_start_time.elapsed();
-            let turn_tokens = agent
-                .get_context_window()
-                .used_tokens
-                .saturating_sub(turn_start_tokens);
-            turn_metrics.push(TurnMetrics {
-                turn_number: turn,
-                tokens_used: turn_tokens,
-                wall_clock_time: turn_duration,
-            });
-            turn += 1;
-
-            // Check if we've reached max turns
-            if turn > max_turns {
-                output.print("\n=== SESSION COMPLETED - MAX TURNS REACHED ===");
-                output.print(&format!("⏰ Maximum turns ({}) reached", max_turns));
-                break;
-            }
-
-            // Continue to next iteration with empty feedback (restart from scratch)
-            coach_feedback = String::new();
-            continue;
-        }
-
-        // Give some time for file operations to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        // Create a new agent instance for coach mode to ensure fresh context
-        // Use the same config with overrides that was passed to the player agent
-        let base_config = agent.get_config().clone();
-        let coach_config = base_config.for_coach()?;
-
-        // Reset filter suppression state before creating coach agent
-        crate::filter_json::reset_json_tool_state();
-
-        let ui_writer = ConsoleUiWriter::new();
-        let mut coach_agent =
-            Agent::new_autonomous_with_readme_and_quiet(coach_config, ui_writer, None, quiet)
-                .await?;
-
-        // Surface provider info for coach agent
-        coach_agent.print_provider_banner("Coach");
-
-        // Ensure coach agent is also in the workspace directory
-        project.enter_workspace()?;
-
-        output.print(&format!(
-            "\n=== TURN {}/{} - COACH MODE ===",
-            turn, max_turns
-        ));
-
-        // Coach mode: critique the implementation
-        let coach_prompt = format!(
-            "You are G3 in coach mode. Your role is to critique and review implementations against requirements and provide concise, actionable feedback.
-
-REQUIREMENTS:
-{}
-
-IMPLEMENTATION REVIEW:
-Review the current state of the project and provide a concise critique focusing on:
-1. Whether the requirements are correctly implemented
-2. Whether the project compiles successfully
-3. What requirements are missing or incorrect
-4. Specific improvements needed to satisfy requirements
-5. Use UI tools such as webdriver to test functionality thoroughly
-
-CRITICAL INSTRUCTIONS:
-1. Provide your feedback as your final response message
-2. Your feedback should be CONCISE and ACTIONABLE
-3. Focus ONLY on what needs to be fixed or improved
-4. Do NOT include your analysis process, file contents, or compilation output in your final feedback
-
-If the implementation thoroughly meets all requirements, compiles and is fully tested (especially UI flows) *WITHOUT* minor gaps or errors:
-- Respond with: 'IMPLEMENTATION_APPROVED'
-
-If improvements are needed:
-- Respond with a brief summary listing ONLY the specific issues to fix
-
-Remember: Be clear in your review and concise in your feedback. APPROVE iff the implementation works and thoroughly fits the requirements (implementation > 95% complete). Be rigorous, especially by testing that all UI features work.",
-            requirements
-        );
-
-        output.print(&format!(
-            "🎓 Starting coach review... (elapsed: {})",
-            format_elapsed_time(loop_start.elapsed())
-        ));
-
-        // Execute coach task with retry on error
-        let mut coach_retry_count = 0;
-        const MAX_COACH_RETRIES: u32 = 3;
-        let mut coach_failed = false;
-        let coach_result_opt;
-
-        loop {
-            match coach_agent
-                .execute_task_with_timing(
-                    &coach_prompt,
-                    None,
-                    false,
-                    show_prompt,
-                    show_code,
-                    true,
-                    if has_discovery {
-                        Some(DiscoveryOptions {
-                            messages: &discovery_messages,
-                            fast_start_path: discovery_working_dir.as_deref(),
-                        })
-                    } else {
-                        None
-                    },
-                )
-                .await
-            {
-                Ok(result) => {
-                    coach_result_opt = Some(result);
-                    break;
-                }
-                Err(e) => {
-                    // Check if this is a context length exceeded error
-                    use g3_core::error_handling::{classify_error, ErrorType, RecoverableError};
-                    let error_type = classify_error(&e);
-
-                    if matches!(
-                        error_type,
-                        ErrorType::Recoverable(RecoverableError::ContextLengthExceeded)
-                    ) {
-                        output.print(&format!("⚠️ Context length exceeded in coach turn: {}", e));
-                        output.print("📝 Logging error to session and ending current turn...");
-
-                        // Build forensic context
-                        let forensic_context = format!(
-                            "Turn: {}\n\
-                             Role: Coach\n\
-                             Context tokens: {}\n\
-                             Total available: {}\n\
-                             Percentage used: {:.1}%\n\
-                             Prompt length: {} chars\n\
-                             Error occurred at: {}",
-                            turn,
-                            coach_agent.get_context_window().used_tokens,
-                            coach_agent.get_context_window().total_tokens,
-                            coach_agent.get_context_window().percentage_used(),
-                            coach_prompt.len(),
-                            chrono::Utc::now().to_rfc3339()
-                        );
-
-                        // Log to coach's session JSON
-                        coach_agent.log_error_to_session(&e, "assistant", Some(forensic_context));
-
-                        // Mark turn as failed and continue to next turn
-                        coach_result_opt = None;
-                        coach_failed = true;
-                        break;
-                    } else if e.to_string().contains("panic") {
-                        output.print(&format!("💥 Coach panic detected: {}", e));
-
-                        // Generate final report even for panic
-                        let elapsed = start_time.elapsed();
-                        let context_window = agent.get_context_window();
-
-                        output.print(&format!("\n{}", "=".repeat(60)));
-                        output.print("📊 AUTONOMOUS MODE SESSION REPORT");
-                        output.print(&"=".repeat(60));
-
-                        output.print(&format!(
-                            "⏱️  Total Duration: {:.2}s",
-                            elapsed.as_secs_f64()
-                        ));
-                        output.print(&format!("🔄 Turns Taken: {}/{}", turn, max_turns));
-                        output.print("📝 Final Status: 💥 COACH PANIC");
-
-                        output.print("\n📈 Token Usage Statistics:");
-                        output.print(&format!("   • Used Tokens: {}", context_window.used_tokens));
-                        output.print(&format!(
-                            "   • Total Available: {}",
-                            context_window.total_tokens
-                        ));
-                        output.print(&format!(
-                            "   • Cumulative Tokens: {}",
-                            context_window.cumulative_tokens
-                        ));
-                        output.print(&format!(
-                            "   • Usage Percentage: {:.1}%",
-                            context_window.percentage_used()
-                        ));
-                        // Add per-turn histogram
-                        output.print(&generate_turn_histogram(&turn_metrics));
-                        output.print(&"=".repeat(60));
-
-                        return Err(e);
-                    }
-
-                    coach_retry_count += 1;
-                    output.print(&format!(
-                        "⚠️ Coach error (attempt {}/{}): {}",
-                        coach_retry_count, MAX_COACH_RETRIES, e
-                    ));
-
-                    if coach_retry_count >= MAX_COACH_RETRIES {
-                        output.print("🔄 Max retries reached for coach, using default feedback...");
-                        // Provide default feedback and break out of retry loop
-                        coach_result_opt = None;
-                        coach_failed = true;
-                        break; // Exit retry loop with default feedback
-                    }
-                    output.print("🔄 Retrying coach review...");
-                }
-            }
-        }
-
-        output.print("🎓 Coach review completed");
-
-        // If coach failed after max retries, increment turn and continue with default feedback
-        if coach_failed {
-            output.print(&format!(
-                "⚠️ Coach turn {} failed after max retries. Using default feedback.",
-                turn
-            ));
-            coach_feedback = "The implementation needs review. Please ensure all requirements are met and the code compiles without errors.".to_string();
-            // Record turn metrics before incrementing
-            let turn_duration = turn_start_time.elapsed();
-            let turn_tokens = agent
-                .get_context_window()
-                .used_tokens
-                .saturating_sub(turn_start_tokens);
-            turn_metrics.push(TurnMetrics {
-                turn_number: turn,
-                tokens_used: turn_tokens,
-                wall_clock_time: turn_duration,
-            });
-            turn += 1;
-
-            if turn > max_turns {
-                output.print("\n=== SESSION COMPLETED - MAX TURNS REACHED ===");
-                output.print(&format!("⏰ Maximum turns ({}) reached", max_turns));
-                break;
-            }
-            continue; // Continue to next iteration with default feedback
-        }
-
-        // We have a valid coach result, process it
-        let coach_result = coach_result_opt.unwrap();
-
-        // Extract the complete coach feedback from the response
-        let coach_feedback_text =
-            coach_feedback::extract_from_logs(&coach_result, &coach_agent, &output)?;
-
-        // Log the size of the feedback for debugging
-        debug!(
-            "Coach feedback extracted: {} characters (from {} total)",
-            coach_feedback_text.len(),
-            coach_result.response.len()
-        );
-
-        // Check if we got empty feedback (this can happen if the coach doesn't provide substantive feedback)
-        if coach_feedback_text.is_empty() {
-            output.print("⚠️ Coach did not provide feedback. This may be a model issue.");
-            coach_feedback = "The implementation needs review. Please ensure all requirements are met and the code compiles without errors.".to_string();
-            // Record turn metrics before incrementing
-            let turn_duration = turn_start_time.elapsed();
-            let turn_tokens = agent
-                .get_context_window()
-                .used_tokens
-                .saturating_sub(turn_start_tokens);
-            turn_metrics.push(TurnMetrics {
-                turn_number: turn,
-                tokens_used: turn_tokens,
-                wall_clock_time: turn_duration,
-            });
-            turn += 1;
-            continue;
-        }
-
-        output.print_smart(&format!("Coach feedback:\n{}", coach_feedback_text));
-
-        // Check if coach approved the implementation
-        if coach_result.is_approved() || coach_feedback_text.contains("IMPLEMENTATION_APPROVED") {
-            output.print("\n=== SESSION COMPLETED - IMPLEMENTATION APPROVED ===");
-            output.print("✅ Coach approved the implementation!");
-            implementation_approved = true;
-            break;
-        }
-
-        // Check if we've reached max turns
-        if turn >= max_turns {
-            output.print("\n=== SESSION COMPLETED - MAX TURNS REACHED ===");
-            output.print(&format!("⏰ Maximum turns ({}) reached", max_turns));
-            break;
-        }
-
-        // Store coach feedback for next iteration
-        coach_feedback = coach_feedback_text;
-        // Record turn metrics before incrementing
-        let turn_duration = turn_start_time.elapsed();
-        let turn_tokens = agent
-            .get_context_window()
-            .used_tokens
-            .saturating_sub(turn_start_tokens);
-        turn_metrics.push(TurnMetrics {
-            turn_number: turn,
-            tokens_used: turn_tokens,
-            wall_clock_time: turn_duration,
-        });
-        turn += 1;
-
-        output.print("🔄 Coach provided feedback for next iteration");
-    }
-
-    // Generate final report
-    let elapsed = start_time.elapsed();
-    let context_window = agent.get_context_window();
-
-    output.print(&format!("\n{}", "=".repeat(60)));
-    output.print("📊 AUTONOMOUS MODE SESSION REPORT");
-    output.print(&"=".repeat(60));
-
-    output.print(&format!(
-        "⏱️  Total Duration: {:.2}s",
-        elapsed.as_secs_f64()
-    ));
-    output.print(&format!("🔄 Turns Taken: {}/{}", turn, max_turns));
-    output.print(&format!(
-        "📝 Final Status: {}",
-        if implementation_approved {
-            "✅ APPROVED"
-        } else if turn >= max_turns {
-            "⏰ MAX TURNS REACHED"
-        } else {
-            "⚠️ INCOMPLETE"
-        }
-    ));
-
-    output.print("\n📈 Token Usage Statistics:");
-    output.print(&format!("   • Used Tokens: {}", context_window.used_tokens));
-    output.print(&format!(
-        "   • Total Available: {}",
-        context_window.total_tokens
-    ));
-    output.print(&format!(
-        "   • Cumulative Tokens: {}",
-        context_window.cumulative_tokens
-    ));
-    output.print(&format!(
-        "   • Usage Percentage: {:.1}%",
-        context_window.percentage_used()
-    ));
-
-    // Add per-turn histogram
-    output.print(&generate_turn_histogram(&turn_metrics));
-    output.print(&"=".repeat(60));
-
-    if implementation_approved {
-        output.print(&format!(
-            "\n🎉 Autonomous mode completed successfully (total loop time: {})",
-            format_elapsed_time(loop_start.elapsed())
-        ));
-    } else {
-        output.print(&format!(
-            "\n🔄 Autonomous mode terminated (max iterations) (total loop time: {})",
-            format_elapsed_time(loop_start.elapsed())
-        ));
-    }
-
-    // Save session continuation for resume capability
-    agent.save_session_continuation(None);
-
-    Ok(agent)
 }
