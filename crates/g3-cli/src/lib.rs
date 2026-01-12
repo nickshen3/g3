@@ -31,10 +31,10 @@ use accumulative::run_accumulative_mode;
 use agent_mode::run_agent_mode;
 use autonomous::run_autonomous;
 use interactive::run_interactive;
-use project_files::{read_agents_config, read_project_memory, read_project_readme};
+use project_files::{combine_project_content, read_agents_config, read_project_memory, read_project_readme};
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
-use utils::setup_workspace_directory;
+use utils::{load_config_with_cli_overrides, setup_workspace_directory};
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
@@ -159,77 +159,6 @@ fn create_project(cli: &Cli, workspace_dir: &PathBuf) -> Result<Project> {
         }
     } else {
         Ok(Project::new(workspace_dir.clone()))
-    }
-}
-
-fn load_config_with_cli_overrides(cli: &Cli) -> Result<Config> {
-    let mut config = Config::load_with_overrides(
-        cli.config.as_deref(),
-        cli.provider.clone(),
-        cli.model.clone(),
-    )?;
-
-    // Apply webdriver flag override
-    if cli.webdriver {
-        config.webdriver.enabled = true;
-    }
-
-    // Apply chrome-headless flag override
-    if cli.chrome_headless {
-        config.webdriver.enabled = true;
-        config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
-
-        // Run Chrome diagnostics on first use
-        let report =
-            g3_computer_control::run_chrome_diagnostics(config.webdriver.chrome_binary.as_deref());
-        println!("{}", report.format_report());
-    }
-
-    // Apply safari flag override
-    if cli.safari {
-        config.webdriver.enabled = true;
-        config.webdriver.browser = g3_config::WebDriverBrowser::Safari;
-    }
-
-    // Apply no-auto-compact flag override
-    if cli.manual_compact {
-        config.agent.auto_compact = false;
-    }
-
-    // Validate provider if specified
-    if let Some(ref provider) = cli.provider {
-        let valid_providers = ["anthropic", "databricks", "embedded", "openai"];
-        if !valid_providers.contains(&provider.as_str()) {
-            return Err(anyhow::anyhow!(
-                "Invalid provider '{}'. Valid options: {:?}",
-                provider,
-                valid_providers
-            ));
-        }
-    }
-
-    Ok(config)
-}
-
-fn combine_project_content(
-    agents_content: Option<String>,
-    readme_content: Option<String>,
-    memory_content: Option<String>,
-) -> Option<String> {
-    let mut parts = Vec::new();
-    if let Some(agents) = agents_content {
-        parts.push(agents);
-    }
-    if let Some(readme) = readme_content {
-        parts.push(readme);
-    }
-    if let Some(memory) = memory_content {
-        parts.push(memory);
-    }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("\n\n"))
     }
 }
 

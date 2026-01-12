@@ -7,7 +7,6 @@ use rustyline::DefaultEditor;
 use std::path::PathBuf;
 use tracing::error;
 
-use g3_config::Config;
 use g3_core::project::Project;
 use g3_core::Agent;
 
@@ -16,6 +15,7 @@ use crate::cli_args::Cli;
 use crate::interactive::run_interactive;
 use crate::simple_output::SimpleOutput;
 use crate::ui_writer_impl::ConsoleUiWriter;
+use crate::utils::load_config_with_cli_overrides;
 
 /// Run accumulative autonomous mode - accumulates requirements from user input
 /// and runs autonomous mode after each input.
@@ -308,36 +308,4 @@ async fn handle_command(
         }
         _ => Ok(CommandResult::Unknown),
     }
-}
-
-fn load_config_with_cli_overrides(cli: &Cli) -> Result<Config> {
-    let mut config = Config::load_with_overrides(
-        cli.config.as_deref(),
-        cli.provider.clone(),
-        cli.model.clone(),
-    )?;
-
-    // Apply webdriver flag override
-    if cli.webdriver {
-        config.webdriver.enabled = true;
-    }
-
-    // Apply chrome-headless flag override
-    if cli.chrome_headless {
-        config.webdriver.enabled = true;
-        config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
-    }
-
-    // Apply safari flag override
-    if cli.safari {
-        config.webdriver.enabled = true;
-        config.webdriver.browser = g3_config::WebDriverBrowser::Safari;
-    }
-
-    // Apply no-auto-compact flag override
-    if cli.manual_compact {
-        config.agent.auto_compact = false;
-    }
-
-    Ok(config)
 }

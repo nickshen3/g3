@@ -82,6 +82,26 @@ pub fn read_project_memory(workspace_dir: &Path) -> Option<String> {
     }
 }
 
+/// Combine AGENTS.md, README, and memory content into a single string.
+///
+/// Returns None if all inputs are None, otherwise joins non-None parts with double newlines.
+pub fn combine_project_content(
+    agents_content: Option<String>,
+    readme_content: Option<String>,
+    memory_content: Option<String>,
+) -> Option<String> {
+    let parts: Vec<String> = [agents_content, readme_content, memory_content]
+        .into_iter()
+        .flatten()
+        .collect();
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
+    }
+}
+
 /// Format a byte size for display.
 fn format_size(len: usize) -> String {
     if len < 1000 {
@@ -177,5 +197,27 @@ mod tests {
         let truncated = truncate_for_display(&long, 100);
         assert!(truncated.ends_with("..."));
         assert_eq!(truncated.len(), 100);
+    }
+
+    #[test]
+    fn test_combine_project_content_all_some() {
+        let result = combine_project_content(
+            Some("agents".to_string()),
+            Some("readme".to_string()),
+            Some("memory".to_string()),
+        );
+        assert_eq!(result, Some("agents\n\nreadme\n\nmemory".to_string()));
+    }
+
+    #[test]
+    fn test_combine_project_content_partial() {
+        let result = combine_project_content(None, Some("readme".to_string()), None);
+        assert_eq!(result, Some("readme".to_string()));
+    }
+
+    #[test]
+    fn test_combine_project_content_all_none() {
+        let result = combine_project_content(None, None, None);
+        assert_eq!(result, None);
     }
 }

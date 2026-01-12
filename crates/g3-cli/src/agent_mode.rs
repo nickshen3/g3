@@ -7,7 +7,7 @@ use tracing::debug;
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
-use crate::project_files::{read_agents_config, read_project_memory, read_project_readme};
+use crate::project_files::{combine_project_content, read_agents_config, read_project_memory, read_project_readme};
 use crate::simple_output::SimpleOutput;
 use crate::ui_writer_impl::ConsoleUiWriter;
 
@@ -177,23 +177,11 @@ pub async fn run_agent_mode(
     ));
 
     // Combine all content for the agent's context
-    let combined_content = {
-        let mut parts = Vec::new();
-        if let Some(agents) = agents_content_opt {
-            parts.push(agents);
-        }
-        if let Some(readme) = readme_content_opt {
-            parts.push(readme);
-        }
-        if let Some(memory) = memory_content_opt {
-            parts.push(memory);
-        }
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join("\n\n"))
-        }
-    };
+    let combined_content = combine_project_content(
+        agents_content_opt,
+        readme_content_opt,
+        memory_content_opt,
+    );
 
     // Create agent with custom system prompt
     let ui_writer = ConsoleUiWriter::new();
