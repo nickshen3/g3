@@ -41,7 +41,7 @@
 ### For Debugging
 
 1. Session logs: `.g3/sessions/<session_id>/session.json`
-2. Error logs: `logs/errors/`
+2. Error logs: `.g3/errors/`
 3. Context state: Use `/stats` command in interactive mode
 
 ## Dangerous/Subtle Code Paths

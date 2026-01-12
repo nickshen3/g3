@@ -17,7 +17,7 @@ G3 follows a **tool-first philosophy**: instead of just providing advice, it act
 │                 │    │                 │    │                 │
 │ • CLI parsing   │◄──►│ • Agent engine  │◄──►│ • Anthropic     │
 │ • Interactive   │    │ • Context mgmt  │    │ • Databricks    │
-│ • Retro TUI     │    │ • Tool system   │    │ • OpenAI        │
+│ • Streaming MD  │    │ • Tool system   │    │ • OpenAI        │
 │ • Autonomous    │    │ • Streaming     │    │ • Embedded      │
 │   mode          │    │ • Task exec     │    │   (llama.cpp)   │
 │                 │    │ • TODO mgmt     │    │ • OAuth flow    │
@@ -50,10 +50,10 @@ G3 follows a **tool-first philosophy**: instead of just providing advice, it act
          │                       │                       │
 ┌─────────────────┐    ┌─────────────────┐
 │ g3-ensembles    │    │   g3-console    │
-│                 │    │                 │
-│ • Flock mode    │    │ • Web console   │
-│ • Multi-agent   │    │ • Process mgmt  │
-│ • Parallel dev  │    │ • Log viewing   │
+│                 │    │   studio        │
+│ • Flock mode    │    │                 │
+│ • Multi-agent   │    │ • Worktree mgmt │
+│ • Parallel dev  │    │ • Session mgmt  │
 └─────────────────┘    └─────────────────┘
 ```
 
@@ -73,7 +73,7 @@ g3/
 │   ├── g3-computer-control/      # Computer automation
 │   ├── g3-planner/               # Planning mode workflow
 │   ├── g3-ensembles/             # Multi-agent (flock) mode
-│   └── g3-console/               # Web monitoring console
+│   └── studio/                   # Multi-agent workspace manager
 ├── agents/                       # Agent persona definitions
 ├── logs/                         # Session logs (auto-created)
 └── g3-plan/                      # Planning artifacts
@@ -138,11 +138,14 @@ pub trait LLMProvider: Send + Sync {
 **Purpose**: Command-line interface, TUI, and execution modes
 
 Key modules:
-- `lib.rs` - Main CLI logic and execution modes (~112k chars)
-- `retro_tui.rs` - Full-screen retro terminal UI (~63k chars)
+- `lib.rs` - Main CLI entry point and mode dispatch
+- `interactive.rs` - Interactive REPL mode
+- `autonomous.rs` - Autonomous coach-player mode
+- `accumulative.rs` - Accumulative autonomous mode
+- `agent_mode.rs` - Specialized agent execution
 - `filter_json.rs` - JSON tool call filtering for display
 - `ui_writer_impl.rs` - Console output implementation
-- `theme.rs` - Color themes for retro mode
+- `streaming_markdown.rs` - Real-time markdown formatting
 
 **Execution modes**:
 1. **Single-shot**: `g3 "task description"` - Execute one task and exit
@@ -150,7 +153,7 @@ Key modules:
 3. **Autonomous**: `g3 --autonomous` - Coach-player feedback loop
 4. **Accumulative**: Default interactive mode with autonomous runs
 5. **Planning**: `g3 --planning` - Requirements-driven development
-6. **Retro TUI**: `g3 --retro` - Full-screen terminal interface
+6. **Agent Mode**: `g3 --agent <name>` - Run specialized agent personas
 
 ### g3-config (Configuration)
 
@@ -229,16 +232,17 @@ Key modules:
 
 Flock mode enables parallel development by spawning multiple agent instances working on different parts of a project.
 
-### g3-console (Web Console)
+### studio (Multi-Agent Workspace Manager)
 
-**Location**: `crates/g3-console/`  
-**Purpose**: Web-based monitoring and control
+**Location**: `crates/studio/`  
+**Purpose**: Manage multiple G3 agent sessions using git worktrees
 
 Key modules:
-- `main.rs` - Axum web server
-- `api/` - REST API endpoints
-- `process/` - Process detection and control
-- `logs.rs` - Log parsing and streaming
+- `main.rs` - CLI commands (run, exec, list, status, accept, discard)
+- `git.rs` - Git worktree management
+- `session.rs` - Session metadata and status tracking
+
+Studio enables isolated agent sessions by creating git worktrees, allowing multiple agents to work on the same codebase without conflicts.
 
 ## Data Flow
 
@@ -359,4 +363,3 @@ Key external dependencies:
 - **tree-sitter**: Syntax-aware code search
 - **llama_cpp**: Local model inference (with Metal acceleration)
 - **fantoccini**: WebDriver client
-- **axum**: Web framework (for g3-console)

@@ -346,8 +346,4 @@ Additional resources:
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Contributing
-
-G3 is an open-source project. Contributions are welcome! Please see CONTRIBUTING.md for guidelines.
+MIT License

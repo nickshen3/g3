@@ -15,6 +15,7 @@ This document describes all tools available to the G3 agent. Tools are the prima
 | **Images** | read_image, take_screenshot | Always |
 | **Task Management** | todo_read, todo_write | Always |
 | **Code Intelligence** | code_search, code_coverage | Always |
+| **Research & Memory** | research, remember, rehydrate | Always (rehydrate requires `--acd`) |
 | **WebDriver** | webdriver_* (12 tools) | `--webdriver` or `--chrome-headless` |
 | **Computer Control** | mouse_click, type_text, find_element, list_windows | `computer_control.enabled = true` |
 
@@ -265,6 +266,67 @@ Generate code coverage report using cargo llvm-cov.
 - Runs all tests with coverage instrumentation
 - Auto-installs llvm-tools-preview and cargo-llvm-cov if missing
 - Returns coverage statistics summary
+
+---
+
+## Research & Memory Tools
+
+### research
+
+Perform web-based research on a topic.
+
+**Parameters**:
+- `query` (string, required): The research question or topic to investigate
+
+**Example**:
+```json
+{"tool": "research", "args": {"query": "Best practices for Rust error handling"}}
+```
+
+**Notes**:
+- Spawns a specialized research agent that browses the web
+- Returns a structured research brief with options, trade-offs, and recommendations
+- Use for researching APIs, SDKs, libraries, bugs, documentation, etc.
+
+---
+
+### remember
+
+Save discoveries to project memory.
+
+**Parameters**:
+- `notes` (string, required): Markdown-formatted notes to add to memory
+
+**Example**:
+```json
+{"tool": "remember", "args": {"notes": "### Feature Name\n- `file/path.rs` [start..end] - `function_name()`, `StructName`"}}
+```
+
+**Notes**:
+- Memory is stored at `analysis/memory.md` (version controlled)
+- New notes are merged with existing memory
+- Use to record discovered code locations, patterns, and entry points
+- Memory is automatically loaded at agent startup
+
+---
+
+### rehydrate
+
+Restore dehydrated conversation history from a previous context segment.
+
+**Parameters**:
+- `fragment_id` (string, required): The fragment ID to restore
+
+**Example**:
+```json
+{"tool": "rehydrate", "args": {"fragment_id": "abc123"}}
+```
+
+**Notes**:
+- Used with ACD (Aggressive Context Dehydration) feature
+- Fragments are stored in `.g3/sessions/<session_id>/fragments/`
+- Restores full conversation details from a DEHYDRATED CONTEXT stub
+- Enable ACD with `--acd` flag
 
 ---
 
