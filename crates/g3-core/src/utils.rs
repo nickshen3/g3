@@ -1,12 +1,49 @@
 //! Utility functions for diff parsing, shell escaping, and JSON fixing.
 //!
 //! This module contains helper functions used by the agent for:
+//! - String truncation utilities
 //! - Applying unified diffs to strings
 //! - Shell command escaping
 //! - JSON quote fixing
 
 use anyhow::Result;
 use tracing::debug;
+
+/// Truncate a string to approximately max_len characters, ending at a word boundary.
+///
+/// This function attempts to break at a space character for cleaner display.
+/// If no suitable word boundary is found (or it would result in too short a string),
+/// it falls back to character-based truncation.
+///
+/// # Arguments
+/// * `s` - The string to truncate
+/// * `max_len` - Maximum number of characters (approximate)
+///
+/// # Returns
+/// The truncated string with "..." appended if truncation occurred
+pub fn truncate_to_word_boundary(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
+        return s.to_string();
+    }
+
+    // Get the byte index of the max_len-th character
+    let byte_index: usize = s.char_indices()
+        .nth(max_len)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+
+    // Find the last space before the character limit
+    let truncated = &s[..byte_index];
+    if let Some(last_space_byte) = truncated.rfind(' ') {
+        if truncated[..last_space_byte].chars().count() > max_len / 2 {
+            // Only use word boundary if it's not too short (in characters)
+            return format!("{}...", &s[..last_space_byte]);
+        }
+    }
+    // Fall back to truncation at character boundary
+    format!("{}...", truncated)
+}
 
 /// Normalize Unicode space characters in a file path to regular ASCII spaces.
 ///
@@ -603,5 +640,32 @@ mod tests {
     fn resolve_paths_in_shell_command_preserves_existing_paths() {
         let cmd = "cat \"/etc/hosts\"";
         assert_eq!(resolve_paths_in_shell_command(cmd), cmd);
+    }
+
+    #[test]
+    fn truncate_to_word_boundary_short_string_unchanged() {
+        assert_eq!(truncate_to_word_boundary("hello", 10), "hello");
+        assert_eq!(truncate_to_word_boundary("hello world", 20), "hello world");
+    }
+
+    #[test]
+    fn truncate_to_word_boundary_breaks_at_space() {
+        // Should break at word boundary
+        let result = truncate_to_word_boundary("hello world this is a long string", 15);
+        assert_eq!(result, "hello world...");
+    }
+
+    #[test]
+    fn truncate_to_word_boundary_falls_back_to_char_limit() {
+        // When word boundary would be too short, fall back to char limit
+        let result = truncate_to_word_boundary("a verylongwordwithoutspaces", 10);
+        assert_eq!(result, "a verylong...");
+    }
+
+    #[test]
+    fn truncate_to_word_boundary_handles_unicode() {
+        // Should handle unicode characters correctly
+        let result = truncate_to_word_boundary("héllo wörld this is long", 12);
+        assert!(result.ends_with("..."));
     }
 }

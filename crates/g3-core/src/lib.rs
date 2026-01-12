@@ -48,8 +48,6 @@ use anyhow::Result;
 use g3_config::Config;
 use g3_providers::{CacheControl, CompletionRequest, Message, MessageRole, ProviderRegistry};
 use prompts::{get_system_prompt_for_native, SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE};
-#[allow(unused_imports)]
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -1034,11 +1032,6 @@ impl<W: UiWriter> Agent<W> {
     /// Check if a tool call is a duplicate of the last tool call in the previous assistant message.
     /// Returns Some("DUP IN MSG") if it's a duplicate, None otherwise.
     fn check_duplicate_in_previous_message(&self, tool_call: &ToolCall) -> Option<String> {
-        // Helper to check if two tool calls are duplicates
-        let are_duplicates = |tc1: &ToolCall, tc2: &ToolCall| -> bool {
-            tc1.tool == tc2.tool && tc1.args == tc2.args
-        };
-
         // Find the most recent assistant message
         for msg in self.context_window.conversation_history.iter().rev() {
             if !matches!(msg.role, MessageRole::Assistant) {
@@ -1065,7 +1058,7 @@ impl<W: UiWriter> Agent<W> {
 
             // Parse and compare the tool call
             if let Ok(prev_tool) = serde_json::from_str::<ToolCall>(tool_json) {
-                if are_duplicates(&prev_tool, tool_call) {
+                if streaming::are_tool_calls_duplicate(&prev_tool, tool_call) {
                     return Some("DUP IN MSG".to_string());
                 }
             }
@@ -2016,11 +2009,6 @@ impl<W: UiWriter> Agent<W> {
                         // Always process all tool calls - they will be executed after stream ends
                         let tools_to_process: Vec<ToolCall> = completed_tools;
 
-                        // Helper function to check if two tool calls are duplicates
-                        let are_duplicates = |tc1: &ToolCall, tc2: &ToolCall| -> bool {
-                            tc1.tool == tc2.tool && tc1.args == tc2.args
-                        };
-
                         // De-duplicate tool calls and track duplicates
                         let mut last_tool_in_chunk: Option<ToolCall> = None;
                         let mut deduplicated_tools: Vec<(ToolCall, Option<String>)> = Vec::new();
@@ -2031,7 +2019,7 @@ impl<W: UiWriter> Agent<W> {
                             // Check for IMMEDIATELY SEQUENTIAL duplicate in current chunk
                             // Only the immediately previous tool call counts as a duplicate
                             if let Some(ref last_tool) = last_tool_in_chunk {
-                                if are_duplicates(last_tool, &tool_call) {
+                                if streaming::are_tool_calls_duplicate(last_tool, &tool_call) {
                                 duplicate_type = Some("DUP IN CHUNK".to_string());
                                 }
                             } else {
@@ -2285,7 +2273,7 @@ impl<W: UiWriter> Agent<W> {
                             // Closure marker with timing
                             let tokens_delta = self.context_window.used_tokens.saturating_sub(tokens_before);
                             self.ui_writer
-                                .print_tool_timing(&Self::format_duration(exec_duration),
+                                .print_tool_timing(&streaming::format_duration(exec_duration),
                                     tokens_delta,
                                     self.context_window.percentage_used());
                             self.ui_writer.print_agent_prompt();
@@ -2480,7 +2468,7 @@ impl<W: UiWriter> Agent<W> {
                                 // Add timing if needed
                                 let final_response = if show_timing {
                                     let turn_tokens = turn_accumulated_usage.as_ref().map(|u| u.total_tokens);
-                                    let timing_footer = Self::format_timing_footer(
+                                    let timing_footer = streaming::format_timing_footer(
                                         stream_start.elapsed(),
                                         _ttft,
                                         turn_tokens,
@@ -2748,7 +2736,7 @@ impl<W: UiWriter> Agent<W> {
                 // Add timing if needed
                 let final_response = if show_timing {
                     let turn_tokens = turn_accumulated_usage.as_ref().map(|u| u.total_tokens);
-                    let timing_footer = Self::format_timing_footer(
+                    let timing_footer = streaming::format_timing_footer(
                         stream_start.elapsed(),
                         _ttft,
                         turn_tokens,
@@ -2778,7 +2766,7 @@ impl<W: UiWriter> Agent<W> {
         // Add timing if needed
         let final_response = if show_timing {
             let turn_tokens = turn_accumulated_usage.as_ref().map(|u| u.total_tokens);
-            let timing_footer = Self::format_timing_footer(
+            let timing_footer = streaming::format_timing_footer(
                 stream_start.elapsed(),
                 _ttft,
                 turn_tokens,
@@ -2868,48 +2856,12 @@ impl<W: UiWriter> Agent<W> {
     }
 
 
-    fn format_duration(duration: Duration) -> String {
-        streaming::format_duration(duration)
-    }
-
-    fn format_timing_footer(
-        elapsed: Duration,
-        ttft: Duration,
-        turn_tokens: Option<u32>,
-        context_percentage: f32,
-    ) -> String {
-        streaming::format_timing_footer(elapsed, ttft, turn_tokens, context_percentage)
-    }
 }
 
 
 // Re-export utility functions
 pub use utils::apply_unified_diff_to_string;
-
-/// Truncate a string to approximately max_len characters, ending at a word boundary
-fn truncate_to_word_boundary(s: &str, max_len: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max_len {
-        return s.to_string();
-    }
-    
-    // Get the byte index of the max_len-th character
-    let byte_index: usize = s.char_indices()
-        .nth(max_len)
-        .map(|(i, _)| i)
-        .unwrap_or(s.len());
-    
-    // Find the last space before the character limit
-    let truncated = &s[..byte_index];
-    if let Some(last_space_byte) = truncated.rfind(' ') {
-        if truncated[..last_space_byte].chars().count() > max_len / 2 {
-            // Only use word boundary if it's not too short (in characters)
-            return format!("{}...", &s[..last_space_byte]);
-        }
-    }
-    // Fall back to truncation at character boundary
-    format!("{}...", truncated)
-}
+use utils::truncate_to_word_boundary;
 
 // Implement Drop to clean up safaridriver process
 impl<W: UiWriter> Drop for Agent<W> {
