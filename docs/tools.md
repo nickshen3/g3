@@ -1,11 +1,11 @@
-# G3 Tools Reference
+# g3 Tools Reference
 
 **Last updated**: January 2025  
 **Source of truth**: `crates/g3-core/src/tool_definitions.rs`, `crates/g3-core/src/tools/`
 
 ## Purpose
 
-This document describes all tools available to the G3 agent. Tools are the primary mechanism by which G3 interacts with the filesystem, executes commands, and automates tasks.
+This document describes all tools available to the g3 agent. Tools are the primary mechanism by which g3 interacts with the filesystem, executes commands, and automates tasks.
 
 ## Tool Categories
 
@@ -445,7 +445,7 @@ List all open windows with IDs and titles.
 
 ### Duplicate Detection
 
-G3 prevents accidental duplicate tool calls:
+g3 prevents accidental duplicate tool calls:
 - Only immediately sequential identical calls are blocked
 - Text between tool calls resets detection
 - Tools can be reused throughout a session

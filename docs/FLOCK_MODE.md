@@ -1,11 +1,11 @@
-# G3 Flock Mode Guide
+# g3 Flock Mode Guide
 
 **Last updated**: January 2025  
 **Source of truth**: `crates/g3-ensembles/src/flock.rs`
 
 ## Purpose
 
-Flock mode enables parallel multi-agent development by spawning multiple G3 agent instances that work on different parts of a project simultaneously. This is useful for large projects with modular architectures where independent components can be developed in parallel.
+Flock mode enables parallel multi-agent development by spawning multiple g3 agent instances that work on different parts of a project simultaneously. This is useful for large projects with modular architectures where independent components can be developed in parallel.
 
 ## Overview
 

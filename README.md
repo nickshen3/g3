@@ -1,10 +1,10 @@
-# G3 - AI Coding Agent
+# g3 - AI Coding Agent
 
-G3 is a coding AI agent designed to help you complete tasks by writing code and executing commands. Built in Rust, it provides a flexible architecture for interacting with various Large Language Model (LLM) providers while offering powerful code generation and task automation capabilities.
+g3 is a coding AI agent designed to help you complete tasks by writing code and executing commands. Built in Rust, it provides a flexible architecture for interacting with various Large Language Model (LLM) providers while offering powerful code generation and task automation capabilities.
 
 ## Architecture Overview
 
-G3 follows a modular architecture organized as a Rust workspace with multiple crates, each responsible for specific functionality:
+g3 follows a modular architecture organized as a Rust workspace with multiple crates, each responsible for specific functionality:
 
 ### Core Components
 
@@ -56,7 +56,7 @@ Command-line interface:
 
 ### Error Handling & Resilience
 
-G3 includes robust error handling with automatic retry logic:
+g3 includes robust error handling with automatic retry logic:
 - **Recoverable Error Detection**: Automatically identifies recoverable errors (rate limits, network issues, server errors, timeouts)
 - **Exponential Backoff with Jitter**: Implements intelligent retry delays to avoid overwhelming services
 - **Detailed Error Logging**: Captures comprehensive error context including stack traces, request/response data, and session information
@@ -65,7 +65,7 @@ G3 includes robust error handling with automatic retry logic:
 
 ### Tool Call Duplicate Detection
 
-G3 includes intelligent duplicate detection to prevent the LLM from accidentally calling the same tool twice in a row:
+g3 includes intelligent duplicate detection to prevent the LLM from accidentally calling the same tool twice in a row:
 - **Sequential Duplicate Prevention**: Only immediately sequential identical tool calls are blocked
 - **Text Separation Allowed**: If there's any text between tool calls, they're not considered duplicates
 - **Session-Wide Reuse**: Tools can be called multiple times throughout a session - only back-to-back duplicates are prevented
@@ -74,7 +74,7 @@ This catches cases where the LLM "stutters" and outputs the same tool call twice
 
 ### Timing Footer
 
-After each response, G3 displays a timing footer showing elapsed time, time to first token, token usage (from the LLM, not estimated), and current context window usage percentage. The token and context info is displayed dimmed for a clean interface.
+After each response, g3 displays a timing footer showing elapsed time, time to first token, token usage (from the LLM, not estimated), and current context window usage percentage. The token and context info is displayed dimmed for a clean interface.
 
 ## Key Features
 
@@ -86,7 +86,7 @@ After each response, G3 displays a timing footer showing elapsed time, time to f
 - Dynamic token allocation for different providers (4k to 200k+ tokens)
 
 ### Interactive Control Commands
-G3's interactive CLI includes control commands for manual context management:
+g3's interactive CLI includes control commands for manual context management:
 - **`/compact`**: Manually trigger compaction to compact conversation history
 - **`/thinnify`**: Manually trigger context thinning to replace large tool results with file references
 - **`/skinnify`**: Manually trigger full context thinning (like `/thinnify` but processes the entire context window, not just the first third)
@@ -134,7 +134,7 @@ These commands give you fine-grained control over context management, allowing y
 
 ## Use Cases
 
-G3 is designed for:
+g3 is designed for:
 - Automated code generation and refactoring
 - File manipulation and project scaffolding
 - System administration tasks
@@ -229,7 +229,7 @@ G3 uses a TOML configuration file for settings. The config file is automatically
 
 ### Retry Configuration
 
-G3 includes configurable retry logic for handling recoverable errors (timeouts, rate limits, network issues, server errors):
+g3 includes configurable retry logic for handling recoverable errors (timeouts, rate limits, network issues, server errors):
 
 ```toml
 [agent]
@@ -256,7 +256,7 @@ See `config.example.toml` for a complete configuration example.
 
 ## WebDriver Browser Automation
 
-G3 includes WebDriver support for browser automation tasks. Safari is the default, with Chrome headless available as an alternative.
+g3 includes WebDriver support for browser automation tasks. Safari is the default, with Chrome headless available as an alternative.
 
 **One-Time Setup** (macOS only):
 
@@ -305,7 +305,7 @@ chrome_binary = "/Users/yourname/.chrome-for-testing/chrome-mac-arm64/Google Chr
 
 ## Computer Control (Experimental)
 
-G3 can interact with your computer's GUI for automation tasks:
+g3 can interact with your computer's GUI for automation tasks:
 
 **Available Tools**: `mouse_click`, `type_text`, `find_element`, `take_screenshot`, `list_windows`
 

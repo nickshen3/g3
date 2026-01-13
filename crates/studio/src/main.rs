@@ -13,10 +13,10 @@ mod session;
 use git::GitWorktree;
 use session::{Session, SessionStatus};
 
-/// Studio - Multi-agent workspace manager for G3
+/// Studio - Multi-agent workspace manager for g3
 #[derive(Parser)]
 #[command(name = "studio")]
-#[command(about = "Manage multiple G3 agent sessions using git worktrees")]
+#[command(about = "Manage multiple g3 agent sessions using git worktrees")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -24,7 +24,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run a new G3 agent session (tails output until complete)
+    /// Run a new g3 agent session (tails output until complete)
     Run {
         /// Agent name (e.g., carmack, torvalds)
         #[arg(long)]
@@ -35,7 +35,7 @@ enum Commands {
         g3_args: Vec<String>,
     },
 
-    /// Execute a G3 agent session in detached mode (for future use)
+    /// Execute a g3 agent session in detached mode (for future use)
     Exec {
         /// Agent name (e.g., carmack, torvalds)
         #[arg(long)]
@@ -118,7 +118,7 @@ fn get_repo_root() -> Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
-/// Run a new G3 session (foreground, tails output)
+/// Run a new g3 session (foreground, tails output)
 fn cmd_run(agent: &str, g3_args: &[String]) -> Result<()> {
     let g3_binary = get_g3_binary_path()?;
     let repo_root = get_repo_root()?;
@@ -200,7 +200,7 @@ fn cmd_run(agent: &str, g3_args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Execute a G3 session in detached mode (placeholder for future)
+/// Execute a g3 session in detached mode (placeholder for future)
 fn cmd_exec(agent: &str, g3_args: &[String]) -> Result<()> {
     // For now, just print what would happen
     println!("exec command not yet implemented");

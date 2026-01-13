@@ -37,7 +37,7 @@ uuid = { version = "1.0", features = ["v4"] }
 name = "g3"
 version = "0.1.0"
 edition = "2021"
-authors = ["G3 Team"]
+authors = ["g3 Team"]
 description = "A general purpose AI agent that helps you complete tasks by writing code"
 license = "MIT"
 

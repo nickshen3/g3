@@ -1,11 +1,11 @@
-# G3 Code Search Guide
+# g3 Code Search Guide
 
 **Last updated**: January 2025  
 **Source of truth**: `crates/g3-core/src/code_search/`, `crates/g3-core/src/tool_definitions.rs`
 
 ## Purpose
 
-G3 includes a syntax-aware code search tool powered by tree-sitter. Unlike text-based search (grep), it understands code structure and finds actual functions, classes, methods, and other constructs—ignoring matches in comments and strings.
+g3 includes a syntax-aware code search tool powered by tree-sitter. Unlike text-based search (grep), it understands code structure and finds actual functions, classes, methods, and other constructs—ignoring matches in comments and strings.
 
 ## Why Use Code Search?
 

@@ -2,7 +2,7 @@
 name = "studio"
 version = "0.1.0"
 edition = "2021"
-description = "Multi-agent workspace manager for G3"
+description = "Multi-agent workspace manager for g3"
 
 [[bin]]
 name = "studio"

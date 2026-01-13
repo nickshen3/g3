@@ -1,4 +1,4 @@
-# AGENTS.md - Machine Instructions for G3
+# AGENTS.md - Machine Instructions for g3
 
 **Purpose**: Machine-specific instructions for AI agents working with this codebase.  
 **For project overview, architecture, and usage**: See [README.md](README.md)

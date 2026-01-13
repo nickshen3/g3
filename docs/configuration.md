@@ -1,15 +1,15 @@
-# G3 Configuration Guide
+# g3 Configuration Guide
 
 **Last updated**: January 2025  
 **Source of truth**: `crates/g3-config/src/lib.rs`, `config.example.toml`
 
 ## Purpose
 
-This document explains how to configure G3, including provider setup, agent behavior, and optional features like WebDriver and computer control.
+This document explains how to configure g3, including provider setup, agent behavior, and optional features like WebDriver and computer control.
 
 ## Configuration File Location
 
-G3 looks for configuration files in this order:
+g3 looks for configuration files in this order:
 
 1. Path specified via `--config` CLI argument
 2. `./g3.toml` (current directory)
@@ -20,7 +20,7 @@ If no configuration file exists, G3 creates a default one at `~/.config/g3/confi
 
 ## Configuration Format
 
-G3 uses TOML format. The configuration is organized into sections:
+g3 uses TOML format. The configuration is organized into sections:
 
 ```toml
 [providers]           # LLM provider settings
@@ -165,7 +165,7 @@ check_todo_staleness = true          # Warn about stale TODO items
 
 ### Retry Behavior
 
-G3 automatically retries on recoverable errors:
+g3 automatically retries on recoverable errors:
 - Rate limits (HTTP 429)
 - Network errors
 - Server errors (HTTP 5xx)

@@ -1,11 +1,11 @@
-# G3 LLM Providers Guide
+# g3 LLM Providers Guide
 
 **Last updated**: January 2025  
 **Source of truth**: `crates/g3-providers/src/`
 
 ## Purpose
 
-This document describes the LLM providers supported by G3, their capabilities, and how to choose between them.
+This document describes the LLM providers supported by g3, their capabilities, and how to choose between them.
 
 ## Provider Overview
 
@@ -269,10 +269,10 @@ threads = 8  # Use more threads
 
 ### Tool Calling
 
-Embedded models don't have native tool calling. G3 uses JSON fallback:
+Embedded models don't have native tool calling. g3 uses JSON fallback:
 1. System prompt includes tool definitions as JSON
 2. Model outputs tool calls as JSON in response
-3. G3 parses JSON and executes tools
+3. g3 parses JSON and executes tools
 
 This works but is less reliable than native tool calling.
 
@@ -376,7 +376,7 @@ pub trait LLMProvider: Send + Sync {
 
 ### Rate Limits
 
-G3 automatically retries on rate limits with exponential backoff.
+g3 automatically retries on rate limits with exponential backoff.
 
 To reduce rate limit issues:
 - Use prompt caching (Anthropic)

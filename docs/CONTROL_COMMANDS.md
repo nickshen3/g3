@@ -1,11 +1,11 @@
-# G3 Control Commands
+# g3 Control Commands
 
 **Last updated**: January 2025  
 **Source of truth**: `crates/g3-cli/src/lib.rs`
 
 ## Purpose
 
-Control commands are special commands you can use during an interactive G3 session to manage context, refresh documentation, and view statistics. They start with `/` and are processed by the CLI, not sent to the LLM.
+Control commands are special commands you can use during an interactive g3 session to manage context, refresh documentation, and view statistics. They start with `/` and are processed by the CLI, not sent to the LLM.
 
 ## Available Commands
 
@@ -255,7 +255,7 @@ g3> /help
 
 ## Context Management Strategy
 
-G3 automatically manages context, but manual intervention can help:
+g3 automatically manages context, but manual intervention can help:
 
 ### Proactive Management
 
@@ -283,7 +283,7 @@ When context gets high:
 
 ## Automatic Context Management
 
-G3 performs automatic context management:
+g3 performs automatic context management:
 
 | Threshold | Action |
 |-----------|--------|

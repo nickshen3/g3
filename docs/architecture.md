@@ -1,15 +1,15 @@
-# G3 Architecture
+# g3 Architecture
 
 **Last updated**: January 2025  
 **Source of truth**: Crate structure in `crates/`, `Cargo.toml`, `DESIGN.md`
 
 ## Purpose
 
-This document describes the internal architecture of G3, a modular AI coding agent built in Rust. It is intended for developers who want to understand, extend, or maintain the codebase.
+This document describes the internal architecture of g3, a modular AI coding agent built in Rust. It is intended for developers who want to understand, extend, or maintain the codebase.
 
 ## High-Level Overview
 
-G3 follows a **tool-first philosophy**: instead of just providing advice, it actively uses tools to read files, write code, execute commands, and complete tasks autonomously.
+g3 follows a **tool-first philosophy**: instead of just providing advice, it actively uses tools to read files, write code, execute commands, and complete tasks autonomously.
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -58,7 +58,7 @@ G3 follows a **tool-first philosophy**: instead of just providing advice, it act
 
 ## Workspace Structure
 
-G3 is organized as a Rust workspace with 9 crates:
+g3 is organized as a Rust workspace with 9 crates:
 
 ```
 g3/
@@ -234,7 +234,7 @@ Flock mode enables parallel development by spawning multiple agent instances wor
 ### studio (Multi-Agent Workspace Manager)
 
 **Location**: `crates/studio/`  
-**Purpose**: Manage multiple G3 agent sessions using git worktrees
+**Purpose**: Manage multiple g3 agent sessions using git worktrees
 
 Key modules:
 - `main.rs` - CLI commands (run, exec, list, status, accept, discard)
@@ -297,7 +297,7 @@ The `ContextWindow` struct manages conversation history with intelligent token t
 
 ## Error Handling
 
-G3 implements comprehensive error handling:
+g3 implements comprehensive error handling:
 
 1. **Error Classification**: Distinguishes recoverable vs non-recoverable errors
 2. **Automatic Retry**: Exponential backoff with jitter for:

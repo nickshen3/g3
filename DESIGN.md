@@ -1,10 +1,10 @@
-# G3 - AI Coding Agent - Design Document
+# g3 - AI Coding Agent - Design Document
 
 ## Overview
 
-G3 is a **modular, composable AI coding agent** built in Rust that helps you complete tasks by writing and executing code. It provides a flexible architecture for interacting with various Large Language Model (LLM) providers while offering powerful code generation, file manipulation, and task automation capabilities.
+g3 is a **modular, composable AI coding agent** built in Rust that helps you complete tasks by writing and executing code. It provides a flexible architecture for interacting with various Large Language Model (LLM) providers while offering powerful code generation, file manipulation, and task automation capabilities.
 
-The agent follows a **tool-first philosophy**: instead of just providing advice, G3 actively uses tools to read files, write code, execute commands, and complete tasks autonomously.
+The agent follows a **tool-first philosophy**: instead of just providing advice, g3 actively uses tools to read files, write code, execute commands, and complete tasks autonomously.
 
 ## Core Principles
 
@@ -19,7 +19,7 @@ The agent follows a **tool-first philosophy**: instead of just providing advice,
 
 ## Project Structure
 
-G3 is organized as a Rust workspace with the following crates:
+g3 is organized as a Rust workspace with the following crates:
 
 ```
 g3/
@@ -217,7 +217,7 @@ g3/
 
 ### Context Window Management
 
-G3 implements sophisticated context window management:
+g3 implements sophisticated context window management:
 
 - **Automatic Monitoring**: Tracks token usage with percentage-based thresholds
 - **Smart Summarization**: Auto-triggers at 80% capacity to prevent context overflow
@@ -389,7 +389,7 @@ g3 --retro --theme dracula
 - **Caching**: Strategic caching of expensive operations
 - **Profiling**: Regular performance profiling and optimization
 
-This design document reflects the current state of G3 as a mature, production-ready AI coding agent with sophisticated architecture and comprehensive feature set.
+This design document reflects the current state of g3 as a mature, production-ready AI coding agent with sophisticated architecture and comprehensive feature set.
 
 ## Current Implementation Status
 
