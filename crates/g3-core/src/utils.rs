@@ -255,9 +255,12 @@ pub fn apply_unified_diff_to_string(
             region_content.replace_range(pos..endpos, new_block);
         } else {
             // Not found; provide helpful diagnostics with a short preview
-            let preview_len = old_block.len().min(200);
-            let mut old_preview = old_block[..preview_len].to_string();
-            if old_block.len() > preview_len {
+            // Use character-based slicing to avoid splitting multi-byte UTF-8 characters
+            let max_chars = 200;
+            let preview_len = old_block.chars().count().min(max_chars);
+            let mut old_preview: String = old_block.chars().take(preview_len).collect();
+            let was_truncated = old_block.chars().count() > max_chars;
+            if was_truncated {
                 old_preview.push_str("...");
             }
 
