@@ -113,10 +113,12 @@ pub fn load_config_with_cli_overrides(cli: &Cli) -> Result<Config> {
         config.webdriver.enabled = true;
         config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
 
-        // Run Chrome diagnostics on first use
+        // Run Chrome diagnostics - only show output if there are issues
         let report =
             g3_computer_control::run_chrome_diagnostics(config.webdriver.chrome_binary.as_deref());
-        println!("{}", report.format_report());
+        if !report.all_ok() {
+            println!("{}", report.format_report());
+        }
     }
 
     // Apply safari flag override
