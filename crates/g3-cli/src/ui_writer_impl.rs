@@ -437,6 +437,57 @@ impl UiWriter for ConsoleUiWriter {
         true
     }
 
+    fn print_todo_compact(&self, content: Option<&str>, is_write: bool) -> bool {
+        let tool_name = if is_write { "todo_write" } else { "todo_read" };
+        let is_agent_mode = *self.is_agent_mode.lock().unwrap();
+        let tool_color = if is_agent_mode { "\x1b[38;5;250m" } else { "\x1b[32m" };
+
+        // Add blank line if last output was text (for visual separation)
+        let mut last_was_text = self.last_output_was_text.lock().unwrap();
+        if *last_was_text {
+            println!();
+        }
+        *last_was_text = false;
+        *self.last_output_was_tool.lock().unwrap() = true;
+        // Reset read_file continuation tracking
+        *self.last_read_file_path.lock().unwrap() = None;
+
+        match content {
+            None => {
+                // Empty TODO
+                println!(" \x1b[2m●\x1b[0m {}{}\x1b[0m \x1b[2m|\x1b[0m \x1b[35mempty\x1b[0m", tool_color, tool_name);
+            }
+            Some(text) => {
+                // Header
+                println!(" \x1b[2m●\x1b[0m {}{}\x1b[0m", tool_color, tool_name);
+                
+                let lines: Vec<&str> = text.lines().collect();
+                let last_idx = lines.len().saturating_sub(1);
+                
+                for (i, line) in lines.iter().enumerate() {
+                    let is_last = i == last_idx;
+                    let prefix = if is_last { "└" } else { "│" };
+                    
+                    // Convert checkboxes to styled symbols
+                    let styled_line = line
+                        .replace("- [x]", "■")
+                        .replace("- [X]", "■")
+                        .replace("- [ ]", "□");
+                    
+                    // Dim the line content
+                    println!("   \x1b[2m{}  {}\x1b[0m", prefix, styled_line);
+                }
+                // Add blank line after content for readability
+                println!();
+            }
+        }
+
+        // Clear tool state
+        self.clear_tool_state();
+        
+        true
+    }
+
     fn print_tool_timing(&self, duration_str: &str, tokens_delta: u32, context_percentage: f32) {
         let color_code = duration_color(duration_str);
 

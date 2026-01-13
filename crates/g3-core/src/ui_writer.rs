@@ -46,6 +46,15 @@ pub trait UiWriter: Send + Sync {
         false
     }
 
+    /// Print a compact TODO tool output with styled content
+    /// Format: " ● todo_read" header, then styled content lines, no timing
+    /// content: None for empty, Some(content) for TODO content
+    /// is_write: true for todo_write, false for todo_read
+    /// Returns true if handled, false to fall back to normal format
+    fn print_todo_compact(&self, _content: Option<&str>, _is_write: bool) -> bool {
+        false
+    }
+
     /// Print tool execution timing
     fn print_tool_timing(&self, duration_str: &str, tokens_delta: u32, context_percentage: f32);
 

@@ -23,6 +23,7 @@ pub async fn execute_todo_read<W: UiWriter>(
         // Also update in-memory content to stay in sync
         let mut todo = ctx.todo_content.write().await;
         *todo = String::new();
+        ctx.ui_writer.print_todo_compact(None, false);
         return Ok("📝 TODO list is empty (no todo.g3.md file found)".to_string());
     }
 
@@ -42,11 +43,10 @@ pub async fn execute_todo_read<W: UiWriter>(
             }
 
             if content.trim().is_empty() {
+                ctx.ui_writer.print_todo_compact(None, false);
                 Ok("📝 TODO list is empty".to_string())
             } else {
-                for line in content.lines() {
-                    ctx.ui_writer.print_tool_output_line(line);
-                }
+                ctx.ui_writer.print_todo_compact(Some(&content), false);
                 Ok(format!("📝 TODO list:\n{}", content))
             }
         }
@@ -98,14 +98,10 @@ pub async fn execute_todo_write<W: UiWriter>(
             Ok(_) => {
                 let mut todo = ctx.todo_content.write().await;
                 *todo = String::new();
-                // Show the final completed TODOs before deletion
-                let mut result =
-                    String::from("✅ All TODOs completed! Removed todo.g3.md\n\nFinal status:\n");
-                for line in content_str.lines() {
-                    ctx.ui_writer.print_tool_output_line(line);
-                    result.push_str(line);
-                    result.push('\n');
-                }
+                // Show the final completed TODOs
+                ctx.ui_writer.print_todo_compact(Some(content_str), true);
+                let mut result = String::from("✅ All TODOs completed! Removed todo.g3.md\n\nFinal status:\n");
+                result.push_str(content_str);
                 return Ok(result);
             }
             Err(e) => return Ok(format!("❌ Failed to remove todo.g3.md: {}", e)),
@@ -117,10 +113,7 @@ pub async fn execute_todo_write<W: UiWriter>(
             // Also update in-memory content to stay in sync
             let mut todo = ctx.todo_content.write().await;
             *todo = content_str.to_string();
-            // Print the TODO content to the console (inside the tool frame)
-            for line in content_str.lines() {
-                ctx.ui_writer.print_tool_output_line(line);
-            }
+            ctx.ui_writer.print_todo_compact(Some(content_str), true);
             Ok(format!(
                 "✅ TODO list updated ({} chars) and saved to todo.g3.md:\n{}",
                 char_count, content_str

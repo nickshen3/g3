@@ -88,7 +88,7 @@ pub enum StreamState {
 
 
 // Re-export StreamingToolParser from its own module
-pub use streaming_parser::StreamingToolParser;
+pub use streaming_parser::{StreamingToolParser, sanitize_inline_tool_patterns, LBRACE_HOMOGLYPH};
 
 pub struct Agent<W: UiWriter> {
     providers: ProviderRegistry,
@@ -2131,7 +2131,11 @@ impl<W: UiWriter> Agent<W> {
                             // Finish streaming markdown before showing tool output
                             self.ui_writer.finish_streaming_markdown();
 
-                            // Tool call header
+                            // Check if this is a TODO tool (they handle their own output)
+                            let is_todo_tool = tool_call.tool == "todo_read" || tool_call.tool == "todo_write";
+
+                            // Tool call header (skip for TODO tools - they print their own compact header)
+                            if !is_todo_tool {
                             self.ui_writer.print_tool_header(&tool_call.tool, Some(&tool_call.args));
                             if let Some(args_obj) = tool_call.args.as_object() {
                                 for (key, value) in args_obj {
@@ -2143,12 +2147,13 @@ impl<W: UiWriter> Agent<W> {
                                     self.ui_writer.print_tool_arg(key, &value_str);
                                 }
                             }
+                            }
 
                             // Check if this is a compact tool (file operations)
                             let is_compact_tool = matches!(tool_call.tool.as_str(), "read_file" | "write_file" | "str_replace" | "remember" | "take_screenshot" | "code_coverage" | "rehydrate");
                             
                             // Only print output header for non-compact tools
-                            if !is_compact_tool {
+                            if !is_compact_tool && !is_todo_tool {
                                 self.ui_writer.print_tool_output_header();
                             }
 
@@ -2316,20 +2321,23 @@ impl<W: UiWriter> Agent<W> {
                             // Closure marker with timing
                             let tokens_delta = self.context_window.used_tokens.saturating_sub(tokens_before);
                             
-                            // Use compact format for file operations, normal format for others
-                            if let Some(summary) = compact_summary {
-                                self.ui_writer.print_tool_compact(
-                                    &tool_call.tool,
-                                    &summary,
-                                    &streaming::format_duration(exec_duration),
-                                    tokens_delta,
-                                    self.context_window.percentage_used(),
-                                );
-                            } else {
-                                self.ui_writer
-                                    .print_tool_timing(&streaming::format_duration(exec_duration),
+                            // TODO tools handle their own output via print_todo_compact, skip timing
+                            if !is_todo_tool {
+                                // Use compact format for file operations, normal format for others
+                                if let Some(summary) = compact_summary {
+                                    self.ui_writer.print_tool_compact(
+                                        &tool_call.tool,
+                                        &summary,
+                                        &streaming::format_duration(exec_duration),
                                         tokens_delta,
-                                        self.context_window.percentage_used());
+                                        self.context_window.percentage_used(),
+                                    );
+                                } else {
+                                    self.ui_writer
+                                        .print_tool_timing(&streaming::format_duration(exec_duration),
+                                            tokens_delta,
+                                            self.context_window.percentage_used());
+                                }
                             }
                             self.ui_writer.print_agent_prompt();
 
