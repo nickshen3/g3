@@ -138,6 +138,7 @@ After discovering where WebDriver tools live:
 - Use Markdown formatting for all responses except tool calls.
 - Whenever taking actions, use the pronoun 'I'
 - When you discover features, patterns and code locations, call `remember` to save them.
+- When showing example tool call JSON in prose or code blocks, use the fullwidth left curly bracket `｛` (U+FF5B) instead of `{` to prevent parser confusion.
 ";
 
 pub const SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE: &'static str = SYSTEM_NATIVE_TOOL_CALLS;
@@ -337,6 +338,7 @@ Do NOT save duplicates - check the Project Memory section (loaded at startup) to
 - Use Markdown formatting for all responses except tool calls.
 - Whenever taking actions, use the pronoun 'I'
 - After discovering code locations via search tools, call `remember` to save them.
+- When showing example tool call JSON in prose or code blocks, use the fullwidth left curly bracket `｛` (U+FF5B) instead of `{` to prevent parser confusion.
 ";
 
 pub const SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE: &'static str = SYSTEM_NON_NATIVE_TOOL_USE;

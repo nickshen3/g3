@@ -16,6 +16,62 @@ const TOOL_CALL_PATTERNS: [&str; 4] = [
     r#"{ "tool" :"#,
 ];
 
+/// Unicode homoglyph for left curly brace, used to sanitize inline tool-call-like patterns.
+/// This is the "FULLWIDTH LEFT CURLY BRACKET" (U+FF5B).
+pub const LBRACE_HOMOGLYPH: char = '｛';
+
+/// Sanitize text content by replacing tool-call-like patterns that appear inline
+/// (not on their own line) with homoglyphs to prevent parser poisoning.
+///
+/// Real tool calls from LLMs always appear on their own line. When we see patterns
+/// like `{"tool":` embedded within other text (e.g., in code examples, inline code,
+/// or prose), we replace the opening brace with a homoglyph to prevent the streaming
+/// parser from incorrectly entering JSON parsing mode.
+///
+/// This function is called on each chunk of streamed content before it's added to
+/// the text buffer.
+pub fn sanitize_inline_tool_patterns(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let lines: Vec<&str> = text.split('\n').collect();
+    
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            result.push('\n');
+        }
+        
+        // Check if this line starts with a tool call pattern (after trimming whitespace)
+        let trimmed = line.trim_start();
+        let is_standalone_tool_call = TOOL_CALL_PATTERNS.iter().any(|p| trimmed.starts_with(p));
+        
+        if is_standalone_tool_call {
+            // This looks like a real tool call on its own line - leave it alone
+            result.push_str(line);
+        } else {
+            // Check if there are any tool call patterns embedded in this line
+            let mut line_result = line.to_string();
+            for pattern in &TOOL_CALL_PATTERNS {
+                // Find all occurrences of the pattern in this line
+                let mut search_start = 0;
+                while let Some(pos) = line_result[search_start..].find(pattern) {
+                    let abs_pos = search_start + pos;
+                    // Check if this pattern is at the start of the trimmed line
+                    // (which we already handled above)
+                    let before = &line_result[..abs_pos];
+                    if !before.trim().is_empty() {
+                        // There's non-whitespace before this pattern - it's inline, sanitize it
+                        let replacement = format!("{}{}", LBRACE_HOMOGLYPH, &pattern[1..]);
+                        line_result = format!("{}{}{}", &line_result[..abs_pos], replacement, &line_result[abs_pos + pattern.len()..]);
+                    }
+                    search_start = abs_pos + pattern.len();
+                }
+            }
+            result.push_str(&line_result);
+        }
+    }
+    
+    result
+}
+
 /// Modern streaming tool parser that properly handles native tool calls and SSE chunks.
 #[derive(Debug)]
 pub struct StreamingToolParser {
@@ -101,9 +157,11 @@ impl StreamingToolParser {
     pub fn process_chunk(&mut self, chunk: &g3_providers::CompletionChunk) -> Vec<ToolCall> {
         let mut completed_tools = Vec::new();
 
-        // Add text content to buffer
+        // Add text content to buffer after sanitizing inline tool-call patterns
+        // to prevent parser poisoning from examples/code blocks
         if !chunk.content.is_empty() {
-            self.text_buffer.push_str(&chunk.content);
+            let sanitized = sanitize_inline_tool_patterns(&chunk.content);
+            self.text_buffer.push_str(&sanitized);
         }
 
         // Handle native tool calls - return them immediately when received.
@@ -459,6 +517,7 @@ Some text after"#;
             "Second tool call should have command 'second', got {:?}", tools[1].args);
     }
 
+
     #[test]
     fn test_find_first_vs_last_tool_call() {
         let text = r#"{"tool": "first"} and {"tool": "second"}"#;
@@ -470,5 +529,88 @@ Some text after"#;
         assert!(last_pos.is_some());
         assert!(first_pos.unwrap() < last_pos.unwrap(), 
             "First position ({:?}) should be less than last position ({:?})", first_pos, last_pos);
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_preserves_standalone() {
+        // Tool call on its own line should NOT be sanitized
+        let input = r#"{"tool": "shell", "args": {"command": "ls"}}"#;
+        let result = sanitize_inline_tool_patterns(input);
+        assert_eq!(result, input, "Standalone tool call should not be modified");
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_preserves_indented_standalone() {
+        // Tool call with leading whitespace should NOT be sanitized
+        let input = r#"  {"tool": "shell", "args": {"command": "ls"}}"#;
+        let result = sanitize_inline_tool_patterns(input);
+        assert_eq!(result, input, "Indented standalone tool call should not be modified");
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_sanitizes_inline() {
+        // Tool call pattern embedded in text should be sanitized
+        let input = "Here is an example: {\"tool\": \"shell\"} in text";
+        let result = sanitize_inline_tool_patterns(input);
+        assert!(!result.contains("{\"tool\":"), "Inline pattern should be sanitized");
+        assert!(result.contains(LBRACE_HOMOGLYPH), "Should contain homoglyph");
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_sanitizes_in_code_block() {
+        // Tool call pattern in inline code should be sanitized
+        let input = "Use `{\"tool\": \"shell\"}` to run commands";
+        let result = sanitize_inline_tool_patterns(input);
+        assert!(!result.contains("{\"tool\":"), "Pattern in code should be sanitized");
+        assert!(result.contains(LBRACE_HOMOGLYPH), "Should contain homoglyph");
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_multiline() {
+        // Mixed: standalone on one line, inline on another
+        let input = "Some text with {\"tool\": \"inline\"} here\n{\"tool\": \"standalone\", \"args\": {}}\nMore text";
+        let result = sanitize_inline_tool_patterns(input);
+        
+        // The inline one should be sanitized
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines[0].contains(LBRACE_HOMOGLYPH), "First line should have homoglyph");
+        
+        // The standalone one should NOT be sanitized
+        assert!(lines[1].starts_with("{\"tool\":"), "Second line should be unchanged");
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_multiple_inline() {
+        // Multiple inline patterns on same line
+        let input = "Compare {\"tool\": \"a\"} with {\"tool\": \"b\"}";
+        let result = sanitize_inline_tool_patterns(input);
+        
+        // Both should be sanitized
+        assert!(!result.contains("{\"tool\":"), "All inline patterns should be sanitized");
+        // Count homoglyphs - should be 2
+        let homoglyph_count = result.matches(LBRACE_HOMOGLYPH).count();
+        assert_eq!(homoglyph_count, 2, "Should have 2 homoglyphs, got {}", homoglyph_count);
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_no_false_positives() {
+        // Regular JSON that doesn't match tool patterns should be unchanged
+        let input = "Some {\"key\": \"value\"} json";
+        let result = sanitize_inline_tool_patterns(input);
+        assert_eq!(result, input, "Non-tool JSON should not be modified");
+    }
+
+    #[test]
+    fn test_sanitize_inline_tool_patterns_all_pattern_variants() {
+        // Test all whitespace variants are caught
+        let inputs = [
+            "text { \"tool\":\"x\"} more",
+            "text {\"tool\" :\"x\"} more",
+            "text { \"tool\" :\"x\"} more",
+        ];
+        for input in inputs {
+            let result = sanitize_inline_tool_patterns(input);
+            assert!(result.contains(LBRACE_HOMOGLYPH), "Pattern in '{}' should be sanitized", input);
+        }
     }
 }
