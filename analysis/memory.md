@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-12T09:14:13Z | Size: 10.5k chars
+> Updated: 2026-01-13T16:15:37Z | Size: 11.8k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -172,10 +172,24 @@ if s.chars().count() <= max_len { ... }
 
 ### Project Memory Location
 - Memory is now stored at `analysis/memory.md` (version controlled, shared across worktrees)
-- Previously was at `.g3/memory.md` (gitignored, ephemeral)
 - `crates/g3-core/src/tools/memory.rs` - `get_memory_path()` returns `analysis/memory.md`
 - `crates/g3-cli/src/project_files.rs` - `read_project_memory()` reads from `analysis/memory.md`
 
 ### Compact Tool Output
 - `crates/g3-cli/src/ui_writer_impl.rs` - `print_tool_compact()` handles compact display for file ops and other tools
 - `crates/g3-core/src/streaming.rs` - `format_*_summary()` functions for each tool type
+
+### Racket Code Search Support
+Tree-sitter based syntax-aware search for Racket `.rkt` files.
+
+- `crates/g3-core/src/code_search/searcher.rs`
+  - Racket parser init [~line 45] - `tree_sitter_racket::LANGUAGE`
+  - Extension mapping [~line 90] - `.rkt`, `.rktl`, `.rktd` → "racket"
+
+### Auto-Memory Reminder Format
+Rich few-shot prompting for higher quality memory entries with per-symbol char ranges.
+
+- `crates/g3-core/src/lib.rs`
+  - `send_auto_memory_reminder()` [47800..48800] - MEMORY CHECKPOINT prompt with few-shot examples
+- `crates/g3-core/src/prompts.rs`
+  - Memory Format section [3800..4500] - system prompt template and examples

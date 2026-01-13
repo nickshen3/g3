@@ -109,17 +109,25 @@ Use this format when calling `remember`:
 
 ```
 ### <Feature Name>
-- `<file_path>` [<start>..<end>] - `<function_name>()`, `<StructName>`
+Brief description of what this feature/subsystem does.
+
+- `<file_path>`
+  - `FunctionName()` [1200..1450] - what it does, key params/return
+  - `StructName` [500..650] - purpose, key fields
+  - `related_function()` - how it connects
 
 ### <Pattern Name>
+When to use this pattern and why.
+
 1. Step one
 2. Step two
+3. Key gotcha or tip
 ```
 
 ## When to Remember
 
 **ALWAYS** call `remember` at the END of your turn when you discovered:
-- A feature's location (file + char range + function/struct names)
+- A feature's location with purpose and key entry points
 - A useful pattern or workflow  
 - An entry point for a subsystem
 
@@ -129,9 +137,13 @@ Do NOT save duplicates - check the Project Memory section (loaded at startup) to
 
 ## Example
 
-After discovering where WebDriver tools live:
+After discovering how session continuation works:
 
-{\"tool\": \"remember\", \"args\": {\"notes\": \"## Features\\n\\n### WebDriver Browser Automation\\n- crates/g3-core/src/tools/webdriver.rs [0..21750] - execute_webdriver_start(), execute_webdriver_navigate(), WebDriverSession\"}}
+{\"tool\": \"remember\", \"args\": {\"notes\": \"### Session Continuation\\nSave/restore session state across g3 invocations using symlink-based approach.\\n\\n- `crates/g3-core/src/session_continuation.rs`\\n  - `SessionContinuation` [850..2100] - artifact struct with session state, TODO snapshot, context %\\n  - `save_continuation()` [5765..7200] - saves to `.g3/sessions/<id>/latest.json`, updates symlink\\n  - `load_continuation()` [7250..8900] - follows `.g3/session` symlink to restore\\n  - `find_incomplete_agent_session()` [10500..13200] - finds sessions with incomplete TODOs for agent resume\"}}
+
+After discovering a useful pattern:
+
+{\"tool\": \"remember\", \"args\": {\"notes\": \"### UTF-8 Safe String Slicing\\nRust string slices use byte indices. Multi-byte chars (emoji, CJK) cause panics if sliced mid-character.\\n\\n1. Use `s.char_indices().nth(n)` to get byte index of Nth character\\n2. Use `s.chars().count()` for length, not `s.len()`\\n3. Danger zones: display truncation, user input, any non-ASCII text\"}}
 
 # Response Guidelines
 

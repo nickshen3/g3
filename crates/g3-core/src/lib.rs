@@ -1416,7 +1416,37 @@ impl<W: UiWriter> Agent<W> {
         debug!("Auto-memory: Sending reminder to LLM ({} tools called this turn: {:?})", tools_called.len(), tools_called);
         self.ui_writer.print_context_status("\nMemory checkpoint: ");
         
-        let reminder = "SYSTEM REMINDER: You used tools during this turn. If you discovered any key code locations, patterns, or entry points that aren't already in Project Memory, please call the `remember` tool now to save them. If you didn't discover anything new worth remembering, you can skip this. Respond briefly after deciding.";
+        let reminder = r#"MEMORY CHECKPOINT: If you discovered code locations worth remembering, call `remember` now.
+
+Use this rich format:
+
+### Feature Name
+Brief description of what this feature/subsystem does.
+
+- `path/to/file.rs`
+  - `FunctionName()` [1200..1450] - what it does, key params/return
+  - `StructName` [500..650] - purpose, key fields
+  - `related_function()` - how it connects
+
+### Pattern Name
+When to use this pattern and why.
+
+1. First step
+2. Second step
+3. Key gotcha or tip
+
+Example of a good entry:
+
+### Session Continuation
+Save/restore session state across g3 invocations using symlink-based approach.
+
+- `crates/g3-core/src/session_continuation.rs`
+  - `SessionContinuation` [850..2100] - artifact struct with session state, TODO snapshot, context %
+  - `save_continuation()` [5765..7200] - saves to `.g3/sessions/<id>/latest.json`, updates symlink
+  - `load_continuation()` [7250..8900] - follows `.g3/session` symlink to restore
+  - `find_incomplete_agent_session()` [10500..13200] - finds sessions with incomplete TODOs for agent resume
+
+Skip if nothing new. Be brief."#;
 
         // Add the reminder as a user message and get a response
         self.context_window.add_message(Message::new(
