@@ -94,41 +94,44 @@ pub async fn run_interactive<W: UiWriter>(
         let has_readme = content.contains("Project README");
         let has_memory = content.contains("Project Memory");
 
-        if has_agents {
-            print!(
-                "{}🤖 AGENTS.md configuration loaded{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                ResetColor
-            );
-        }
+        let readme_status = if has_readme { "✓" } else { "·" };
+        let agents_status = if has_agents { "✓" } else { "·" };
+        let memory_status = if has_memory { "✓" } else { "·" };
 
-        if has_readme {
+        // Extract project name if README is loaded
+        let project_name = if has_readme {
             // Extract the first heading or title from the README
-            let readme_snippet = extract_readme_heading(content)
-                .unwrap_or_else(|| "Project documentation loaded".to_string());
+            extract_readme_heading(content)
+        } else {
+            None
+        };
 
-            print!(
-                "{}📚 detected: {}{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                readme_snippet,
-                ResetColor
-            );
+        if let Some(name) = project_name {
+            print!("{}>> {}{}\n", SetForegroundColor(Color::DarkGrey), name, ResetColor);
         }
-
-        if has_memory {
-            print!(
-                "{}🧠 Project memory loaded{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                ResetColor
-            );
-        }
+        print!(
+            "{}   {} README | {} AGENTS.md | {} Memory{}\n",
+            SetForegroundColor(Color::DarkGrey),
+            readme_status, agents_status, memory_status,
+            ResetColor
+        );
     }
 
     // Display workspace path
+    let workspace_display = {
+        let path_str = workspace_path.display().to_string();
+        dirs::home_dir()
+            .and_then(|home| {
+                path_str
+                    .strip_prefix(&home.display().to_string())
+                    .map(|s| format!("~{}", s))
+            })
+            .unwrap_or(path_str)
+    };
     print!(
-        "{}workspace: {}{}\n",
+        "{}-> {}{}\n",
         SetForegroundColor(Color::DarkGrey),
-        workspace_path.display(),
+        workspace_display,
         ResetColor
     );
     output.print("");
