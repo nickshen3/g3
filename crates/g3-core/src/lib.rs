@@ -137,28 +137,8 @@ impl<W: UiWriter> Agent<W> {
         Self::new_with_mode(config, ui_writer, false, false).await
     }
 
-    pub async fn new_with_readme(
-        config: Config,
-        ui_writer: W,
-        readme_content: Option<String>,
-    ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, false, None).await
-    }
-
-    pub async fn new_autonomous_with_readme(
-        config: Config,
-        ui_writer: W,
-        readme_content: Option<String>,
-    ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, true, readme_content, false, None).await
-    }
-
     pub async fn new_autonomous(config: Config, ui_writer: W) -> Result<Self> {
         Self::new_with_mode(config, ui_writer, true, false).await
-    }
-
-    pub async fn new_with_quiet(config: Config, ui_writer: W, quiet: bool) -> Result<Self> {
-        Self::new_with_mode(config, ui_writer, false, quiet).await
     }
 
     pub async fn new_with_readme_and_quiet(
