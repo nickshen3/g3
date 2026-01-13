@@ -40,7 +40,8 @@ g3 includes a syntax-aware code search tool powered by tree-sitter. Unlike text-
 - Java
 - C
 - C++
-- Kotlin
+- Racket
+- Scheme
 
 ## Basic Usage
 
@@ -229,6 +230,65 @@ Tree-sitter queries use S-expression syntax. The basic pattern is:
 
 ;; Namespaces (C++)
 (namespace_definition name: (identifier) @name)
+```
+
+### Racket
+
+Racket uses an S-expression grammar where code is represented as nested lists. The tree-sitter-racket parser represents most forms as `(list (symbol) ...)` nodes.
+
+```lisp
+;; Function definitions: (define (name args...) body)
+(list . (symbol) @kw (#eq? @kw "define") . (list . (symbol) @name))
+
+;; Variable definitions: (define name value)
+(list . (symbol) @kw (#eq? @kw "define") . (symbol) @name)
+
+;; Struct definitions: (struct name (fields...))
+(list . (symbol) @kw (#eq? @kw "struct") . (symbol) @name)
+
+;; Lambda expressions
+(list . (symbol) @kw (#match? @kw "^(lambda|λ)$"))
+
+;; Let bindings
+(list . (symbol) @kw (#match? @kw "^(let|let\\*|letrec)$"))
+
+;; Require statements
+(list . (symbol) @kw (#eq? @kw "require"))
+
+;; Provide statements
+(list . (symbol) @kw (#eq? @kw "provide"))
+
+;; Module definitions
+(list . (symbol) @kw (#match? @kw "^module"))
+
+;; Contracts
+(list . (symbol) @kw (#eq? @kw "define/contract") . (list . (symbol) @name))
+
+;; Macros
+(list . (symbol) @kw (#match? @kw "^(define-syntax|define-syntax-rule)$") . (symbol) @name)
+
+;; For loops
+(list . (symbol) @kw (#match? @kw "^for"))
+
+;; Match expressions
+(list . (symbol) @kw (#eq? @kw "match"))
+
+;; Class definitions
+(list . (symbol) @kw (#match? @kw "^class"))
+```
+
+**Note**: The `.` (dot) in queries like `(list . (symbol))` means "first child" - it matches the symbol that appears immediately after the opening parenthesis.
+
+### Scheme
+
+Scheme uses similar patterns to Racket:
+
+```lisp
+;; Function definitions
+(list . (symbol) @kw (#eq? @kw "define") . (list . (symbol) @name))
+
+;; Lambda expressions  
+(list . (symbol) @kw (#eq? @kw "lambda"))
 ```
 
 ## Advanced Queries

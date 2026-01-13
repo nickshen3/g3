@@ -612,4 +612,117 @@ async fn test_racket_search() {
         .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
         .collect();
     assert!(names.contains(&"greet"));
+    assert!(names.contains(&"add"));
+    assert!(names.contains(&"factorial"));
+    assert!(names.contains(&"person-greet"));
+    assert!(names.contains(&"describe-list"));
+    assert!(names.contains(&"sum-squares"));
+}
+
+#[tokio::test]
+async fn test_racket_structs() {
+    // Get the workspace root (where Cargo.toml is)
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let workspace_root = std::path::Path::new(&manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap();
+    let test_code_path = workspace_root.join("examples/test_code");
+
+    let request = CodeSearchRequest {
+        searches: vec![SearchSpec {
+            name: "racket_structs".to_string(),
+            query: r#"(list . (symbol) @kw (#eq? @kw "struct") . (symbol) @name)"#.to_string(),
+            language: "racket".to_string(),
+            paths: vec![test_code_path.to_string_lossy().to_string()],
+            context_lines: 0,
+        }],
+        max_concurrency: 4,
+        max_matches_per_search: 500,
+    };
+
+    let response = execute_code_search(request).await.unwrap();
+    assert_eq!(response.searches.len(), 1);
+    assert!(response.searches[0].matches.len() > 0);
+
+    // Should find person and point structs
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
+        .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
+        .collect();
+    assert!(names.contains(&"person"), "Should find 'person' struct, found: {:?}", names);
+    assert!(names.contains(&"point"), "Should find 'point' struct, found: {:?}", names);
+}
+
+#[tokio::test]
+async fn test_racket_macros() {
+    // Get the workspace root (where Cargo.toml is)
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let workspace_root = std::path::Path::new(&manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap();
+    let test_code_path = workspace_root.join("examples/test_code");
+
+    let request = CodeSearchRequest {
+        searches: vec![SearchSpec {
+            name: "racket_macros".to_string(),
+            query: r#"(list . (symbol) @kw (#eq? @kw "define-syntax-rule") . (list . (symbol) @name))"#.to_string(),
+            language: "racket".to_string(),
+            paths: vec![test_code_path.to_string_lossy().to_string()],
+            context_lines: 0,
+        }],
+        max_concurrency: 4,
+        max_matches_per_search: 500,
+    };
+
+    let response = execute_code_search(request).await.unwrap();
+    assert_eq!(response.searches.len(), 1);
+    assert!(response.searches[0].matches.len() > 0, "Should find macros, error: {:?}", response.searches[0].error);
+
+    // Should find swap! and unless macros
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
+        .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
+        .collect();
+    assert!(names.contains(&"swap!"), "Should find 'swap!' macro, found: {:?}", names);
+    assert!(names.contains(&"unless"), "Should find 'unless' macro, found: {:?}", names);
+}
+
+#[tokio::test]
+async fn test_racket_contracts() {
+    // Get the workspace root (where Cargo.toml is)
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let workspace_root = std::path::Path::new(&manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap();
+    let test_code_path = workspace_root.join("examples/test_code");
+
+    let request = CodeSearchRequest {
+        searches: vec![SearchSpec {
+            name: "racket_contracts".to_string(),
+            query: r#"(list . (symbol) @kw (#eq? @kw "define/contract") . (list . (symbol) @name))"#.to_string(),
+            language: "racket".to_string(),
+            paths: vec![test_code_path.to_string_lossy().to_string()],
+            context_lines: 0,
+        }],
+        max_concurrency: 4,
+        max_matches_per_search: 500,
+    };
+
+    let response = execute_code_search(request).await.unwrap();
+    assert_eq!(response.searches.len(), 1);
+    assert!(response.searches[0].matches.len() > 0, "Should find contract functions, error: {:?}", response.searches[0].error);
+
+    // Should find safe-divide and non-negative-add
+    let names: Vec<&str> = response.searches[0]
+        .matches
+        .iter()
+        .filter_map(|m| m.captures.get("name").map(|s| s.as_str()))
+        .collect();
+    assert!(names.contains(&"safe-divide"), "Should find 'safe-divide', found: {:?}", names);
+    assert!(names.contains(&"non-negative-add"), "Should find 'non-negative-add', found: {:?}", names);
 }
