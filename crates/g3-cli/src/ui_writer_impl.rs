@@ -20,6 +20,8 @@ pub struct ConsoleUiWriter {
     last_output_was_text: std::sync::Mutex<bool>,
     /// Track if the last output was a tool call (for spacing between tool calls and text)
     last_output_was_tool: std::sync::Mutex<bool>,
+    /// Track the last read_file path for continuation display
+    last_read_file_path: std::sync::Mutex<Option<String>>,
 }
 
 /// ANSI color code for duration display based on elapsed time.
@@ -73,6 +75,7 @@ impl ConsoleUiWriter {
             markdown_formatter: Mutex::new(None),
             last_output_was_text: std::sync::Mutex::new(false),
             last_output_was_tool: std::sync::Mutex::new(false),
+            last_read_file_path: std::sync::Mutex::new(None),
         }
     }
 }
@@ -322,6 +325,8 @@ impl UiWriter for ConsoleUiWriter {
         // Handle file operation tools and other compact tools
         let is_compact_tool = matches!(tool_name, "read_file" | "write_file" | "str_replace" | "remember" | "take_screenshot" | "code_coverage" | "rehydrate");
         if !is_compact_tool {
+            // Reset continuation tracking for non-compact tools
+            *self.last_read_file_path.lock().unwrap() = None;
             return false;
         }
 
@@ -342,6 +347,10 @@ impl UiWriter for ConsoleUiWriter {
             .find(|(k, _)| k == "file_path")
             .map(|(_, v)| v.as_str())
             .unwrap_or("");
+
+        // Check if this is a continuation of reading the same file
+        let mut last_read_path = self.last_read_file_path.lock().unwrap();
+        let is_continuation = tool_name == "read_file" && !file_path.is_empty() && last_read_path.as_deref() == Some(file_path);
 
         // For tools without file_path, get other relevant args
         let display_arg = if file_path.is_empty() {
@@ -387,33 +396,42 @@ impl UiWriter for ConsoleUiWriter {
         // Color for tool name
         let tool_color = if is_agent_mode { "\x1b[38;5;250m" } else { "\x1b[32m" };
 
-        // Print compact single line - different format for tools with/without path
-        if display_arg.is_empty() {
-            // Tools without file path: " ● tool_name | summary | tokens ◉ time"
+        // Print compact single line
+        if is_continuation {
+            // Continuation line for consecutive read_file on same file:
+            // "   └─ reading further [range] | summary | tokens ◉ time"
             println!(
-                " \x1b[2m●\x1b[0m {}{} \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
-                tool_color,
-                tool_name,
-                summary,
-                tokens_delta,
-                duration_str
-            );
-        } else {
-            // Tools with file path: " ● tool_name | path [range] | summary | tokens ◉ time"
-            println!(
-                " \x1b[2m●\x1b[0m {}{} \x1b[2m|\x1b[0m \x1b[35m{}{}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
-                tool_color,
-                tool_name,
-                display_arg,
+                "   \x1b[2m└─ reading further\x1b[0m\x1b[35m{}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
                 range_suffix,
                 summary,
                 tokens_delta,
                 duration_str
             );
+        } else if display_arg.is_empty() {
+            // Tools without file path: " ● tool_name | summary | tokens ◉ time"
+            println!(
+                " \x1b[2m●\x1b[0m {}{} \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
+                tool_color, tool_name, summary, tokens_delta, duration_str
+            );
+        } else {
+            // Tools with file path: " ● tool_name | path [range] | summary | tokens ◉ time"
+            println!(
+                " \x1b[2m●\x1b[0m {}{} \x1b[2m|\x1b[0m \x1b[35m{}{}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
+                tool_color, tool_name, display_arg, range_suffix, summary, tokens_delta, duration_str
+            );
+        }
+
+        // Update last_read_file_path for continuation tracking
+        if tool_name == "read_file" && !file_path.is_empty() {
+            *last_read_path = Some(file_path.to_string());
+        } else {
+            // Reset for non-read_file tools
+            *last_read_path = None;
         }
 
         // Clear the stored tool info
         drop(args); // Release the lock before clearing
+        drop(last_read_path); // Release this lock too
         self.clear_tool_state();
 
         true
@@ -421,6 +439,14 @@ impl UiWriter for ConsoleUiWriter {
 
     fn print_tool_timing(&self, duration_str: &str, tokens_delta: u32, context_percentage: f32) {
         let color_code = duration_color(duration_str);
+
+        // Reset read_file continuation tracking for non-read_file tools
+        // (read_file tools handle this in print_tool_compact)
+        if let Some(tool_name) = self.current_tool_name.lock().unwrap().as_ref() {
+            if tool_name != "read_file" {
+                *self.last_read_file_path.lock().unwrap() = None;
+            }
+        }
 
         // Add blank line before footer for research tool (its output is a full report)
         if let Some(tool_name) = self.current_tool_name.lock().unwrap().as_ref() {
@@ -477,6 +503,8 @@ impl UiWriter for ConsoleUiWriter {
             // Track that we just output text (only if non-empty)
             if !content.trim().is_empty() {
                 *self.last_output_was_text.lock().unwrap() = true;
+                // Reset read_file continuation tracking when text is output between tool calls
+                *self.last_read_file_path.lock().unwrap() = None;
             }
             let _ = io::stdout().flush();
         }
