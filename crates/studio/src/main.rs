@@ -24,11 +24,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run a new g3 agent session (tails output until complete)
+    /// Run a new g3 session (tails output until complete)
     Run {
-        /// Agent name (e.g., carmack, torvalds)
+        /// Agent name (e.g., carmack, torvalds). If omitted, runs g3 in one-shot mode.
         #[arg(long)]
-        agent: String,
+        agent: Option<String>,
 
         /// Additional arguments to pass to g3
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -37,9 +37,9 @@ enum Commands {
 
     /// Execute a g3 agent session in detached mode (for future use)
     Exec {
-        /// Agent name (e.g., carmack, torvalds)
+        /// Agent name (e.g., carmack, torvalds). If omitted, runs g3 in one-shot mode.
         #[arg(long)]
-        agent: String,
+        agent: Option<String>,
 
         /// Additional arguments to pass to g3
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -72,8 +72,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { agent, g3_args } => cmd_run(&agent, &g3_args),
-        Commands::Exec { agent, g3_args } => cmd_exec(&agent, &g3_args),
+        Commands::Run { agent, g3_args } => cmd_run(agent.as_deref(), &g3_args),
+        Commands::Exec { agent, g3_args } => cmd_exec(agent.as_deref(), &g3_args),
         Commands::List => cmd_list(),
         Commands::Status { session_id } => cmd_status(&session_id),
         Commands::Accept { session_id } => cmd_accept(&session_id),
@@ -119,10 +119,12 @@ fn get_repo_root() -> Result<PathBuf> {
 }
 
 /// Run a new g3 session (foreground, tails output)
-fn cmd_run(agent: &str, g3_args: &[String]) -> Result<()> {
+fn cmd_run(agent: Option<&str>, g3_args: &[String]) -> Result<()> {
     let g3_binary = get_g3_binary_path()?;
     let repo_root = get_repo_root()?;
-    let session = Session::new(agent);
+    // Use "single" as the agent name for non-agent runs
+    let agent_name = agent.unwrap_or("single");
+    let session = Session::new(agent_name);
 
     // Create worktree
     let worktree = GitWorktree::new(&repo_root);
@@ -136,7 +138,10 @@ fn cmd_run(agent: &str, g3_args: &[String]) -> Result<()> {
     // Build g3 command with --workspace prepended
     let mut cmd = Command::new(&g3_binary);
     cmd.arg("--workspace").arg(&worktree_path);
-    cmd.arg("--agent").arg(agent);
+    // Only add --agent if an agent was specified
+    if let Some(a) = agent {
+        cmd.arg("--agent").arg(a);
+    }
     cmd.args(g3_args);
     cmd.current_dir(&worktree_path);
     cmd.stdout(Stdio::piped());
@@ -145,7 +150,10 @@ fn cmd_run(agent: &str, g3_args: &[String]) -> Result<()> {
     // Save session metadata
     session.save(&repo_root, &worktree_path)?;
 
-    println!("🚀 Starting g3 agent '{}'...", agent);
+    match agent {
+        Some(a) => println!("🚀 Starting g3 agent '{}'...", a),
+        None => println!("🚀 Starting g3 one-shot session..."),
+    }
     println!("{}", "─".repeat(60));
 
     // Spawn and tail output
@@ -201,10 +209,13 @@ fn cmd_run(agent: &str, g3_args: &[String]) -> Result<()> {
 }
 
 /// Execute a g3 session in detached mode (placeholder for future)
-fn cmd_exec(agent: &str, g3_args: &[String]) -> Result<()> {
+fn cmd_exec(agent: Option<&str>, g3_args: &[String]) -> Result<()> {
     // For now, just print what would happen
     println!("exec command not yet implemented");
-    println!("Would run agent '{}' with args: {:?}", agent, g3_args);
+    match agent {
+        Some(a) => println!("Would run agent '{}' with args: {:?}", a, g3_args),
+        None => println!("Would run one-shot session with args: {:?}", g3_args),
+    }
     Ok(())
 }
 
