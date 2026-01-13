@@ -174,38 +174,6 @@ fn test_planning_conflicts_with_autonomous() {
 }
 
 // =============================================================================
-// Test: Flock mode requires all related flags
-// =============================================================================
-
-#[test]
-fn test_flock_mode_requires_workspace() {
-    let output = Command::new(get_g3_binary())
-        .args(["--project", "/tmp/test"])
-        .output()
-        .expect("Failed to execute g3 with incomplete flock args");
-
-    // Should fail because --flock-workspace and --segments are required
-    assert!(
-        !output.status.success(),
-        "--project without --flock-workspace should fail"
-    );
-}
-
-#[test]
-fn test_flock_mode_requires_segments() {
-    let output = Command::new(get_g3_binary())
-        .args(["--project", "/tmp/test", "--flock-workspace", "/tmp/ws"])
-        .output()
-        .expect("Failed to execute g3 with incomplete flock args");
-
-    // Should fail because --segments is required
-    assert!(
-        !output.status.success(),
-        "--project without --segments should fail"
-    );
-}
-
-// =============================================================================
 // Test: Workspace directory option is accepted
 // =============================================================================
 

@@ -29,7 +29,7 @@ use clap::Parser;
 
 use accumulative::run_accumulative_mode;
 use agent_mode::run_agent_mode;
-use autonomous::{run_autonomous, run_flock_mode};
+use autonomous::run_autonomous;
 use interactive::run_interactive;
 use project_files::{combine_project_content, read_agents_config, read_project_memory, read_project_readme};
 use simple_output::SimpleOutput;
@@ -38,19 +38,6 @@ use utils::{initialize_logging, load_config_with_cli_overrides, setup_workspace_
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
-
-    // Check if flock mode is enabled
-    if let (Some(project_dir), Some(flock_workspace), Some(num_segments)) =
-        (&cli.project, &cli.flock_workspace, cli.segments)
-    {
-        return run_flock_mode(
-            project_dir.clone(),
-            flock_workspace.clone(),
-            num_segments,
-            cli.flock_max_turns,
-        )
-        .await;
-    }
 
     if cli.codebase_fast_start.is_some() {
         print!("codebase_fast_start is temporarily disabled.");

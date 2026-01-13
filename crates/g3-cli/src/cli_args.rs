@@ -79,22 +79,6 @@ pub struct Cli {
     #[arg(long)]
     pub safari: bool,
 
-    /// Enable flock mode - parallel multi-agent development
-    #[arg(long, requires = "flock_workspace", requires = "segments")]
-    pub project: Option<PathBuf>,
-
-    /// Flock workspace directory (where segment copies will be created)
-    #[arg(long, requires = "project")]
-    pub flock_workspace: Option<PathBuf>,
-
-    /// Number of segments to partition work into (for flock mode)
-    #[arg(long, requires = "project")]
-    pub segments: Option<usize>,
-
-    /// Maximum turns per segment in flock mode (default: 5)
-    #[arg(long, default_value = "5")]
-    pub flock_max_turns: usize,
-
     /// Enable planning mode for requirements-driven development
     #[arg(long, conflicts_with_all = ["autonomous", "auto", "chat"])]
     pub planning: bool,

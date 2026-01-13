@@ -47,7 +47,7 @@
 - `crates/g3-cli/src/lib.rs` [837] - `agent.set_agent_mode()` enables agent-specific session tracking
 
 ### CLI Entry Points and Modes
-- `crates/g3-cli/src/lib.rs` [0..140000] - `run()` main entry, `run_agent_mode()`, `run_flock_mode()`, `run_accumulative_mode()`, `run_autonomous()`, `run_interactive()`, `run_interactive_machine()`
+- `crates/g3-cli/src/lib.rs` [0..140000] - `run()` main entry, `run_agent_mode()`, `run_accumulative_mode()`, `run_autonomous()`, `run_interactive()`, `run_interactive_machine()`
 - `crates/g3-cli/src/lib.rs` - `execute_task()` (~line 1990), `execute_task_machine()` (~line 2262) - duplicated retry logic
 
 ### Retry Infrastructure
@@ -142,7 +142,7 @@ if s.chars().count() <= max_len { ... }
 ### CLI Module Structure (Post-Refactor)
 - `crates/g3-cli/src/lib.rs` [0..415] - Entry point, `run()`, mode dispatch, config loading
 - `crates/g3-cli/src/cli_args.rs` [0..133] - `Cli` struct with clap derive macros, argument parsing
-- `crates/g3-cli/src/autonomous.rs` [0..785] - `run_autonomous()`, `run_flock_mode()`, coach-player feedback loop
+- `crates/g3-cli/src/autonomous.rs` [0..785] - `run_autonomous()`, coach-player feedback loop
 - `crates/g3-cli/src/agent_mode.rs` [0..284] - `run_agent_mode()` specialized agent execution
 - `crates/g3-cli/src/accumulative.rs` [0..343] - `run_accumulative_mode()` iterative requirements
 - `crates/g3-cli/src/interactive.rs` [0..851] - `run_interactive()`, `run_interactive_machine()`, REPL with `/` commands

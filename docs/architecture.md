@@ -48,12 +48,11 @@ g3 follows a **tool-first philosophy**: instead of just providing advice, it act
                                  │
          ┌───────────────────────┼───────────────────────┐
          │                       │                       │
-┌─────────────────┐    ┌─────────────────┐
-│ g3-ensembles    │    │     studio      │
-│ • Flock mode    │    │                 │
-│ • Multi-agent   │    │ • Worktree mgmt │
-│ • Parallel dev  │    │ • Session mgmt  │
-└─────────────────┘    └─────────────────┘
+         ┌─────────────────┐
+         │     studio      │
+         │ • Worktree mgmt │
+         │ • Session mgmt  │
+         └─────────────────┘
 ```
 
 ## Workspace Structure
@@ -71,7 +70,6 @@ g3/
 │   ├── g3-execution/             # Code execution engine
 │   ├── g3-computer-control/      # Computer automation
 │   ├── g3-planner/               # Planning mode workflow
-│   ├── g3-ensembles/             # Multi-agent (flock) mode
 │   └── studio/                   # Multi-agent workspace manager
 ├── agents/                       # Agent persona definitions
 ├── logs/                         # Session logs (auto-created)
@@ -219,17 +217,6 @@ Key modules:
 4. Coach/player loop implements
 5. Files archived with timestamps
 6. Git commit with LLM-generated message
-
-### g3-ensembles (Multi-Agent)
-
-**Location**: `crates/g3-ensembles/`  
-**Purpose**: Parallel multi-agent development (Flock mode)
-
-Key modules:
-- `flock.rs` - Flock orchestration (~43k chars)
-- `status.rs` - Agent status tracking
-
-Flock mode enables parallel development by spawning multiple agent instances working on different parts of a project.
 
 ### studio (Multi-Agent Workspace Manager)
 

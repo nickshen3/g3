@@ -108,7 +108,6 @@ These commands give you fine-grained control over context management, allowing y
   - Window listing and identification
 - **Code Search**: Embedded tree-sitter for syntax-aware code search (Rust, Python, JavaScript, TypeScript, Go, Java, C, C++) - see [Code Search Guide](docs/CODE_SEARCH.md)
 - **Final Output**: Formatted result presentation
-- **Flock Mode**: Parallel multi-agent development for large projects - see [Flock Mode Guide](docs/FLOCK_MODE.md)
 
 ### Provider Flexibility
 - Support for multiple LLM providers through a unified interface
@@ -335,7 +334,6 @@ Detailed documentation is available in the `docs/` directory:
 | [Providers Guide](docs/providers.md) | LLM provider setup and selection guide |
 | [Control Commands](docs/CONTROL_COMMANDS.md) | Interactive `/` commands for context management |
 | [Code Search](docs/CODE_SEARCH.md) | Tree-sitter code search query patterns |
-| [Flock Mode](docs/FLOCK_MODE.md) | Parallel multi-agent development |
 
 For AI agents working with this codebase, see [AGENTS.md](AGENTS.md).
 

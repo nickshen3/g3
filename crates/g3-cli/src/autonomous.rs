@@ -1,4 +1,4 @@
-//! Autonomous mode for G3 CLI - coach-player feedback loop and flock mode.
+//! Autonomous mode for G3 CLI - coach-player feedback loop.
 
 use anyhow::Result;
 use sha2::{Digest, Sha256};
@@ -692,37 +692,6 @@ fn print_panic_report(
     output.print(&format!("   • Usage Percentage: {:.1}%", context_window.percentage_used()));
     output.print(&generate_turn_histogram(turn_metrics));
     output.print(&"=".repeat(60));
-}
-
-/// Run flock mode - parallel multi-agent development
-pub async fn run_flock_mode(
-    project_dir: PathBuf,
-    flock_workspace: PathBuf,
-    num_segments: usize,
-    max_turns: usize,
-) -> Result<()> {
-    let output = SimpleOutput::new();
-
-    output.print("");
-    output.print("🦅 G3 FLOCK MODE - Parallel Multi-Agent Development");
-    output.print("");
-    output.print(&format!("📁 Project: {}", project_dir.display()));
-    output.print(&format!("🗂️  Workspace: {}", flock_workspace.display()));
-    output.print(&format!("🔢 Segments: {}", num_segments));
-    output.print(&format!("🔄 Max Turns per Segment: {}", max_turns));
-    output.print("");
-
-    let config = g3_ensembles::FlockConfig::new(project_dir, flock_workspace, num_segments)?
-        .with_max_turns(max_turns);
-
-    let mut flock = g3_ensembles::FlockMode::new(config)?;
-
-    match flock.run().await {
-        Ok(_) => output.print("\n✅ Flock mode completed successfully"),
-        Err(e) => output.print(&format!("\n❌ Flock mode failed: {}", e)),
-    }
-
-    Ok(())
 }
 
 fn print_final_report(
