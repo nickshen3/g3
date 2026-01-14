@@ -39,6 +39,9 @@ use utils::{initialize_logging, load_config_with_cli_overrides, setup_workspace_
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
+    // Initialize logging FIRST (before any mode checks)
+    initialize_logging(cli.verbose);
+
     if cli.codebase_fast_start.is_some() {
         print!("codebase_fast_start is temporarily disabled.");
         std::process::exit(1);
@@ -70,9 +73,6 @@ pub async fn run() -> Result<()> {
         )
         .await;
     }
-
-    // Initialize logging
-    initialize_logging(cli.verbose);
 
     // Set up workspace directory
     let workspace_dir = determine_workspace_dir(&cli)?;
