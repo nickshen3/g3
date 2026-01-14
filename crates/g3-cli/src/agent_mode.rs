@@ -9,6 +9,7 @@ use g3_core::Agent;
 
 use crate::project_files::{combine_project_content, read_agents_config, read_project_memory, read_project_readme};
 use crate::simple_output::SimpleOutput;
+use crate::embedded_agents::load_agent_prompt;
 use crate::ui_writer_impl::ConsoleUiWriter;
 
 /// Run agent mode - loads a specialized agent prompt and executes a single task.
@@ -71,53 +72,17 @@ pub async fn run_agent_mode(
         output.print("");
     }
 
-    // Load agent prompt from agents/<name>.md
-    let agent_prompt_path = workspace_dir
-        .join("agents")
-        .join(format!("{}.md", agent_name));
+    // Load agent prompt: workspace agents/<name>.md first, then embedded fallback
+    let (agent_prompt, from_disk) = load_agent_prompt(agent_name, &workspace_dir).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Agent '{}' not found.\nAvailable embedded agents: breaker, carmack, euler, fowler, hopper, lamport, scout\nOr create agents/{}.md in your workspace.",
+            agent_name,
+            agent_name
+        )
+    })?;
 
-    // Also check in the g3 installation directory
-    let agent_prompt = if agent_prompt_path.exists() {
-        std::fs::read_to_string(&agent_prompt_path).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read agent prompt from {:?}: {}",
-                agent_prompt_path,
-                e
-            )
-        })?
-    } else {
-        // Try to find agents/ relative to the executable or in common locations
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-
-        let possible_paths = [
-            exe_dir
-                .as_ref()
-                .map(|d| d.join("agents").join(format!("{}.md", agent_name))),
-            Some(PathBuf::from(format!("agents/{}.md", agent_name))),
-        ];
-
-        let mut found_prompt = None;
-        for path_opt in possible_paths.iter().flatten() {
-            if path_opt.exists() {
-                found_prompt = Some(std::fs::read_to_string(path_opt).map_err(|e| {
-                    anyhow::anyhow!("Failed to read agent prompt from {:?}: {}", path_opt, e)
-                })?);
-                break;
-            }
-        }
-
-        found_prompt.ok_or_else(|| {
-            anyhow::anyhow!(
-                "Agent prompt not found: agents/{}.md\nSearched in: {:?} and current directory",
-                agent_name,
-                agent_prompt_path
-            )
-        })?
-    };
-
-    output.print(&format!(">> agent mode | {}", agent_name));
+    let source = if from_disk { "workspace" } else { "embedded" };
+    output.print(&format!(">> agent mode | {} ({})", agent_name, source));
     // Format workspace path, replacing home dir with ~
     let workspace_display = {
         let path_str = workspace_dir.display().to_string();

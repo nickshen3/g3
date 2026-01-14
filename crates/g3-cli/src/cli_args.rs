@@ -99,6 +99,10 @@ pub struct Cli {
     #[arg(long, value_name = "NAME", conflicts_with_all = ["autonomous", "auto", "chat", "planning"])]
     pub agent: Option<String>,
 
+    /// List all available agents (embedded and workspace)
+    #[arg(long)]
+    pub list_agents: bool,
+
     /// Skip session resumption and force a new session (for agent mode)
     #[arg(long)]
     pub new_session: bool,

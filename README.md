@@ -322,6 +322,41 @@ G3 automatically saves session logs for each interaction in the `.g3/sessions/` 
 
 The `.g3/` directory is created automatically on first use and is excluded from version control.
 
+## Agent Mode
+
+Agent mode runs specialized AI agents with custom prompts tailored for specific tasks. Each agent has a distinct personality and focus area.
+
+### Built-in Agents
+
+g3 comes with several embedded agents that work out of the box:
+
+| Agent | Focus |
+|-------|-------|
+| **carmack** | Code readability and craft - simplifies, refactors, improves naming |
+| **hopper** | Testing and quality - writes tests, finds edge cases |
+| **euler** | Architecture and dependencies - analyzes structure, finds coupling |
+| **lamport** | Concurrency and correctness - reviews async code, finds race conditions |
+| **fowler** | Refactoring patterns - applies design patterns, reduces duplication |
+| **breaker** | Adversarial testing - finds bugs, creates minimal repros |
+| **scout** | Research - investigates APIs, libraries, approaches |
+
+### Usage
+
+```bash
+# List all available agents
+g3 --list-agents
+
+# Run an agent on the current project
+g3 --agent carmack
+
+# Run an agent with a specific task
+g3 --agent hopper "add tests for the parser module"
+```
+
+### Custom Agents
+
+Create custom agents by adding markdown files to `agents/<name>.md` in your workspace. Workspace agents override embedded agents with the same name, allowing per-project customization.
+
 ## Studio - Multi-Agent Workspace Manager
 
 Studio is a companion tool for managing multiple g3 agent sessions using git worktrees. Each session runs in an isolated worktree with its own branch, allowing multiple agents to work on the same codebase without conflicts.

@@ -4,6 +4,7 @@ pub mod filter_json;
 pub mod metrics;
 pub mod project_files;
 pub mod streaming_markdown;
+pub mod embedded_agents;
 
 mod accumulative;
 mod agent_mode;
@@ -42,6 +43,22 @@ pub async fn run() -> Result<()> {
     if cli.codebase_fast_start.is_some() {
         print!("codebase_fast_start is temporarily disabled.");
         std::process::exit(1);
+    }
+
+    // Check if --list-agents was requested
+    if cli.list_agents {
+        let workspace_dir = cli.workspace.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let agents = embedded_agents::get_available_agents(&workspace_dir);
+        println!("Available agents:");
+        let mut names: Vec<_> = agents.keys().collect();
+        names.sort();
+        for name in names {
+            let source = if agents[name] { "workspace" } else { "embedded" };
+            println!("  {} ({})", name, source);
+        }
+        println!("\nUse: g3 --agent <name> [task]");
+        println!("Workspace agents override embedded agents with the same name.");
+        return Ok(());
     }
 
     // Check if planning mode is enabled
