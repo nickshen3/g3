@@ -1,0 +1,8 @@
+# Minimal OpenAI configuration
+
+[providers]
+default_provider = "openai.default"
+
+[providers.openai.default]
+api_key = "sk-..."
+model = "gpt-4o"
