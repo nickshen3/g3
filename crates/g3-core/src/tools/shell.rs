@@ -56,7 +56,7 @@ pub async fn execute_shell<W: UiWriter>(tool_call: &ToolCall, ctx: &ToolContext<
         Ok(result) => {
             if result.success {
                 Ok(if result.stdout.is_empty() {
-                    "✅ Command executed successfully".to_string()
+                    "⚡️ ran successfully".to_string()
                 } else {
                     result.stdout.trim().to_string()
                 })

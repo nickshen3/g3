@@ -337,7 +337,7 @@ mod tool_output_formatting {
     /// Test write_file result parsing
     #[test]
     fn test_write_file_result() {
-        let result = format_write_file_result("✅ wrote 42 lines | 1500 chars");
+        let result = format_write_file_result("wrote 42 lines | 1500 chars");
         assert!(result.contains("42"), "Should contain line count: {}", result);
         assert!(result.contains("1500"), "Should contain char count: {}", result);
     }
@@ -345,7 +345,7 @@ mod tool_output_formatting {
     /// Test write_file result with k notation
     #[test]
     fn test_write_file_result_k_notation() {
-        let result = format_write_file_result("✅ wrote 100 lines | 2.5k chars");
+        let result = format_write_file_result("wrote 100 lines | 2.5k chars");
         assert!(result.contains("100"));
         assert!(result.contains("2.5k"));
     }

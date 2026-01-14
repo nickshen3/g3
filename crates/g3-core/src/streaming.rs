@@ -303,20 +303,20 @@ pub fn format_write_file_summary(line_count: usize, char_count: usize) -> String
     } else {
         format!("{}", char_count)
     };
-    format!("✏️  {} lines ({} chars)", line_count, char_display)
+    format!("wrote {} lines | {} chars", line_count, char_display)
 }
 
 /// Format a write_file result for compact display.
-/// Parses the tool result which is in format: "✅ wrote N lines | M chars"
-/// Returns a compact summary like "✏️  N lines (M chars)"
+/// Parses the tool result which is in format: "wrote N lines | M chars"
+/// Returns a compact summary like "wrote N lines | M chars"
 pub fn format_write_file_result(tool_result: &str) -> String {
-    // Parse "✅ wrote N lines | M chars" or "✅ wrote N lines | M.Mk chars"
-    if let Some(rest) = tool_result.strip_prefix("✅ wrote ") {
+    // Parse "wrote N lines | M chars" or "wrote N lines | M.Mk chars"
+    if let Some(rest) = tool_result.strip_prefix("wrote ") {
         // rest is "N lines | M chars" or "N lines | M.Mk chars"
         if let Some((lines_part, chars_part)) = rest.split_once(" | ") {
             let lines = lines_part.trim_end_matches(" lines");
             let chars = chars_part.trim_end_matches(" chars");
-            return format!("✏️  {} lines ({} chars)", lines, chars);
+            return format!("wrote {} lines | {} chars", lines, chars);
         }
     }
     // Fallback: return the original result if parsing fails

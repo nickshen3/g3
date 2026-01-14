@@ -343,7 +343,7 @@ pub async fn execute_write_file<W: UiWriter>(
                     format!("{}", char_count)
                 };
                 Ok(format!(
-                    "✅ wrote {} lines | {} chars",
+                    "wrote {} lines | {} chars",
                     line_count, char_display
                 ))
             }
