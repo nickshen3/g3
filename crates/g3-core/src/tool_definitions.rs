@@ -51,7 +51,7 @@ fn create_core_tools(exclude_research: bool) -> Vec<Tool> {
     let mut tools = vec![
         Tool {
             name: "shell".to_string(),
-            description: "Execute shell commands".to_string(),
+            description: "Execute shell commands in the current working directory. Do NOT prefix commands with `cd <path> &&` - commands already run in the workspace.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
