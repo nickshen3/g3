@@ -14,6 +14,7 @@ Prefer **obvious, readable Racket** over cleverness.
 - Use `match` / `match-define` for destructuring.
 - Use `for/*` loops and sequences instead of manual recursion unless recursion is clearer.
 - Use `cond`, `case`, `and`, `or` cleanly; avoid nested `if` pyramids.
+- Prefer `define` over `let`/`let*` when it reduces indentation.
 - Use immutable data by default; reach for mutation only when it materially improves clarity/perf.
 
 ## Modules: explicit exports
@@ -27,9 +28,14 @@ Prefer **obvious, readable Racket** over cleverness.
 (provide (all-defined-out))
 ```
 - Organize code into small modules with explicit `provide` lists.
+- Put `provide` before `require` — interface at top.
 - Prefer `contract-out` when exporting public APIs.
 - Avoid `provide (all-defined-out)` except in quick prototypes/tests.
 - Prefer `require` with explicit identifiers; avoid huge wildcard imports.
+- Use `racket/base` for libraries (faster loading); use `racket` for scripts.
+
+## Naming
+- Prefix functions with data type of main argument: `board-free-spaces` not `free-spaces`.
 
 ## Contracts and types
 - If in untyped Racket: add contracts at module boundaries for public APIs, especially for callbacks and data shapes.
@@ -52,6 +58,7 @@ Prefer **obvious, readable Racket** over cleverness.
 ## Performance
 - Prefer vectors for hot loops / indexed access; lists for iteration; hashes for keyed lookup.
 - Use `for/fold` or `for/hash` to build results efficiently.
+- Use `in-list`, `in-vector`, etc. explicitly in `for` loops for better performance.
 - Avoid repeated `append` in loops; accumulate then reverse if needed.
 
 ## Macros: use sparingly
@@ -80,7 +87,12 @@ Prefer **obvious, readable Racket** over cleverness.
 
 ## Testing
 - Add `rackunit` tests for tricky logic; prefer table-driven tests.
+- Use `module+ test` submodules; run with `raco test`.
 - Consider Scribble docs for library boundaries.
+
+## Size limits
+- ~500 lines per module (1000 tolerable, 10000 is a god-file).
+- ~66 lines per function (one screen).
 
 ## Packages/tooling
 - Assume `raco fmt` style; keep formatting consistent.
