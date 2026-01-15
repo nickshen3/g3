@@ -1,6 +1,6 @@
 Prefer **obvious, readable Racket** over cleverness.
 
-## Keep control flow clean
+## Control flow
 ```racket
 ;; Good: match for destructuring
 (match-define (list name age) (get-user-info id))
@@ -12,39 +12,69 @@ Prefer **obvious, readable Racket** over cleverness.
   [else (process-normal items)])
 ```
 - Use `match` / `match-define` for destructuring.
-- Use `for/*` loops and sequences instead of manual recursion unless recursion is clearer.
 - Use `cond`, `case`, `and`, `or` cleanly; avoid nested `if` pyramids.
 - Prefer `define` over `let`/`let*` when it reduces indentation.
-- Use immutable data by default; reach for mutation only when it materially improves clarity/perf.
+- Use `let*` when bindings depend on earlier bindings; use `let` for independent bindings.
 
-## Modules: explicit exports
+## Iteration idioms
 ```racket
-;; Good: explicit contract-out
+;; Prefer for/* with explicit sequence types
+(for/list ([x (in-list items)]    ; in-list for performance
+           [i (in-naturals)])     ; in-naturals for indices
+  (process x i))
+
+;; for/fold for accumulation
+(for/fold ([acc '()]
+           [seen (set)])
+          ([x (in-list items)])
+  (values (cons (transform x) acc)
+          (set-add seen x)))
+```
+- Use `for/*` loops over manual recursion unless recursion is clearer.
+- Use `in-list`, `in-vector`, `in-hash`, etc. explicitly — faster than generic sequence.
+- Use `for/fold` for complex accumulation; `for/list`, `for/hash` for simple transforms.
+- Use `for*/list` (note the `*`) when you need nested iteration flattened.
+
+## Data structure mutability
+- **Immutable by default**: lists, immutable hashes, immutable vectors for most code.
+- **Mutable when**: you need O(1) update in a hot loop, or modeling inherently stateful things.
+- **Mutable hashes** (`make-hash`): use for caches, memoization, symbol tables.
+- **Mutable vectors** (`make-vector`): use for fixed-size buffers, matrix ops.
+- **Boxes** (`box`, `unbox`, `set-box!`): use for single mutable cells, rarely needed.
+- Don't mix: if a data structure is mutable, keep it internal; expose immutable views.
+
+## Module hygiene
+```racket
+;; Good: explicit contract-out, interface at top
 (provide
   (contract-out
-    [process-data (-> input/c output/c)]))
+    [process-data (-> input/c output/c)]
+    [make-processor (-> config/c processor/c)]))
 
-;; Bad: leaky exports
-(provide (all-defined-out))
+(require racket/match
+         "internal-utils.rkt")
 ```
-- Organize code into small modules with explicit `provide` lists.
+- **One abstraction per module** (~500 lines rule of thumb).
 - Put `provide` before `require` — interface at top.
-- Prefer `contract-out` when exporting public APIs.
-- Avoid `provide (all-defined-out)` except in quick prototypes/tests.
-- Prefer `require` with explicit identifiers; avoid huge wildcard imports.
-- Use `racket/base` for libraries (faster loading); use `racket` for scripts.
+- Use `contract-out` when correctness matters (public APIs, callbacks, data shapes).
+- Use explicit `provide` lists only — never `(all-defined-out)` in production.
+- Use `racket/base` for libraries (faster loading); `racket` for scripts.
+
+## Contracts: when and how much
+- **Module boundaries**: use `contract-out` for public APIs — catches bugs at the boundary with clear blame.
+- **Internal functions**: use `define/contract` sparingly for tricky invariants or during debugging.
+- **Higher-order contracts**: use `->` for simple functions; `->i` when you need dependent contracts.
+- **In tests**: contracts give fast feedback — keep them on during development, consider `#:unprotected-submodule` for perf-critical production paths.
+- **Don't go nuts**: contracts at every internal function add overhead and noise. Focus on boundaries.
 
 ## Naming
-- Prefix functions with data type of main argument: `board-free-spaces` not `free-spaces`.
-
-## Contracts and types
-- If in untyped Racket: add contracts at module boundaries for public APIs, especially for callbacks and data shapes.
-- If the project uses `typed/racket`, keep typed/untyped boundaries clean and document them.
-- Use predicates + struct definitions to make data models explicit.
+- Prefix functions with data type of main argument: `board-ref`, `board-free-spaces`, not `ref`, `free-spaces`.
+- Use `-ref`, `-set`, `-update` suffixes for accessors/mutators on custom types.
+- Avoid abbreviations except well-known ones (`idx`, `len`, `ctx`).
 
 ## Data modeling
 - Prefer `struct` (possibly `#:transparent`) for domain objects, not ad-hoc hash soup.
-- For enums/variants: consider `struct` variants + `match`, or symbols with clear validation.
+- For enums/variants: `struct` variants + `match`, or symbols with clear validation.
 - Validate external data (YAML/JSON) once at the boundary; keep internal representation consistent.
 
 ## Error handling
@@ -54,12 +84,6 @@ Prefer **obvious, readable Racket** over cleverness.
 ## IO and paths
 - Use `build-path`, `simplify-path`, `path->string`; don't concatenate path strings manually.
 - Use `call-with-input-file` / `call-with-output-file` idiomatically.
-
-## Performance
-- Prefer vectors for hot loops / indexed access; lists for iteration; hashes for keyed lookup.
-- Use `for/fold` or `for/hash` to build results efficiently.
-- Use `in-list`, `in-vector`, etc. explicitly in `for` loops for better performance.
-- Avoid repeated `append` in loops; accumulate then reverse if needed.
 
 ## Macros: use sparingly
 - Don't write macros unless it meaningfully reduces boilerplate or enforces invariants.
@@ -86,15 +110,10 @@ Prefer **obvious, readable Racket** over cleverness.
 - `string=?` not `equal?` for string comparison in hot paths.
 
 ## Testing
-- Add `rackunit` tests for tricky logic; prefer table-driven tests.
 - Use `module+ test` submodules; run with `raco test`.
+- Add `rackunit` tests for tricky logic; prefer table-driven `test-case` with `check-equal?`.
 - Consider Scribble docs for library boundaries.
 
-## Size limits
-- ~500 lines per module (1000 tolerable, 10000 is a god-file).
-- ~66 lines per function (one screen).
-
-## Packages/tooling
-- Assume `raco fmt` style; keep formatting consistent.
-- Use `raco pkg install --auto` for dependency resolution.
-- Prefer `info.rkt` for package metadata over ad-hoc scripts.
+## Size heuristics
+- **One abstraction per module** — if you're documenting two unrelated things, split.
+- **One screen per function** (~66 lines) — if you can't see the whole function, extract helpers.
