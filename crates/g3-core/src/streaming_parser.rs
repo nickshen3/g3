@@ -195,6 +195,16 @@ impl StreamingToolParser {
     }
 
     /// Fallback method to parse JSON tool calls from text content.
+    /// 
+    /// This method maintains state (`in_json_tool_call`, `json_tool_start`) to track
+    /// partial JSON tool calls across streaming chunks. When a pattern like `{"tool":`
+    /// is found on its own line, we enter "in JSON tool call" mode and wait for the
+    /// JSON to complete.
+    /// 
+    /// IMPORTANT: We must also detect when the JSON has been **invalidated** - i.e.,
+    /// when subsequent content makes it clear this isn't a real tool call. For example:
+    /// - `{"tool": "read_file` followed by `\nsome regular text` is NOT a tool call
+    /// - The newline followed by non-JSON text invalidates the partial JSON
     fn try_parse_json_tool_call(&mut self, _content: &str) -> Option<ToolCall> {
         // If we're not currently in a JSON tool call, look for the start
         if !self.in_json_tool_call {
@@ -246,6 +256,17 @@ impl StreamingToolParser {
                     // Reset and continue looking
                     self.in_json_tool_call = false;
                     self.json_tool_start = None;
+                }
+                
+                // If we didn't find a complete JSON object, check if the partial JSON
+                // has been invalidated by subsequent content (e.g., a newline followed
+                // by regular text when not inside a string).
+                if self.in_json_tool_call && Self::is_json_invalidated(json_text) {
+                    debug!("JSON tool call invalidated by subsequent content, clearing state");
+                    self.in_json_tool_call = false;
+                    self.json_tool_start = None;
+                    self.last_consumed_position = start_pos + json_text.len();
+                    return None;
                 }
             }
         }
@@ -324,8 +345,16 @@ impl StreamingToolParser {
         let unchecked_buffer = &self.text_buffer[self.last_consumed_position..];
         if let Some(start_pos) = Self::find_last_tool_call_start(unchecked_buffer) {
             let json_text = &unchecked_buffer[start_pos..];
-            // If NOT complete, it's an incomplete tool call
-            Self::find_complete_json_object_end(json_text).is_none()
+            // If JSON is complete, it's not incomplete
+            if Self::find_complete_json_object_end(json_text).is_some() {
+                return false;
+            }
+            // If JSON has been invalidated by subsequent content, it's not a real tool call
+            if Self::is_json_invalidated(json_text) {
+                return false;
+            }
+            // Otherwise, it's a genuinely incomplete tool call
+            true
         } else {
             false
         }
@@ -352,6 +381,80 @@ impl StreamingToolParser {
     /// This prevents has_unexecuted_tool_call() from returning true for already-executed tools.
     pub fn mark_tool_calls_consumed(&mut self) {
         self.last_consumed_position = self.text_buffer.len();
+    }
+
+    /// Check if a partial JSON tool call has been invalidated by subsequent content.
+    /// 
+    /// This detects cases where we started parsing what looked like a tool call
+    /// (e.g., `{"tool": "read_file`) but subsequent content makes it clear this
+    /// isn't valid JSON (e.g., a newline followed by regular prose).
+    /// 
+    /// The key insight: in valid JSON, after an open quote for a string value,
+    /// we must see the string content and closing quote before any unescaped newline.
+    /// If we see a newline followed by text that looks like prose (starts with a letter),
+    /// this can't be a valid JSON tool call.
+    /// 
+    /// Additionally, an unescaped newline INSIDE a string is invalid JSON. So if we're
+    /// in a string and see a newline (not escaped), the JSON is invalid.
+    fn is_json_invalidated(json_text: &str) -> bool {
+        let mut in_string = false;
+        let mut escape_next = false;
+        let mut chars = json_text.char_indices().peekable();
+        
+        while let Some((_, ch)) = chars.next() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+            
+            match ch {
+                '\\' => escape_next = true,
+                '"' => in_string = !in_string,
+                '\n' if in_string => {
+                    // Unescaped newline inside a string is invalid JSON!
+                    // Valid JSON strings cannot contain literal newlines (must be \n).
+                    return true;
+                }
+                '\n' if !in_string => {
+                    // We hit a newline outside of a string.
+                    // Check what comes after - if it's regular prose, this isn't valid JSON.
+                    
+                    // Skip any whitespace after the newline
+                    while let Some(&(_, next_ch)) = chars.peek() {
+                        if next_ch == ' ' || next_ch == '\t' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    // Check the first non-whitespace character after the newline
+                    if let Some(&(_, next_ch)) = chars.peek() {
+                        // Valid JSON continuation characters after newline:
+                        // - '"' (string)
+                        // - '{' or '}' (object)
+                        // - '[' or ']' (array)  
+                        // - digits (number)
+                        // - 't', 'f', 'n' could be true/false/null but also prose
+                        // - ':' or ',' (separators)
+                        // 
+                        // If we see a letter that's clearly prose (not t/f/n at start of token),
+                        // or other non-JSON characters, this is invalidated.
+                        let is_valid_json_continuation = matches!(next_ch, 
+                            '"' | '{' | '}' | '[' | ']' | ':' | ',' | '-' | 
+                            '0'..='9' | 't' | 'f' | 'n' | '\n'
+                        );
+                        
+                        if !is_valid_json_continuation {
+                            return true; // Invalidated!
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        false // Not invalidated (yet)
     }
 
     /// Find the end position (byte index) of a complete JSON object in the text.
