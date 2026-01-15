@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use termimad::MadSkin;
@@ -29,6 +30,10 @@ enum Commands {
         /// Agent name (e.g., carmack, torvalds). If omitted, runs g3 in one-shot mode.
         #[arg(long)]
         agent: Option<String>,
+
+        /// Automatically accept the session if it completes with commits
+        #[arg(long)]
+        accept: bool,
 
         /// Additional arguments to pass to g3
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -72,7 +77,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { agent, g3_args } => cmd_run(agent.as_deref(), &g3_args),
+        Commands::Run { agent, accept, g3_args } => cmd_run(agent.as_deref(), accept, &g3_args),
         Commands::Exec { agent, g3_args } => cmd_exec(agent.as_deref(), &g3_args),
         Commands::List => cmd_list(),
         Commands::Status { session_id } => cmd_status(&session_id),
@@ -119,7 +124,7 @@ fn get_repo_root() -> Result<PathBuf> {
 }
 
 /// Run a new g3 session (foreground, tails output)
-fn cmd_run(agent: Option<&str>, g3_args: &[String]) -> Result<()> {
+fn cmd_run(agent: Option<&str>, auto_accept: bool, g3_args: &[String]) -> Result<()> {
     let g3_binary = get_g3_binary_path()?;
     let repo_root = get_repo_root()?;
     // Use "single" as the agent name for non-agent runs
@@ -197,6 +202,19 @@ fn cmd_run(agent: Option<&str>, g3_args: &[String]) -> Result<()> {
 
     if status.success() {
         println!("✅ Session {} completed successfully", session.id);
+
+        // Auto-accept if flag is set and there are commits on the branch
+        if auto_accept {
+            if has_commits_on_branch(&worktree_path, &session.branch_name())? {
+                println!();
+                println!("🔄 Auto-accepting session (commits detected)...");
+                return cmd_accept(&session.id);
+            } else {
+                println!();
+                println!("⚠️  --accept flag set but no commits on branch, skipping auto-accept");
+            }
+        }
+
         println!();
         println!("Next steps:");
         println!("  studio accept {}  - Merge changes to main", session.id);
@@ -206,6 +224,23 @@ fn cmd_run(agent: Option<&str>, g3_args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Check if a branch has commits ahead of main
+fn has_commits_on_branch(worktree_path: &Path, branch_name: &str) -> Result<bool> {
+    // Count commits on branch that aren't on main
+    let output = Command::new("git")
+        .current_dir(worktree_path)
+        .args(["rev-list", "--count", &format!("main..{}", branch_name)])
+        .output()
+        .context("Failed to check commits on branch")?;
+
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    let count: u32 = String::from_utf8_lossy(&output.stdout).trim().parse().unwrap_or(0);
+    Ok(count > 0)
 }
 
 /// Execute a g3 session in detached mode (placeholder for future)
