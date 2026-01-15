@@ -123,8 +123,24 @@ fn get_repo_root() -> Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
+/// Filter --accept from g3_args and return (filtered_args, was_accept_present)
+/// This handles the case where --accept is passed after positional args,
+/// which clap's trailing_var_arg captures instead of parsing as our flag.
+fn filter_accept_flag(g3_args: &[String]) -> (Vec<String>, bool) {
+    let accept_in_args = g3_args.iter().any(|arg| arg == "--accept");
+    let filtered: Vec<String> = g3_args
+        .iter()
+        .filter(|arg| *arg != "--accept")
+        .cloned()
+        .collect();
+    (filtered, accept_in_args)
+}
+
 /// Run a new g3 session (foreground, tails output)
 fn cmd_run(agent: Option<&str>, auto_accept: bool, g3_args: &[String]) -> Result<()> {
+    let (g3_args, accept_in_args) = filter_accept_flag(g3_args);
+    let auto_accept = auto_accept || accept_in_args;
+
     let g3_binary = get_g3_binary_path()?;
     let repo_root = get_repo_root()?;
     // Use "single" as the agent name for non-agent runs
@@ -458,4 +474,53 @@ fn extract_session_summary(session: &Session) -> Option<String> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_accept_flag_removes_accept() {
+        let args = vec!["task".to_string(), "--accept".to_string()];
+        let (filtered, found) = filter_accept_flag(&args);
+        assert!(found);
+        assert_eq!(filtered, vec!["task".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_accept_flag_no_accept() {
+        let args = vec!["task".to_string(), "--verbose".to_string()];
+        let (filtered, found) = filter_accept_flag(&args);
+        assert!(!found);
+        assert_eq!(filtered, vec!["task".to_string(), "--verbose".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_accept_flag_empty() {
+        let args: Vec<String> = vec![];
+        let (filtered, found) = filter_accept_flag(&args);
+        assert!(!found);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filter_accept_flag_accept_in_middle() {
+        let args = vec![
+            "task".to_string(),
+            "--accept".to_string(),
+            "--other".to_string(),
+        ];
+        let (filtered, found) = filter_accept_flag(&args);
+        assert!(found);
+        assert_eq!(filtered, vec!["task".to_string(), "--other".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_accept_flag_only_accept() {
+        let args = vec!["--accept".to_string()];
+        let (filtered, found) = filter_accept_flag(&args);
+        assert!(found);
+        assert!(filtered.is_empty());
+    }
 }
