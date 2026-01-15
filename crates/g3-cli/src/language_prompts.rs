@@ -12,6 +12,11 @@ use std::path::Path;
 static LANGUAGE_PROMPTS: &[(&str, &[&str], &str)] = &[
     // (language_name, file_extensions, prompt_content)
     (
+        "rust",
+        &[".rs"],
+        "",  // No base Rust prompt; agent-specific prompts handle this
+    ),
+    (
         "racket",
         &[".rkt", ".rktl", ".rktd", ".scrbl"],
         include_str!("../../../prompts/langs/racket.md"),
@@ -23,6 +28,7 @@ static LANGUAGE_PROMPTS: &[(&str, &[&str], &str)] = &[
 static AGENT_LANGUAGE_PROMPTS: &[(&str, &str, &str)] = &[
     // (agent_name, language_name, prompt_content)
     ("carmack", "racket", include_str!("../../../prompts/langs/carmack.racket.md")),
+    ("carmack", "rust", include_str!("../../../prompts/langs/carmack.rust.md")),
 ];
 
 /// Detect languages present in the workspace by scanning for file extensions.
