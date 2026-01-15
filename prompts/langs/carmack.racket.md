@@ -43,6 +43,13 @@ Prefer **obvious, readable Racket** over cleverness.
 - **Boxes** (`box`, `unbox`, `set-box!`): use for single mutable cells, rarely needed.
 - Don't mix: if a data structure is mutable, keep it internal; expose immutable views.
 
+## Performance
+- Use `in-list`, `in-vector`, `in-hash` explicitly in `for` loops — faster than generic sequence.
+- **Beware `list-ref` in a loop** — it's O(n) per call, so O(n²) overall. Use vectors for indexed access.
+- Don't repeatedly `append` in loops; use `for/list` or accumulate with `cons` then `reverse`.
+- Prefer vectors for indexed access, hashes for keyed lookup, lists for sequential iteration.
+- Use `for/fold` to build results in one pass instead of multiple traversals.
+
 ## Module hygiene
 ```racket
 ;; Good: explicit contract-out, interface at top
@@ -59,6 +66,13 @@ Prefer **obvious, readable Racket** over cleverness.
 - Use `contract-out` when correctness matters (public APIs, callbacks, data shapes).
 - Use explicit `provide` lists only — never `(all-defined-out)` in production.
 - Use `racket/base` for libraries (faster loading); `racket` for scripts.
+
+## Parameters and dynamic scope
+- **Good uses**: current ports, logging context, configuration, test fixtures.
+- **Bad uses**: hidden global state that affects correctness, implicit arguments to avoid passing data.
+- Keep `parameterize` scope tight — wrap the smallest expression that needs it.
+- Document when a function reads from a parameter (it's implicit input).
+- Prefer explicit arguments over parameters when the caller should always think about the value.
 
 ## Contracts: when and how much
 - **Module boundaries**: use `contract-out` for public APIs — catches bugs at the boundary with clear blame.
@@ -94,10 +108,9 @@ Prefer **obvious, readable Racket** over cleverness.
 - Understand `for-syntax` vs runtime; don't accidentally pull runtime values into macros.
 - Use `begin-for-syntax` sparingly; prefer `syntax-local-value` patterns when possible.
 
-## Continuations: use sparingly
-- Prefer `call/ec` (escape continuations) over full `call/cc` when possible.
-- Use `parameterize` for dynamic scope, not continuation tricks.
-- If using `parameterize`, keep scope tight and document effects.
+## Continuations
+- Prefer `call/ec` (escape continuations) over full `call/cc` — simpler, faster, sufficient for early exit.
+- Don't use continuations for what `parameterize` or exceptions handle better.
 
 ## Concurrency
 - Use `place`s for CPU parallelism, `thread`s for I/O concurrency.
