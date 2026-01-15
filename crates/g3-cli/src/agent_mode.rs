@@ -8,6 +8,7 @@ use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
 use crate::project_files::{combine_project_content, read_agents_config, read_project_memory, read_project_readme};
+use crate::language_prompts::{get_language_prompts_for_workspace, get_agent_language_prompts_for_workspace_with_langs};
 use crate::simple_output::SimpleOutput;
 use crate::embedded_agents::load_agent_prompt;
 use crate::ui_writer_impl::ConsoleUiWriter;
@@ -137,16 +138,38 @@ pub async fn run_agent_mode(
         "·"
     };
     output.print(&format!(
-        "   {} README | {} AGENTS.md | {} Memory",
-        readme_status, agents_status, memory_status
+        "   {} README  {} AGENTS.md  {} Memory",
+        readme_status, agents_status, memory_status,
     ));
+
+    // Get language-specific prompts (same mechanism as normal mode)
+    let language_content = get_language_prompts_for_workspace(&workspace_dir);
+
+    // Get agent+language-specific prompts (e.g., carmack.racket.md) and show which languages
+    let detected_langs = crate::language_prompts::detect_languages(&workspace_dir);
+    let agent_lang_content = if detected_langs.is_empty() {
+        None
+    } else {
+        let (content, matched_langs) = get_agent_language_prompts_for_workspace_with_langs(&workspace_dir, agent_name);
+        for lang in matched_langs {
+            output.print(&format!("   ✓ {}: {} language guidance", agent_name, lang));
+        }
+        content
+    };
+
+    // Append agent+language-specific content to system prompt if available
+    let system_prompt = if let Some(agent_lang) = agent_lang_content {
+        format!("{}\n\n{}", system_prompt, agent_lang)
+    } else {
+        system_prompt
+    };
 
     // Combine all content for the agent's context
     let combined_content = combine_project_content(
         agents_content_opt,
         readme_content_opt,
         memory_content_opt,
-        crate::language_prompts::get_language_prompts_for_workspace(&workspace_dir),
+        language_content,
         &workspace_dir,
     );
 
