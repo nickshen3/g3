@@ -247,34 +247,8 @@ impl UiWriter for ConsoleUiWriter {
     }
 
     fn print_context_thinning(&self, message: &str) {
-        // Animated highlight for context thinning
-        // Use bright cyan/green with a quick flash animation
-
-        // Flash animation: print with bright background, then normal
-        let frames = vec![
-            "\x1b[1;97;46m", // Frame 1: Bold white on cyan background
-            "\x1b[1;97;42m", // Frame 2: Bold white on green background
-            "\x1b[1;96;40m", // Frame 3: Bold cyan on black background
-        ];
-
-        println!();
-
-        // Quick flash animation
-        for frame in &frames {
-            print!("\r{} ✨ {} ✨\x1b[0m\x1b[K", frame, message);
-            let _ = io::stdout().flush();
-            std::thread::sleep(std::time::Duration::from_millis(80));
-        }
-
-        // Final display with bright cyan and sparkle emojis
-        print!("\r\x1b[1;96m✨ {} ✨\x1b[0m\x1b[K", message);
-        println!();
-
-        // Add a subtle "success" indicator line
-        println!("\x1b[2;36m   └─ Context optimized successfully\x1b[0m");
-        println!();
-
-        let _ = io::stdout().flush();
+        // Simple status line output - message already contains ANSI formatting
+        println!("{}", message);
     }
 
     fn print_tool_header(&self, tool_name: &str, _tool_args: Option<&serde_json::Value>) {
