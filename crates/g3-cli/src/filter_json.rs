@@ -487,4 +487,25 @@ mod tests {
         let result = filter_json_tool_calls(input);
         assert_eq!(result, "Before\n\nAfter");
     }
+
+    #[test]
+    fn test_tool_call_not_at_line_start_passes_through() {
+        // IMPORTANT: Tool calls that don't start at a line boundary should NOT be filtered.
+        // This is by design - the filter only suppresses tool calls that appear at the
+        // start of a line (after newline + optional whitespace).
+        //
+        // This test documents the behavior that caused the "auto-memory JSON leak" bug:
+        // When "Memory checkpoint: " was printed without a trailing newline, the LLM's
+        // response `{"tool": "remember", ...}` appeared on the same line and was not
+        // filtered. The fix was to ensure the prompt ends with a newline AND reset
+        // the filter state before streaming.
+        //
+        // See: send_auto_memory_reminder() in g3-core/src/lib.rs
+        reset_json_tool_state();
+        
+        // Tool call immediately after text on same line - should NOT be filtered
+        let input = "Memory checkpoint: {\"tool\": \"remember\", \"args\": {}}";
+        let result = filter_json_tool_calls(input);
+        assert_eq!(result, input, "Tool calls not at line start should pass through");
+    }
 }

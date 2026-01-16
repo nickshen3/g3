@@ -1541,7 +1541,15 @@ impl<W: UiWriter> Agent<W> {
             tools_called.len(),
             tools_called
         );
-        self.ui_writer.print_context_status("\nMemory checkpoint: ");
+        // IMPORTANT: The message MUST end with a newline so the LLM's response starts on a new line.
+        // The JSON filter only suppresses tool calls that appear at line boundaries (after newline).
+        // Without the trailing newline, tool call JSON like `{"tool": "remember", ...}` would
+        // appear on the same line as "Memory checkpoint:" and leak through to the UI.
+        // See test: test_tool_call_not_at_line_start_passes_through in filter_json.rs
+        self.ui_writer.print_context_status("\nMemory checkpoint:\n");
+
+        // Reset JSON filter state so it starts fresh for this response
+        self.ui_writer.reset_json_filter();
 
         let reminder = r#"MEMORY CHECKPOINT: If you discovered code locations worth remembering, call `remember` now.
 
