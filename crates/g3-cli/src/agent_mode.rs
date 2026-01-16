@@ -29,6 +29,9 @@ pub async fn run_agent_mode(
     use g3_core::find_incomplete_agent_session;
     use g3_core::get_agent_system_prompt;
 
+    // Set process title to agent name (shows in ps, Activity Monitor, etc.)
+    proctitle::set_title(format!("g3 [{}]", agent_name));
+
     // Initialize logging
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
     let filter = EnvFilter::from_default_env()
