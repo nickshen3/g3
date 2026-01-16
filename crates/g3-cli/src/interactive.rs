@@ -213,8 +213,11 @@ pub async fn run_interactive<W: UiWriter>(
                     .await;
 
                     // Send auto-memory reminder if enabled and tools were called
-                    if let Err(e) = agent.send_auto_memory_reminder().await {
+                    // Skip per-turn reminders when from_agent_mode - we'll send once on exit
+                    if !from_agent_mode {
+                      if let Err(e) = agent.send_auto_memory_reminder().await {
                         debug!("Auto-memory reminder failed: {}", e);
+                      }
                     }
                 } else {
                     // Single line input
@@ -249,8 +252,11 @@ pub async fn run_interactive<W: UiWriter>(
                     .await;
 
                     // Send auto-memory reminder if enabled and tools were called
-                    if let Err(e) = agent.send_auto_memory_reminder().await {
+                    // Skip per-turn reminders when from_agent_mode - we'll send once on exit
+                    if !from_agent_mode {
+                      if let Err(e) = agent.send_auto_memory_reminder().await {
                         debug!("Auto-memory reminder failed: {}", e);
+                      }
                     }
                 }
             }
@@ -284,6 +290,14 @@ pub async fn run_interactive<W: UiWriter>(
 
     // Save session continuation for resume capability
     agent.save_session_continuation(None);
+
+    // Send auto-memory reminder once on exit when in agent+chat mode
+    // (Per-turn reminders were skipped to avoid being too onerous)
+    if from_agent_mode {
+        if let Err(e) = agent.send_auto_memory_reminder().await {
+            debug!("Auto-memory reminder on exit failed: {}", e);
+        }
+    }
 
     output.print("👋 Goodbye!");
     Ok(())
