@@ -12,6 +12,7 @@ use crate::language_prompts::{get_language_prompts_for_workspace, get_agent_lang
 use crate::simple_output::SimpleOutput;
 use crate::embedded_agents::load_agent_prompt;
 use crate::ui_writer_impl::ConsoleUiWriter;
+use crate::interactive::run_interactive;
 
 /// Run agent mode - loads a specialized agent prompt and executes a single task.
 pub async fn run_agent_mode(
@@ -23,6 +24,7 @@ pub async fn run_agent_mode(
     task: Option<String>,
     chrome_headless: bool,
     safari: bool,
+    chat: bool,
 ) -> Result<()> {
     use g3_core::find_incomplete_agent_session;
     use g3_core::get_agent_system_prompt;
@@ -178,7 +180,7 @@ pub async fn run_agent_mode(
     // Set agent mode on UI writer for visual differentiation (light gray tool names)
     ui_writer.set_agent_mode(true);
     let mut agent =
-        Agent::new_with_custom_prompt(config, ui_writer, system_prompt, combined_content).await?;
+        Agent::new_with_custom_prompt(config, ui_writer, system_prompt, combined_content.clone()).await?;
 
     // Set agent mode for session tracking
     agent.set_agent_mode(agent_name);
@@ -240,6 +242,21 @@ pub async fn run_agent_mode(
     // Use provided task if available, otherwise use the default initial_task
     let final_task = task.as_deref().unwrap_or(initial_task);
 
+    // If chat mode is enabled, run interactive loop instead of single task
+    if chat {
+        output.print("");
+        return run_interactive(
+            agent,
+            false, // show_prompt
+            false, // show_code
+            combined_content,
+            &workspace_dir,
+            new_session,
+        )
+        .await;
+    }
+
+    // Single-shot mode: execute the task and exit
     let _result = agent.execute_task(final_task, None, true).await?;
 
     // Send auto-memory reminder if enabled and tools were called

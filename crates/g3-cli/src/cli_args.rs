@@ -96,7 +96,7 @@ pub struct Cli {
     pub codebase_fast_start: Option<PathBuf>,
 
     /// Run as a specialized agent (loads prompt from agents/<name>.md)
-    #[arg(long, value_name = "NAME", conflicts_with_all = ["autonomous", "auto", "chat", "planning"])]
+    #[arg(long, value_name = "NAME", conflicts_with_all = ["autonomous", "auto", "planning"])]
     pub agent: Option<String>,
 
     /// List all available agents (embedded and workspace)

@@ -88,6 +88,7 @@ pub async fn run() -> Result<()> {
             cli.task.clone(),
             cli.chrome_headless,
             cli.safari,
+            cli.chat,
         )
         .await;
     }
