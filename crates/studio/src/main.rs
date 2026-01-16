@@ -315,14 +315,10 @@ fn cmd_run(agent: Option<&str>, auto_accept: bool, g3_args: &[String]) -> Result
     session.mark_complete(&repo_root, status.success())?;
 
     if status.success() {
-        println!("✅ Session {} completed successfully", session.id);
-
         // Auto-accept if flag is set and there are commits on the branch
         if auto_accept {
             if has_commits_on_branch(&worktree_path, &session.branch_name())? {
-                println!();
-                println!("🔄 Auto-accepting session (commits detected)...");
-                return cmd_accept(&session.id);
+                return accept_session(&session.id, "\x1b[1;32mstudio:\x1b[0m");
             } else {
                 println!();
                 println!("⚠️  --accept flag set but no commits on branch, skipping auto-accept");
@@ -443,6 +439,11 @@ fn cmd_status(session_id: &str) -> Result<()> {
 
 /// Accept a session: merge to main and cleanup
 fn cmd_accept(session_id: &str) -> Result<()> {
+    accept_session(session_id, ">")
+}
+
+/// Internal function to accept a session with a custom prefix
+fn accept_session(session_id: &str, prefix: &str) -> Result<()> {
     let repo_root = get_repo_root()?;
     let session = Session::load(&repo_root, session_id)?;
 
@@ -460,7 +461,7 @@ fn cmd_accept(session_id: &str) -> Result<()> {
 
     // Print status line without newline, then complete after operations
     use std::io::Write;
-    print!("> session {} ... ", session_id);
+    print!("{} session {} ... ", prefix, session_id);
     std::io::stdout().flush().ok();
 
     // Merge the branch to main
