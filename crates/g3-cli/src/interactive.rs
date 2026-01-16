@@ -338,16 +338,16 @@ async fn handle_command<W: UiWriter>(
             Ok(true)
         }
         "/compact" => {
-            output.print("g3: compacting session ...");
+            output.print_g3_progress("compacting session");
             match agent.force_compact().await {
                 Ok(true) => {
-                    output.print("g3: compacting session ... done");
+                    output.print_g3_status("compacting session", "done");
                 }
                 Ok(false) => {
-                    output.print("g3: compacting session ... failed");
+                    output.print_g3_status("compacting session", "failed");
                 }
                 Err(e) => {
-                    output.print(&format!("g3: compacting session ... error: {}", e));
+                    output.print_g3_status("compacting session", &format!("error: {}", e));
                 }
             }
             Ok(true)

@@ -892,12 +892,14 @@ impl<W: UiWriter> Agent<W> {
 
         // Check if we need to do 90% auto-compaction
         if self.pending_90_compaction {
-            self.ui_writer
-                .print_context_status("\ng3: compacting session ...\n");
-            if let Err(e) = self.force_compact().await {
-                warn!("Failed to auto-compact at 90%: {}", e);
-            } else {
-                self.ui_writer.println("");
+            self.ui_writer.println("");
+            self.ui_writer.print_g3_progress("compacting session");
+            match self.force_compact().await {
+                Ok(true) => self.ui_writer.print_g3_status("compacting session", "done"),
+                Ok(false) => self.ui_writer.print_g3_status("compacting session", "failed"),
+                Err(e) => {
+                    self.ui_writer.print_g3_status("compacting session", &format!("error: {}", e));
+                }
             }
             self.pending_90_compaction = false;
         }
@@ -1071,12 +1073,11 @@ impl<W: UiWriter> Agent<W> {
             self.ui_writer.print_context_thinning(&thin_summary);
 
             if !self.context_window.should_compact() {
-                self.ui_writer
-                    .print_context_status("g3: thinning resolved capacity issue\n");
+                self.ui_writer.print_g3_status("thinning", "resolved");
                 return Ok(false);
             }
-            self.ui_writer
-                .print_context_status("g3: thinning insufficient, compacting ...\n");
+            self.ui_writer.print_g3_status("thinning", "insufficient");
+            self.ui_writer.print_g3_progress("compacting session");
         }
 
         // Compaction still needed
@@ -1086,10 +1087,10 @@ impl<W: UiWriter> Agent<W> {
 
         use crate::compaction::{perform_compaction, CompactionConfig};
 
-        self.ui_writer.print_context_status(&format!(
-            "\ng3: compacting session ({}%) ...",
-            self.context_window.percentage_used() as u32
-        ));
+        self.ui_writer.println("");
+        self.ui_writer.print_g3_progress(
+            &format!("compacting session ({}%)", self.context_window.percentage_used() as u32)
+        );
 
         let provider_name = self.providers.get(None)?.name().to_string();
         let latest_user_msg = request
@@ -1115,14 +1116,13 @@ impl<W: UiWriter> Agent<W> {
         .await?;
 
         if result.success {
-            self.ui_writer
-                .print_context_status("g3: compacting session ... done\n");
+            self.ui_writer.print_g3_status("compacting session", "done");
             self.compaction_events.push(result.chars_saved);
             request.messages = self.context_window.conversation_history.clone();
             return Ok(true);
         }
 
-        self.ui_writer.print_context_status("⚠️ Unable to compact context. Consider starting a new session if you continue to see errors.\n");
+        self.ui_writer.print_g3_status("compacting session", "failed");
         Err(anyhow::anyhow!(
             "Context window at capacity and compaction failed. Please start a new session."
         ))

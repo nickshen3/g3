@@ -211,6 +211,41 @@ impl UiWriter for ConsoleUiWriter {
         println!("{}", message);
     }
 
+    fn print_g3_progress(&self, message: &str) {
+        use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
+        println!(
+            "{}{}g3:{}{} {} ...",
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(Color::Green),
+            ResetColor,
+            SetAttribute(Attribute::Reset),
+            message
+        );
+    }
+
+    fn print_g3_status(&self, message: &str, status: &str) {
+        use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
+        let status_colored = if status.starts_with("error") || status == "failed" {
+            format!(
+                "{}[{}]{}",
+                SetForegroundColor(Color::Red),
+                status,
+                ResetColor
+            )
+        } else {
+            format!("[{}]", status)
+        };
+        println!(
+            "{}{}g3:{}{} {} ... {}",
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(Color::Green),
+            ResetColor,
+            SetAttribute(Attribute::Reset),
+            message,
+            status_colored
+        );
+    }
+
     fn print_context_thinning(&self, message: &str) {
         // Animated highlight for context thinning
         // Use bright cyan/green with a quick flash animation

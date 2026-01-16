@@ -233,6 +233,14 @@ impl g3_core::ui_writer::UiWriter for PlannerUiWriter {
     fn print_context_status(&self, message: &str) {
         println!("📊 {}", message);
     }
+
+    fn print_g3_progress(&self, message: &str) {
+        println!("g3: {} ...", message);
+    }
+
+    fn print_g3_status(&self, message: &str, status: &str) {
+        println!("g3: {} ... [{}]", message, status);
+    }
     
     fn print_context_thinning(&self, message: &str) {
         println!("🗜️  {}", message);
