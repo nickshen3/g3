@@ -13,8 +13,11 @@ use crate::ToolCall;
 
 use super::executor::ToolContext;
 
-/// Maximum image size in bytes (5MB) - images larger than this will be resized
-const MAX_IMAGE_SIZE: usize = 5 * 1024 * 1024;
+/// Maximum base64-encoded image size in bytes (5MB) - Anthropic API limit
+const MAX_BASE64_SIZE: usize = 5 * 1024 * 1024;
+
+/// Maximum raw image size before base64 encoding (~3.75MB to stay under 5MB after encoding)
+const MAX_IMAGE_SIZE: usize = (MAX_BASE64_SIZE * 3) / 4;
 
 /// Bytes per token heuristic (conservative estimate for code/text mix)
 const BYTES_PER_TOKEN: f32 = 3.5;
@@ -318,9 +321,10 @@ pub async fn execute_read_image<W: UiWriter>(
 
                 let original_size = bytes.len();
 
-                // Resize image if it's >= 5MB (target < 4.9MB to leave margin)
+                // Resize image if it exceeds MAX_IMAGE_SIZE (~3.75MB raw = ~5MB base64)
+                // Target slightly smaller to leave margin for base64 overhead
                 let (bytes, was_resized) = if original_size >= MAX_IMAGE_SIZE {
-                    match resize_image_if_needed(&bytes, path, MAX_IMAGE_SIZE - 100 * 1024) {
+                    match resize_image_if_needed(&bytes, path, MAX_IMAGE_SIZE - 150 * 1024) {
                         Ok(resized) => {
                             let resized_size = resized.len();
                             if resized_size < original_size {
