@@ -199,3 +199,32 @@ fn test_image_dimensions_gif() {
     assert_eq!(width, 100);
     assert_eq!(height, 200);
 }
+
+#[test]
+fn test_resize_image_if_needed_small_image() {
+    use g3_core::tools::file_ops::resize_image_if_needed;
+    use std::path::Path;
+    
+    // Small image should not be resized
+    let small_bytes = vec![0u8; 1000]; // 1KB
+    let path = Path::new("test.jpg");
+    let target_size = 5 * 1024 * 1024; // 5MB
+    
+    let result = resize_image_if_needed(&small_bytes, path, target_size).unwrap();
+    assert_eq!(result.len(), small_bytes.len(), "Small image should not be resized");
+}
+
+#[test]
+fn test_resize_image_if_needed_returns_original_on_failure() {
+    use g3_core::tools::file_ops::resize_image_if_needed;
+    use std::path::Path;
+    
+    // Invalid image data - ImageMagick will fail, should return original
+    let invalid_bytes = vec![0u8; 6 * 1024 * 1024]; // 6MB of zeros
+    let path = Path::new("test.jpg");
+    let target_size = 5 * 1024 * 1024; // 5MB
+    
+    let result = resize_image_if_needed(&invalid_bytes, path, target_size).unwrap();
+    // Should return original since ImageMagick can't process invalid data
+    assert_eq!(result.len(), invalid_bytes.len(), "Invalid image should return original");
+}

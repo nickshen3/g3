@@ -13,6 +13,9 @@ use crate::ToolCall;
 
 use super::executor::ToolContext;
 
+/// Maximum image size in bytes (5MB) - images larger than this will be resized
+const MAX_IMAGE_SIZE: usize = 5 * 1024 * 1024;
+
 /// Bytes per token heuristic (conservative estimate for code/text mix)
 const BYTES_PER_TOKEN: f32 = 3.5;
 
@@ -313,6 +316,28 @@ pub async fn execute_read_image<W: UiWriter>(
                     }
                 };
 
+                let original_size = bytes.len();
+
+                // Resize image if it's >= 5MB (target < 4.9MB to leave margin)
+                let (bytes, was_resized) = if original_size >= MAX_IMAGE_SIZE {
+                    match resize_image_if_needed(&bytes, path, MAX_IMAGE_SIZE - 100 * 1024) {
+                        Ok(resized) => {
+                            let resized_size = resized.len();
+                            if resized_size < original_size {
+                                (resized, true)
+                            } else {
+                                (bytes, false)
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Failed to resize image: {}", e);
+                            (bytes, false)
+                        }
+                    }
+                } else {
+                    (bytes, false)
+                };
+
                 let file_size = bytes.len();
 
                 // Try to get image dimensions
@@ -323,7 +348,23 @@ pub async fn execute_read_image<W: UiWriter>(
                     .map(|(w, h)| format!("{}x{}", w, h))
                     .unwrap_or_else(|| "unknown".to_string());
 
-                let size_str = if file_size >= 1024 * 1024 {
+                let format_size = |size: usize| -> String {
+                    if size >= 1024 * 1024 {
+                        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
+                    } else if size >= 1024 {
+                        format!("{:.1} KB", size as f64 / 1024.0)
+                    } else {
+                        format!("{} bytes", size)
+                    }
+                };
+
+                let size_str = if was_resized {
+                    format!(
+                        "{} → {} (resized)",
+                        format_size(original_size),
+                        format_size(file_size)
+                    )
+                } else if file_size >= 1024 * 1024 {
                     format!("{:.1} MB", file_size as f64 / (1024.0 * 1024.0))
                 } else if file_size >= 1024 {
                     format!("{:.1} KB", file_size as f64 / 1024.0)
@@ -331,13 +372,16 @@ pub async fn execute_read_image<W: UiWriter>(
                     format!("{} bytes", file_size)
                 };
 
+                // If resized, the output is JPEG
+                let final_media_type = if was_resized { "image/jpeg" } else { media_type };
+
                 // Output imgcat inline image to terminal (height constrained)
-                print_imgcat(&bytes, path_str, &dim_str, media_type, &size_str, 5);
+                print_imgcat(&bytes, path_str, &dim_str, final_media_type, &size_str, 5);
 
                 // Store the image to be attached to the next user message
                 use base64::Engine;
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                let image = g3_providers::ImageContent::new(media_type, encoded);
+                let image = g3_providers::ImageContent::new(final_media_type, encoded);
                 ctx.pending_images.push(image);
 
                 success_count += 1;
@@ -531,6 +575,81 @@ fn extract_path_and_content(args: &serde_json::Value) -> (Option<&str>, Option<&
         }
         _ => (None, None),
     }
+}
+
+/// Resize an image to be under the target size using ImageMagick.
+/// Returns the resized image bytes, or the original bytes if resizing fails or isn't needed.
+/// 
+/// Uses iterative quality reduction and dimension scaling to achieve target size.
+pub fn resize_image_if_needed(
+    bytes: &[u8],
+    path: &std::path::Path,
+    target_size: usize,
+) -> std::io::Result<Vec<u8>> {
+    // If already under target size, return original
+    if bytes.len() < target_size {
+        return Ok(bytes.to_vec());
+    }
+
+    debug!(
+        "Image {} is {} bytes, resizing to under {} bytes",
+        path.display(),
+        bytes.len(),
+        target_size
+    );
+
+    // Create a temp file for the input
+    let temp_dir = std::env::temp_dir();
+    let input_path = temp_dir.join(format!("g3_resize_input_{}", std::process::id()));
+    let output_path = temp_dir.join(format!("g3_resize_output_{}.jpg", std::process::id()));
+
+    // Write input bytes to temp file
+    std::fs::write(&input_path, bytes)?;
+
+    // Try different quality levels, starting high and decreasing
+    let quality_levels = [85, 70, 55, 40, 25];
+    let scale_factors = [100, 80, 60, 50, 40];
+
+    for &scale in &scale_factors {
+        for &quality in &quality_levels {
+            // Use ImageMagick convert to resize
+            let result = std::process::Command::new("convert")
+                .arg(&input_path)
+                .arg("-resize")
+                .arg(format!("{}%", scale))
+                .arg("-quality")
+                .arg(format!("{}", quality))
+                .arg(&output_path)
+                .output();
+
+            if let Ok(output) = result {
+                if output.status.success() {
+                    if let Ok(resized_bytes) = std::fs::read(&output_path) {
+                        if resized_bytes.len() < target_size {
+                            debug!(
+                                "Resized image to {} bytes (scale={}%, quality={})",
+                                resized_bytes.len(),
+                                scale,
+                                quality
+                            );
+                            // Clean up temp files
+                            let _ = std::fs::remove_file(&input_path);
+                            let _ = std::fs::remove_file(&output_path);
+                            return Ok(resized_bytes);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Clean up temp files
+    let _ = std::fs::remove_file(&input_path);
+    let _ = std::fs::remove_file(&output_path);
+
+    // If all attempts failed, return original bytes
+    debug!("Failed to resize image under target size, using original");
+    Ok(bytes.to_vec())
 }
 
 /// Get image dimensions from raw bytes.
