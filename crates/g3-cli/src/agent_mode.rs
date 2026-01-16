@@ -49,16 +49,23 @@ pub async fn run_agent_mode(
     // Change to the workspace directory first so session scanning works correctly
     std::env::set_current_dir(&workspace_dir)?;
 
-    // Check for incomplete agent sessions before starting a new one (unless --new-session is set)
-    let resuming_session = if new_session {
-        output.print("\n🆕 Starting new session (--new-session flag set)");
-        output.print("");
+    // Check for incomplete agent sessions before starting a new one
+    // Skip session resume entirely when in chat mode (--agent --chat)
+    let resuming_session = if chat {
+        None // Chat mode always starts fresh
+    } else if new_session {
+        if !chat {
+            output.print("\n🆕 Starting new session (--new-session flag set)");
+            output.print("");
+        }
         None
     } else {
         find_incomplete_agent_session(agent_name).ok().flatten()
     };
 
-    if let Some(ref incomplete_session) = resuming_session {
+    // Only show session resume info when not in chat mode
+    if !chat {
+      if let Some(ref incomplete_session) = resuming_session {
         output.print(&format!(
             "\n🔄 Found incomplete session for agent '{}'",
             agent_name
@@ -73,6 +80,7 @@ pub async fn run_agent_mode(
         output.print("");
         output.print("   Resuming incomplete session...");
         output.print("");
+      }
     }
 
     // Load agent prompt: workspace agents/<name>.md first, then embedded fallback
@@ -85,8 +93,10 @@ pub async fn run_agent_mode(
     })?;
 
     let source = if from_disk { "workspace" } else { "embedded" };
-    output.print(&format!(">> agent mode | {} ({})", agent_name, source));
-    // Format workspace path, replacing home dir with ~
+    // Only print verbose header when not in chat mode
+    if !chat {
+        output.print(&format!(">> agent mode | {} ({})", agent_name, source));
+    }
     let workspace_display = {
         let path_str = workspace_dir.display().to_string();
         dirs::home_dir()
@@ -97,7 +107,8 @@ pub async fn run_agent_mode(
             })
             .unwrap_or(path_str)
     };
-    output.print(&format!("-> {}", workspace_display));
+    // Always print workspace path (it's part of minimal output)
+    print!("{}-> {}{}\n", crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey), workspace_display, crossterm::style::ResetColor);
 
     // Load config
     let mut config = g3_config::Config::load(config_path)?;
@@ -139,10 +150,13 @@ pub async fn run_agent_mode(
     } else {
         "·"
     };
-    output.print(&format!(
-        "   {} README  {} AGENTS.md  {} Memory",
+    // Always print status line (part of minimal output)
+    print!(
+        "{}   {} README  {} AGENTS.md  {} Memory{}\n",
+        crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey),
         readme_status, agents_status, memory_status,
-    ));
+        crossterm::style::ResetColor
+    );
 
     // Get language-specific prompts (same mechanism as normal mode)
     let language_content = get_language_prompts_for_workspace(&workspace_dir);
@@ -153,8 +167,11 @@ pub async fn run_agent_mode(
         None
     } else {
         let (content, matched_langs) = get_agent_language_prompts_for_workspace_with_langs(&workspace_dir, agent_name);
-        for lang in matched_langs {
-            output.print(&format!("   ✓ {}: {} language guidance", agent_name, lang));
+        // Only print language guidance info when not in chat mode
+        if !chat {
+            for lang in matched_langs {
+                output.print(&format!("   ✓ {}: {} language guidance", agent_name, lang));
+            }
         }
         content
     };
@@ -244,7 +261,6 @@ pub async fn run_agent_mode(
 
     // If chat mode is enabled, run interactive loop instead of single task
     if chat {
-        output.print("");
         return run_interactive(
             agent,
             false, // show_prompt
@@ -252,6 +268,7 @@ pub async fn run_agent_mode(
             combined_content,
             &workspace_dir,
             new_session,
+            true,  // from_agent_mode - skip session resume and verbose welcome
         )
         .await;
     }

@@ -300,6 +300,7 @@ async fn handle_command(
                 chat_combined_content,
                 workspace_dir,
                 cli.new_session,
+                false, // from_agent_mode
             )
             .await?;
 

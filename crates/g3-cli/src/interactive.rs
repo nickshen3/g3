@@ -16,6 +16,7 @@ use crate::task_execution::execute_task_with_retry;
 use crate::utils::display_context_progress;
 
 /// Run interactive mode with console output.
+/// If `from_agent_mode` is true, skip session resume and verbose welcome (agent_mode already printed context info).
 pub async fn run_interactive<W: UiWriter>(
     mut agent: Agent<W>,
     show_prompt: bool,
@@ -23,11 +24,13 @@ pub async fn run_interactive<W: UiWriter>(
     combined_content: Option<String>,
     workspace_path: &Path,
     new_session: bool,
+    from_agent_mode: bool,
 ) -> Result<()> {
     let output = SimpleOutput::new();
 
-    // Check for session continuation (skip if --new-session was passed)
-    if !new_session {
+    // Check for session continuation (skip if --new-session was passed or coming from agent mode)
+    // Agent mode with --chat should start fresh without prompting
+    if !new_session && !from_agent_mode {
       if let Ok(Some(continuation)) = g3_core::load_continuation() {
         output.print("");
         output.print(&format!(
@@ -67,77 +70,80 @@ pub async fn run_interactive<W: UiWriter>(
       }
     }
 
-    output.print("");
-    output.print("g3 programming agent");
-    output.print("      >> what shall we build today?");
-    output.print("");
+    // Skip verbose welcome when coming from agent mode (it already printed context info)
+    if !from_agent_mode {
+        output.print("");
+        output.print("g3 programming agent");
+        output.print("      >> what shall we build today?");
+        output.print("");
 
-    // Display provider and model information
-    match agent.get_provider_info() {
-        Ok((provider, model)) => {
+        // Display provider and model information
+        match agent.get_provider_info() {
+            Ok((provider, model)) => {
+                print!(
+                    "🔧 {}{}{} | {}{}{}\n",
+                    SetForegroundColor(Color::Cyan),
+                    provider,
+                    ResetColor,
+                    SetForegroundColor(Color::Yellow),
+                    model,
+                    ResetColor
+                );
+            }
+            Err(e) => {
+                error!("Failed to get provider info: {}", e);
+            }
+        }
+
+        // Display message if AGENTS.md or README was loaded
+        if let Some(ref content) = combined_content {
+            // Check what was loaded
+            let has_agents = content.contains("Agent Configuration");
+            let has_readme = content.contains("Project README");
+            let has_memory = content.contains("Project Memory");
+
+            let readme_status = if has_readme { "✓" } else { "·" };
+            let agents_status = if has_agents { "✓" } else { "·" };
+            let memory_status = if has_memory { "✓" } else { "·" };
+
+            // Extract project name if README is loaded
+            let project_name = if has_readme {
+                // Extract the first heading or title from the README
+                extract_readme_heading(content)
+            } else {
+                None
+            };
+
+            if let Some(name) = project_name {
+                print!("{}>> {}{}\n", SetForegroundColor(Color::DarkGrey), name, ResetColor);
+            }
             print!(
-                "🔧 {}{}{} | {}{}{}\n",
-                SetForegroundColor(Color::Cyan),
-                provider,
-                ResetColor,
-                SetForegroundColor(Color::Yellow),
-                model,
+                "{}   {} README | {} AGENTS.md | {} Memory{}\n",
+                SetForegroundColor(Color::DarkGrey),
+                readme_status, agents_status, memory_status,
                 ResetColor
             );
         }
-        Err(e) => {
-            error!("Failed to get provider info: {}", e);
-        }
-    }
 
-    // Display message if AGENTS.md or README was loaded
-    if let Some(ref content) = combined_content {
-        // Check what was loaded
-        let has_agents = content.contains("Agent Configuration");
-        let has_readme = content.contains("Project README");
-        let has_memory = content.contains("Project Memory");
-
-        let readme_status = if has_readme { "✓" } else { "·" };
-        let agents_status = if has_agents { "✓" } else { "·" };
-        let memory_status = if has_memory { "✓" } else { "·" };
-
-        // Extract project name if README is loaded
-        let project_name = if has_readme {
-            // Extract the first heading or title from the README
-            extract_readme_heading(content)
-        } else {
-            None
+        // Display workspace path
+        let workspace_display = {
+            let path_str = workspace_path.display().to_string();
+            dirs::home_dir()
+                .and_then(|home| {
+                    path_str
+                        .strip_prefix(&home.display().to_string())
+                        .map(|s| format!("~{}", s))
+                })
+                .unwrap_or(path_str)
         };
-
-        if let Some(name) = project_name {
-            print!("{}>> {}{}\n", SetForegroundColor(Color::DarkGrey), name, ResetColor);
-        }
         print!(
-            "{}   {} README | {} AGENTS.md | {} Memory{}\n",
+            "{}-> {}{}\n",
             SetForegroundColor(Color::DarkGrey),
-            readme_status, agents_status, memory_status,
+            workspace_display,
             ResetColor
         );
+        output.print("");
     }
-
-    // Display workspace path
-    let workspace_display = {
-        let path_str = workspace_path.display().to_string();
-        dirs::home_dir()
-            .and_then(|home| {
-                path_str
-                    .strip_prefix(&home.display().to_string())
-                    .map(|s| format!("~{}", s))
-            })
-            .unwrap_or(path_str)
-    };
-    print!(
-        "{}-> {}{}\n",
-        SetForegroundColor(Color::DarkGrey),
-        workspace_display,
-        ResetColor
-    );
-    output.print("");
 
     // Initialize rustyline editor with history
     let mut rl = DefaultEditor::new()?;

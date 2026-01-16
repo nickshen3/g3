@@ -218,6 +218,7 @@ async fn run_console_mode(
             combined_content,
             project.workspace(),
             cli.new_session,
+            false, // from_agent_mode
         )
         .await
     }
