@@ -1,6 +1,6 @@
 //! Session management for studio
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -12,7 +12,15 @@ use uuid::Uuid;
 pub enum SessionStatus {
     Running,
     Complete,
+    Paused,
     Failed,
+}
+
+/// Session type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionType {
+    OneShot,
+    Interactive,
 }
 
 /// A studio session representing a g3 agent run in a worktree
@@ -30,6 +38,9 @@ pub struct Session {
     pub pid: Option<u32>,
     /// Path to the worktree
     pub worktree_path: Option<PathBuf>,
+    /// Type of session
+    #[serde(default = "default_session_type")]
+    pub session_type: SessionType,
 }
 
 impl Session {
@@ -46,6 +57,23 @@ impl Session {
             status: SessionStatus::Running,
             pid: None,
             worktree_path: None,
+            session_type: SessionType::OneShot,
+        }
+    }
+
+    /// Create a new interactive session
+    pub fn new_interactive() -> Self {
+        let full_uuid = Uuid::new_v4();
+        let short_id = full_uuid.to_string()[..8].to_string();
+
+        Self {
+            id: short_id,
+            agent: "interactive".to_string(),
+            created_at: Utc::now(),
+            status: SessionStatus::Running,
+            pid: None,
+            worktree_path: None,
+            session_type: SessionType::Interactive,
         }
     }
 
@@ -110,6 +138,20 @@ impl Session {
         Ok(())
     }
 
+    /// Mark session as paused (for interactive sessions)
+    pub fn mark_paused(&self, repo_root: &Path) -> Result<()> {
+        let path = self.metadata_path(repo_root);
+        let content = fs::read_to_string(&path).context("Failed to read session metadata")?;
+        let mut session: Session = serde_json::from_str(&content)?;
+        session.status = SessionStatus::Paused;
+        session.pid = None;
+
+        let json = serde_json::to_string_pretty(&session)?;
+        fs::write(&path, json).context("Failed to write session metadata")?;
+
+        Ok(())
+    }
+
     /// Load a session by ID
     pub fn load(repo_root: &Path, session_id: &str) -> Result<Session> {
         let path = Self::sessions_dir(repo_root).join(format!("{}.json", session_id));
@@ -163,4 +205,9 @@ impl Session {
 
         Ok(())
     }
+}
+
+/// Default session type for backwards compatibility with existing sessions
+fn default_session_type() -> SessionType {
+    SessionType::OneShot
 }

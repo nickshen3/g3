@@ -16,15 +16,26 @@ use session::{Session, SessionStatus};
 
 /// Studio - Multi-agent workspace manager for g3
 #[derive(Parser)]
-#[command(name = "studio")]
+#[command(name = "studio", subcommand_required = false)]
 #[command(about = "Manage multiple g3 agent sessions using git worktrees")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Start a new interactive g3 session in an isolated worktree
+    #[command(alias = "c")]
+    Cli,
+
+    /// Resume a paused interactive session
+    #[command(alias = "r")]
+    Resume {
+        /// Session ID to resume
+        session_id: String,
+    },
+
     /// Run a new g3 session (tails output until complete)
     Run {
         /// Agent name (e.g., carmack, torvalds). If omitted, runs g3 in one-shot mode.
@@ -76,7 +87,9 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
+    match cli.command.unwrap_or(Commands::Cli) {
+        Commands::Cli => cmd_cli(),
+        Commands::Resume { session_id } => cmd_resume(&session_id),
         Commands::Run { agent, accept, g3_args } => cmd_run(agent.as_deref(), accept, &g3_args),
         Commands::Exec { agent, g3_args } => cmd_exec(agent.as_deref(), &g3_args),
         Commands::List => cmd_list(),
@@ -84,6 +97,98 @@ fn main() -> Result<()> {
         Commands::Accept { session_id } => cmd_accept(&session_id),
         Commands::Discard { session_id } => cmd_discard(&session_id),
     }
+}
+
+/// Start a new interactive g3 session
+fn cmd_cli() -> Result<()> {
+    let g3_binary = get_g3_binary_path()?;
+    let repo_root = get_repo_root()?;
+    let session = Session::new_interactive();
+
+    // Create worktree
+    let worktree = GitWorktree::new(&repo_root);
+    let worktree_path = worktree.create(&session)?;
+
+    println!("📁 Worktree: {}", worktree_path.display());
+    println!("🌿 Branch: {}", session.branch_name());
+    println!("🆔 Session: {}", session.id);
+    println!();
+
+    // Save session metadata
+    session.save(&repo_root, &worktree_path)?;
+
+    // Build g3 command with inherited stdio for interactive use
+    let mut cmd = Command::new(&g3_binary);
+    cmd.arg("--workspace").arg(&worktree_path);
+    cmd.current_dir(&worktree_path);
+    cmd.stdin(Stdio::inherit());
+    cmd.stdout(Stdio::inherit());
+    cmd.stderr(Stdio::inherit());
+
+    // Spawn and wait
+    let status = cmd.status().context("Failed to run g3")?;
+
+    // Mark session as paused (user can resume later or accept/discard)
+    session.mark_paused(&repo_root)?;
+
+    println!();
+    println!("Session {} paused.", session.id);
+    println!();
+    println!("Next steps:");
+    println!("  studio resume {}  - Continue working", session.id);
+    println!("  studio accept {}  - Merge changes to main", session.id);
+    println!("  studio discard {} - Discard changes", session.id);
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
+/// Resume a paused interactive session
+fn cmd_resume(session_id: &str) -> Result<()> {
+    let g3_binary = get_g3_binary_path()?;
+    let repo_root = get_repo_root()?;
+    let session = Session::load(&repo_root, session_id)?;
+
+    let worktree_path = session.worktree_path.as_ref()
+        .ok_or_else(|| anyhow!("Session {} has no worktree path", session_id))?;
+
+    if !worktree_path.exists() {
+        bail!("Worktree for session {} no longer exists at {}", session_id, worktree_path.display());
+    }
+
+    println!("📁 Resuming session {} in {}", session_id, worktree_path.display());
+    println!();
+
+    // Build g3 command with inherited stdio
+    let mut cmd = Command::new(&g3_binary);
+    cmd.arg("--workspace").arg(worktree_path);
+    cmd.current_dir(worktree_path);
+    cmd.stdin(Stdio::inherit());
+    cmd.stdout(Stdio::inherit());
+    cmd.stderr(Stdio::inherit());
+
+    // Spawn and wait
+    let status = cmd.status().context("Failed to run g3")?;
+
+    // Mark session as paused again
+    session.mark_paused(&repo_root)?;
+
+    println!();
+    println!("Session {} paused.", session_id);
+    println!();
+    println!("Next steps:");
+    println!("  studio resume {}  - Continue working", session_id);
+    println!("  studio accept {}  - Merge changes to main", session_id);
+    println!("  studio discard {} - Discard changes", session_id);
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(())
 }
 
 /// Get the path to the g3 binary (same directory as studio)
@@ -286,6 +391,7 @@ fn cmd_list() -> Result<()> {
     for session in sessions {
         let status_str = match session.status {
             SessionStatus::Running => "🔄 running",
+            SessionStatus::Paused => "⏸️  paused",
             SessionStatus::Complete => "✅ complete",
             SessionStatus::Failed => "❌ failed",
         };
