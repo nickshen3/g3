@@ -16,7 +16,8 @@ use crate::task_execution::execute_task_with_retry;
 use crate::utils::display_context_progress;
 
 /// Run interactive mode with console output.
-/// If `from_agent_mode` is true, skip session resume and verbose welcome (agent_mode already printed context info).
+/// If `agent_name` is Some, we're in agent+chat mode: skip session resume/verbose welcome,
+/// and use the agent name as the prompt (e.g., "butler>").
 pub async fn run_interactive<W: UiWriter>(
     mut agent: Agent<W>,
     show_prompt: bool,
@@ -24,9 +25,10 @@ pub async fn run_interactive<W: UiWriter>(
     combined_content: Option<String>,
     workspace_path: &Path,
     new_session: bool,
-    from_agent_mode: bool,
+    agent_name: Option<&str>,
 ) -> Result<()> {
     let output = SimpleOutput::new();
+    let from_agent_mode = agent_name.is_some();
 
     // Check for session continuation (skip if --new-session was passed or coming from agent mode)
     // Agent mode with --chat should start fresh without prompting
@@ -167,9 +169,15 @@ pub async fn run_interactive<W: UiWriter>(
         display_context_progress(&agent, &output);
 
         // Adjust prompt based on whether we're in multi-line mode
-        let prompt = if in_multiline { "... > " } else { "g3> " };
+        let prompt = if in_multiline {
+            "... > ".to_string()
+        } else if let Some(name) = agent_name {
+            format!("{}> ", name)
+        } else {
+            "g3> ".to_string()
+        };
 
-        let readline = rl.readline(prompt);
+        let readline = rl.readline(&prompt);
         match readline {
             Ok(line) => {
                 let trimmed = line.trim_end();

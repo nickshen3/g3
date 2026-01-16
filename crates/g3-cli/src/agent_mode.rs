@@ -268,7 +268,7 @@ pub async fn run_agent_mode(
             combined_content,
             &workspace_dir,
             new_session,
-            true,  // from_agent_mode - skip session resume and verbose welcome
+            Some(agent_name),  // agent name for prompt (e.g., "butler>")
         )
         .await;
     }
