@@ -110,6 +110,17 @@ pub fn get_context_summary_file(session_id: &str) -> PathBuf {
     get_session_logs_dir(session_id).join("context_summary.txt")
 }
 
+/// Get the tools output directory for a session.
+/// Returns .g3/sessions/<session_id>/tools/
+pub fn get_tools_output_dir(session_id: &str) -> PathBuf {
+    get_session_logs_dir(session_id).join("tools")
+}
+
+/// Generate a short unique ID (first 8 chars of UUID v4).
+pub fn generate_short_id() -> String {
+    uuid::Uuid::new_v4().to_string()[..8].to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

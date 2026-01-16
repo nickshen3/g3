@@ -1,6 +1,9 @@
 //! File operation tools: read_file, write_file, str_replace, read_image.
 
 use anyhow::Result;
+use std::fs::File;
+use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::path::Path;
 use tracing::debug;
 
 use crate::ui_writer::UiWriter;
@@ -55,7 +58,7 @@ pub async fn execute_read_file<W: UiWriter>(
     tool_call: &ToolCall,
     ctx: &ToolContext<'_, W>,
 ) -> Result<String> {
-    debug!("Processing read_file tool call");
+    debug!("Processing read_file tool call (optimized with seek)");
     
     let file_path = match tool_call.args.get("file_path").and_then(|v| v.as_str()) {
         Some(p) => p,
@@ -85,101 +88,164 @@ pub async fn execute_read_file<W: UiWriter>(
         path_str, start_char, end_char
     );
 
-    match std::fs::read_to_string(path_str) {
-        Ok(content) => {
-            let total_file_len = content.len();
-            
-            // Calculate token-aware limit for the content we're about to read
-            let read_limit = calculate_read_limit(
-                total_file_len,
-                ctx.context_total_tokens,
-                ctx.context_used_tokens,
-            );
+    // Get file metadata for size without reading content
+    let path = Path::new(path_str);
+    let metadata = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) => return Ok(format!("❌ Failed to read file '{}': {}", path_str, e)),
+    };
+    let total_file_len = metadata.len() as usize;
 
-            // Validate user-specified range
-            let user_start = start_char.unwrap_or(0);
-            if user_start > total_file_len {
-                // Start exceeds file length - read last 100 chars instead
-                let fallback_start = total_file_len.saturating_sub(100);
-                let fallback_content = &content[fallback_start..];
-                let line_count = fallback_content.lines().count();
-                return Ok(format!(
-                    "{}\n🔍 {} lines read (start {} exceeded length {}, showing last {} chars)",
-                    fallback_content, line_count, user_start, total_file_len, total_file_len - fallback_start
-                ));
-            }
-            
-            let user_end = end_char.unwrap_or(total_file_len);
-            // Clamp end position to file length (don't error, just read what's available)
-            let (user_end, end_was_clamped) = if user_end > total_file_len {
-                (total_file_len, true)
-            } else {
-                (user_end, false)
-            };
-            
-            if user_start > user_end {
-                return Ok(format!(
-                    "❌ Start position {} is greater than end position {}",
-                    user_start, user_end
-                ));
-            }
+    // Calculate token-aware limit
+    let read_limit = calculate_read_limit(
+        total_file_len,
+        ctx.context_total_tokens,
+        ctx.context_used_tokens,
+    );
 
-            // Calculate the range we'll actually read
-            let user_range_len = user_end - user_start;
-            
-            // Determine if we need to apply token-aware limiting
-            let (effective_end, was_truncated) = match read_limit {
-                Some(max_bytes) if user_range_len > max_bytes => {
-                    // Truncate to max_bytes from the start position
-                    (user_start + max_bytes, true)
-                }
-                _ => (user_end, false),
-            };
-
-            // Extract the requested portion, ensuring we're at char boundaries
-            let start_boundary = if user_start == 0 {
-                0
-            } else {
-                content
-                    .char_indices()
-                    .find(|(i, _)| *i >= user_start)
-                    .map(|(i, _)| i)
-                    .unwrap_or(user_start)
-            };
-            let end_boundary = content
-                .char_indices()
-                .find(|(i, _)| *i >= effective_end)
-                .map(|(i, _)| i)
-                .unwrap_or(total_file_len);
-
-            let partial_content = &content[start_boundary..end_boundary];
-            let line_count = partial_content.lines().count();
-
-            // Format output based on whether truncation occurred
-            if was_truncated {
-                // Token-aware truncation header
-                let context_pct = (ctx.context_used_tokens as f32 / ctx.context_total_tokens as f32 * 100.0) as u32;
-                Ok(format!(
-                    "{}\n🔍 {} lines read (truncated, chars {}-{} of {}, context {}%)",
-                    partial_content, line_count, start_boundary, end_boundary, total_file_len, context_pct
-                ))
-            } else if end_was_clamped {
-                // End position exceeded file length, clamped to actual length
-                Ok(format!(
-                    "{}\n🔍 {} lines read (chars {}-{}, end clamped from {} to file length {})",
-                    partial_content, line_count, start_boundary, end_boundary, end_char.unwrap(), total_file_len
-                ))
-            } else if start_char.is_some() || end_char.is_some() {
-                Ok(format!(
-                    "{}\n🔍 {} lines read (chars {}-{})",
-                    partial_content, line_count, start_boundary, end_boundary
-                ))
-            } else {
-                Ok(format!("{}\n🔍 {} lines read", content, line_count))
-            }
-        }
-        Err(e) => Ok(format!("❌ Failed to read file '{}': {}", path_str, e)),
+    // Validate user-specified range
+    let user_start = start_char.unwrap_or(0);
+    let user_end = end_char.unwrap_or(total_file_len);
+    
+    // Clamp end position to file length
+    let (user_end, end_was_clamped) = if user_end > total_file_len {
+        (total_file_len, true)
+    } else {
+        (user_end, false)
+    };
+    
+    if user_start > user_end {
+        return Ok(format!(
+            "❌ Start position {} is greater than end position {}",
+            user_start, user_end
+        ));
     }
+
+    // Calculate the range we'll actually read
+    let user_range_len = user_end - user_start;
+    
+    // Determine if we need to apply token-aware limiting
+    let (effective_end, was_truncated) = match read_limit {
+        Some(max_bytes) if user_range_len > max_bytes => {
+            (user_start + max_bytes, true)
+        }
+        _ => (user_end, false),
+    };
+
+    // Handle start exceeding file length
+    if user_start >= total_file_len {
+        // Read last 100 bytes instead
+        let fallback_start = total_file_len.saturating_sub(100);
+        let content = read_file_range(path, fallback_start, total_file_len)?;
+        let line_count = content.lines().count();
+        return Ok(format!(
+            "{}\n🔍 {} lines read (start {} exceeded length {}, showing last {} chars)",
+            content, line_count, user_start, total_file_len, total_file_len - fallback_start
+        ));
+    }
+
+    // Use optimized seek-based reading
+    let content = read_file_range(path, user_start, effective_end)?;
+    let line_count = content.lines().count();
+
+    // Format output based on whether truncation occurred
+    if was_truncated {
+        let context_pct = (ctx.context_used_tokens as f32 / ctx.context_total_tokens as f32 * 100.0) as u32;
+        Ok(format!(
+            "{}\n🔍 {} lines read (truncated, chars {}-{} of {}, context {}%)",
+            content, line_count, user_start, effective_end, total_file_len, context_pct
+        ))
+    } else if end_was_clamped {
+        Ok(format!(
+            "{}\n🔍 {} lines read (chars {}-{}, end clamped from {} to file length {})",
+            content, line_count, user_start, effective_end, end_char.unwrap(), total_file_len
+        ))
+    } else if start_char.is_some() || end_char.is_some() {
+        Ok(format!(
+            "{}\n🔍 {} lines read (chars {}-{})",
+            content, line_count, user_start, effective_end
+        ))
+    } else {
+        Ok(format!("{}\n🔍 {} lines read", content, line_count))
+    }
+}
+
+/// Read a specific byte range from a file using seek (O(1) seek + O(n) read where n = range size).
+/// Handles UTF-8 boundary issues by extending the read slightly and trimming invalid chars.
+fn read_file_range(path: &Path, start: usize, end: usize) -> Result<String> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    
+    // For UTF-8 safety, we may need to adjust boundaries.
+    // UTF-8 characters are 1-4 bytes, so we read up to 3 extra bytes at start
+    // to find a valid character boundary.
+    
+    // Calculate how far back we might need to look for a char boundary
+    let safe_start = start.saturating_sub(3);
+    let extra_at_start = start - safe_start;
+    
+    // Read a few extra bytes at the end to complete any partial char
+    let extra_at_end = 3;
+    
+    // Seek to safe start position
+    reader.seek(SeekFrom::Start(safe_start as u64))?;
+    
+    // Read the extended range
+    let bytes_to_read = (end - safe_start) + extra_at_end;
+    let mut buffer = vec![0u8; bytes_to_read];
+    let bytes_read = reader.read(&mut buffer)?;
+    buffer.truncate(bytes_read);
+    
+    // Convert to string - this should work since we read the whole file originally as UTF-8
+    // But we need to find valid boundaries within our extended read
+    let full_str = match std::str::from_utf8(&buffer) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            // If the whole buffer isn't valid UTF-8, try to find valid boundaries
+            // This can happen with binary files or corrupted data
+            return Ok(String::from_utf8_lossy(&buffer).into_owned());
+        }
+    };
+    
+    // Now we need to trim to the actual requested range
+    // We read from safe_start, but user wants from start
+    // So we need to skip `extra_at_start` bytes worth of characters
+    
+    if extra_at_start == 0 && bytes_read <= (end - start) + extra_at_end {
+        // Simple case: we started at the right place
+        // Just trim any extra at the end
+        let target_len = end - start;
+        if full_str.len() <= target_len {
+            return Ok(full_str);
+        }
+        // Find char boundary at target_len
+        let end_idx = full_str
+            .char_indices()
+            .take_while(|(i, _)| *i < target_len)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(full_str.len());
+        return Ok(full_str[..end_idx].to_string());
+    }
+    
+    // Complex case: we read extra at the start, need to skip those bytes
+    // Find the character that starts at or after `extra_at_start` bytes
+    let start_idx = full_str
+        .char_indices()
+        .find(|(i, _)| *i >= extra_at_start)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    
+    // Calculate target end based on original request
+    let target_byte_len = end - start;
+    let end_idx = full_str
+        .char_indices()
+        .take_while(|(i, _)| *i < start_idx + target_byte_len)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(full_str.len());
+    
+    Ok(full_str[start_idx..end_idx.min(full_str.len())].to_string())
 }
 
 /// Execute the `read_image` tool.
