@@ -58,14 +58,11 @@ pub async fn execute_task_with_retry<W: UiWriter>(
         };
 
         match execution_result {
-            Ok(result) => {
+            Ok(_) => {
                 if attempt > 1 {
                     output.print(&format!("✅ Request succeeded after {} attempts", attempt));
                 }
-                // Only print response if it's not empty (streaming already displayed it)
-                if !result.response.trim().is_empty() {
-                    output.print_smart(&result.response);
-                }
+                // Response was already displayed during streaming - don't print again
                 return;
             }
             Err(e) => {
