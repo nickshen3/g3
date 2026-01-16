@@ -73,13 +73,10 @@ fn test_thin_context_basic() {
 
     println!("Thinning summary: {}", summary);
 
-    // Should have thinned at least 1 large tool result in the first third
-    assert!(
-        summary.contains("1 tool result"),
-        "Summary was: {}",
-        summary
-    );
-    assert!(summary.contains("50%"));
+    // Should show the new format with percentage change
+    assert!(summary.contains("g3:"), "Summary was: {}", summary);
+    assert!(summary.contains("thinning context"));
+    assert!(summary.contains("[done]"));
 
     // Check that the large tool results were replaced
     let first_third_end = context.conversation_history.len() / 3;
@@ -134,8 +131,10 @@ fn test_thin_write_file_tool_calls() {
 
     println!("Thinning summary: {}", summary);
 
-    // Should have thinned the write_file tool call
-    assert!(summary.contains("tool call") || summary.contains("chars saved"));
+    // Should show the new format with percentage change
+    assert!(summary.contains("g3:"));
+    assert!(summary.contains("thinning context"));
+    assert!(summary.contains("[done]"));
 
     // Check that the large content was replaced with a file reference
     let first_third_end = context.conversation_history.len() / 3;
@@ -194,8 +193,10 @@ fn test_thin_str_replace_tool_calls() {
 
     println!("Thinning summary: {}", summary);
 
-    // Should have thinned the str_replace tool call
-    assert!(summary.contains("tool call") || summary.contains("chars saved"));
+    // Should show the new format with percentage change
+    assert!(summary.contains("g3:"));
+    assert!(summary.contains("thinning context"));
+    assert!(summary.contains("[done]"));
 
     // Check that the large diff was replaced with a file reference
     let first_third_end = context.conversation_history.len() / 3;
@@ -227,7 +228,9 @@ fn test_thin_context_no_large_results() {
     let (summary, _chars_saved) = context.thin_context(None);
 
     // Should report no large results found
-    assert!(summary.contains("no large tool results or tool calls found"));
+    assert!(summary.contains("g3:"));
+    assert!(summary.contains("thinning context"));
+    assert!(summary.contains("[no changes]"));
 }
 
 #[test]
@@ -255,9 +258,9 @@ fn test_thin_context_only_affects_first_third() {
     context.used_tokens = 5000;
     let (summary, _chars_saved) = context.thin_context(None);
 
-    // First third is 4 messages (indices 0-3), so only indices 1 and 3 should be thinned
-    // That's 2 tool results
-    assert!(summary.contains("2 tool results"));
+    // Should show the new format with percentage change
+    assert!(summary.contains("g3:"));
+    assert!(summary.contains("[done]"));
 
     // Check that messages after the first third are NOT thinned
     let first_third_end = context.conversation_history.len() / 3;

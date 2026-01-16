@@ -139,11 +139,10 @@ fn test_non_todo_results_still_thinned() {
 
     println!("Thinning summary: {}", summary);
 
-    // Should have thinned the non-TODO result
-    assert!(
-        summary.contains("1 tool result") || summary.contains("chars saved"),
-        "Non-TODO results should be thinned"
-    );
+    // Should show the new format with percentage change (indicating thinning happened)
+    assert!(summary.contains("g3:"), "Non-TODO results should be thinned");
+    assert!(summary.contains("thinning context"));
+    assert!(summary.contains("[done]"));
 
     // Check that the result was actually thinned
     let first_third_end = context.conversation_history.len() / 3;

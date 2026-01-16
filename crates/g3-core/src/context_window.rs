@@ -23,20 +23,6 @@ pub enum ThinScope {
 }
 
 impl ThinScope {
-    fn label(&self) -> &'static str {
-        match self {
-            ThinScope::FirstThird => "thinned",
-            ThinScope::All => "skinnified",
-        }
-    }
-
-    fn emoji(&self) -> &'static str {
-        match self {
-            ThinScope::FirstThird => "🥒",
-            ThinScope::All => "🦴",
-        }
-    }
-
     fn file_prefix(&self) -> &'static str {
         match self {
             ThinScope::FirstThird => "leaned",
@@ -419,10 +405,14 @@ Format this as a detailed but concise summary that can be used to resume the con
         // Recalculate token usage after thinning
         self.recalculate_tokens();
 
+        // Get new percentage after thinning
+        let new_percentage = self.percentage_used() as u32;
+
         // Build result message
         self.build_thin_result_message(
             scope,
             current_percentage,
+            new_percentage,
             leaned_count,
             tool_call_leaned_count,
             chars_saved,
@@ -711,35 +701,29 @@ Format this as a detailed but concise summary that can be used to resume the con
         &self,
         scope: ThinScope,
         current_percentage: u32,
+        new_percentage: u32,
         leaned_count: usize,
         tool_call_leaned_count: usize,
         chars_saved: usize,
     ) -> (String, usize) {
-        let scope_desc = match scope {
-            ThinScope::FirstThird => "",
-            ThinScope::All => " across entire history",
-        };
-
         // Nothing was thinned
         if leaned_count == 0 && tool_call_leaned_count == 0 {
+            let scope_desc = match scope {
+                ThinScope::FirstThird => "",
+                ThinScope::All => " (full)",
+            };
             let msg = format!(
-                "ℹ Context {} triggered at {}% but no large tool results or tool calls found{}",
-                scope.error_action(), current_percentage, scope_desc
+                "\x1b[1;32mg3:\x1b[0m thinning context{} ... {}% ... \x1b[1;32m[no changes]\x1b[0m",
+                scope_desc, current_percentage
             );
             return (msg, 0);
         }
 
-        // Build description of what was thinned
-        let what_thinned = match (leaned_count > 0, tool_call_leaned_count > 0) {
-            (true, true) => format!("{} tool results + {} tool calls", leaned_count, tool_call_leaned_count),
-            (true, false) => format!("{} tool results", leaned_count),
-            (false, true) => format!("{} tool calls", tool_call_leaned_count),
-            (false, false) => unreachable!(), // handled above
-        };
-
+        // Format: "g3: thinning context ... 70% -> 40% ... [done]"
+        // with "g3:" and "[done]" in bold green
         let msg = format!(
-            "{} Context {} at {}%: {}{}, ~{} chars saved",
-            scope.emoji(), scope.label(), current_percentage, what_thinned, scope_desc, chars_saved
+            "\x1b[1;32mg3:\x1b[0m thinning context ... {}% -> {}% ... \x1b[1;32m[done]\x1b[0m",
+            current_percentage, new_percentage
         );
         (msg, chars_saved)
     }
@@ -877,9 +861,9 @@ mod tests {
 
     #[test]
     fn test_thin_scope_properties() {
-        assert_eq!(ThinScope::FirstThird.emoji(), "🥒");
-        assert_eq!(ThinScope::All.emoji(), "🦴");
-        assert_eq!(ThinScope::FirstThird.label(), "thinned");
-        assert_eq!(ThinScope::All.label(), "skinnified");
+        assert_eq!(ThinScope::FirstThird.file_prefix(), "leaned");
+        assert_eq!(ThinScope::All.file_prefix(), "skinny");
+        assert_eq!(ThinScope::FirstThird.error_action(), "thinning");
+        assert_eq!(ThinScope::All.error_action(), "skinnifying");
     }
 }
