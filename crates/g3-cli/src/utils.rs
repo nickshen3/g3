@@ -15,6 +15,9 @@ pub fn display_context_progress<W: UiWriter>(agent: &Agent<W>, _output: &SimpleO
     let context = agent.get_context_window();
     let percentage = context.percentage_used();
 
+    // Ensure we start on a new line (previous response may not end with newline)
+    println!();
+
     // Create 10 dots representing context fullness
     let total_dots: usize = 10;
     let filled_dots = ((percentage / 100.0) * total_dots as f32).round() as usize;
