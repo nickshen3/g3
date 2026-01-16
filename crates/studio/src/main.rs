@@ -256,10 +256,8 @@ fn cmd_run(agent: Option<&str>, auto_accept: bool, g3_args: &[String]) -> Result
     let worktree = GitWorktree::new(&repo_root);
     let worktree_path = worktree.create(&session)?;
 
-    println!("📁 Created worktree: {}", worktree_path.display());
-    println!("🌿 Branch: {}", session.branch_name());
-    println!("🆔 Session: {}", session.id);
-    println!();
+    // Print compact session info: "studio:" in bold green, session id in inline-code orange
+    println!("\x1b[1;32mstudio:\x1b[0m new session \x1b[38;2;216;177;114m{}\x1b[0m", session.id);
 
     // Build g3 command with --workspace prepended
     let mut cmd = Command::new(&g3_binary);
@@ -276,11 +274,7 @@ fn cmd_run(agent: Option<&str>, auto_accept: bool, g3_args: &[String]) -> Result
     // Save session metadata
     session.save(&repo_root, &worktree_path)?;
 
-    match agent {
-        Some(a) => println!("🚀 Starting g3 agent '{}'...", a),
-        None => println!("🚀 Starting g3 one-shot session..."),
-    }
-    println!("{}", "─".repeat(60));
+    println!();
 
     // Spawn and tail output
     let mut child = cmd.spawn().context("Failed to spawn g3 process")?;
@@ -316,8 +310,7 @@ fn cmd_run(agent: Option<&str>, auto_accept: bool, g3_args: &[String]) -> Result
     stdout_handle.join().ok();
     stderr_handle.join().ok();
 
-    println!("{}", "─".repeat(60));
-
+    println!();
     // Update session status
     session.mark_complete(&repo_root, status.success())?;
 
