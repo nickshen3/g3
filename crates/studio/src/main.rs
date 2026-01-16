@@ -465,12 +465,13 @@ fn cmd_accept(session_id: &str) -> Result<()> {
     let worktree = GitWorktree::new(&repo_root);
     let branch_name = session.branch_name();
 
-    println!("🔀 Merging {} to main...", branch_name);
+    // Print status line without newline, then complete after operations
+    use std::io::Write;
+    print!("> session {} ... ", session_id);
+    std::io::stdout().flush().ok();
 
     // Merge the branch to main
     worktree.merge_to_main(&branch_name)?;
-
-    println!("🧹 Cleaning up worktree and branch...");
 
     // Remove worktree and branch
     worktree.remove(&session)?;
@@ -478,7 +479,7 @@ fn cmd_accept(session_id: &str) -> Result<()> {
     // Remove session metadata
     session.delete(&repo_root)?;
 
-    println!("✅ Session {} accepted and merged to main", session_id);
+    println!("[\x1b[1;32mmerged\x1b[0m]");
 
     Ok(())
 }
@@ -499,7 +500,10 @@ fn cmd_discard(session_id: &str) -> Result<()> {
 
     let worktree = GitWorktree::new(&repo_root);
 
-    println!("🗑️  Discarding session {}...", session_id);
+    // Print status line without newline, then complete after operations
+    use std::io::Write;
+    print!("> session {} ... ", session_id);
+    std::io::stdout().flush().ok();
 
     // Remove worktree and branch
     worktree.remove(&session)?;
@@ -507,7 +511,7 @@ fn cmd_discard(session_id: &str) -> Result<()> {
     // Remove session metadata
     session.delete(&repo_root)?;
 
-    println!("✅ Session {} discarded", session_id);
+    println!("[\x1b[1;33mdiscarded\x1b[0m]");
 
     Ok(())
 }
