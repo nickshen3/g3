@@ -584,6 +584,10 @@ impl UiWriter for ConsoleUiWriter {
 
     fn print_todo_compact(&self, content: Option<&str>, is_write: bool) -> bool {
         let tool_name = if is_write { "todo_write" } else { "todo_read" };
+        // Clear any streaming hint that might be showing
+        // This ensures we don't duplicate the tool name on the line
+        self.hint_state.handle_hint(ToolParsingHint::Complete);
+
         let is_agent_mode = self.hint_state.is_agent_mode.load(Ordering::Relaxed);
         let tool_color = if is_agent_mode { TOOL_COLOR_AGENT } else { TOOL_COLOR_NORMAL };
 
