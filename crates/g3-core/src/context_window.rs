@@ -713,7 +713,7 @@ Format this as a detailed but concise summary that can be used to resume the con
                 ThinScope::All => " (full)",
             };
             let msg = format!(
-                "\x1b[1;32mg3:\x1b[0m thinning context{} ... {}% ... \x1b[1;32m[no changes]\x1b[0m",
+                "\x1b[1;32mg3:\x1b[0m thinning context{} ... {}% ... \x1b[38;5;208m[no changes]\x1b[0m",
                 scope_desc, current_percentage
             );
             return (msg, 0);
