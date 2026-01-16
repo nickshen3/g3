@@ -338,16 +338,16 @@ async fn handle_command<W: UiWriter>(
             Ok(true)
         }
         "/compact" => {
-            output.print("🗜️ Triggering manual compaction...");
+            output.print("g3: compacting session ...");
             match agent.force_compact().await {
                 Ok(true) => {
-                    output.print("✅ Compaction completed successfully");
+                    output.print("g3: compacting session ... done");
                 }
                 Ok(false) => {
-                    output.print("⚠️ Compaction failed");
+                    output.print("g3: compacting session ... failed");
                 }
                 Err(e) => {
-                    output.print(&format!("❌ Error during compaction: {}", e));
+                    output.print(&format!("g3: compacting session ... error: {}", e));
                 }
             }
             Ok(true)

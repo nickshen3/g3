@@ -893,7 +893,7 @@ impl<W: UiWriter> Agent<W> {
         // Check if we need to do 90% auto-compaction
         if self.pending_90_compaction {
             self.ui_writer
-                .print_context_status("\n⚡ Context window reached 90% - auto-compacting...\n");
+                .print_context_status("\ng3: compacting session ...\n");
             if let Err(e) = self.force_compact().await {
                 warn!("Failed to auto-compact at 90%: {}", e);
             } else {
@@ -982,10 +982,7 @@ impl<W: UiWriter> Agent<W> {
 
         debug!("Manual compaction triggered");
 
-        self.ui_writer.print_context_status(&format!(
-            "\n🗜️ Manual compaction requested (current usage: {}%)...",
-            self.context_window.percentage_used() as u32
-        ));
+        // Note: Status messages are now handled by the CLI layer
 
         let provider = self.providers.get(None)?;
         let provider_name = provider.name().to_string();
@@ -1016,8 +1013,7 @@ impl<W: UiWriter> Agent<W> {
         .await?;
 
         if result.success {
-            self.ui_writer
-                .print_context_status("✅ Context compacted successfully.\n");
+            // Note: Success message is now handled by the CLI layer
             self.compaction_events.push(result.chars_saved);
             Ok(true)
         } else {
@@ -1076,11 +1072,11 @@ impl<W: UiWriter> Agent<W> {
 
             if !self.context_window.should_compact() {
                 self.ui_writer
-                    .print_context_status("✅ Thinning resolved capacity issue. Continuing...\n");
+                    .print_context_status("g3: thinning resolved capacity issue\n");
                 return Ok(false);
             }
             self.ui_writer
-                .print_context_status("⚠️ Thinning insufficient. Proceeding with compaction...\n");
+                .print_context_status("g3: thinning insufficient, compacting ...\n");
         }
 
         // Compaction still needed
@@ -1091,7 +1087,7 @@ impl<W: UiWriter> Agent<W> {
         use crate::compaction::{perform_compaction, CompactionConfig};
 
         self.ui_writer.print_context_status(&format!(
-            "\n🗜️ Context window reaching capacity ({}%). Compacting...",
+            "\ng3: compacting session ({}%) ...",
             self.context_window.percentage_used() as u32
         ));
 
@@ -1120,7 +1116,7 @@ impl<W: UiWriter> Agent<W> {
 
         if result.success {
             self.ui_writer
-                .print_context_status("✅ Context compacted successfully. Continuing...\n");
+                .print_context_status("g3: compacting session ... done\n");
             self.compaction_events.push(result.chars_saved);
             request.messages = self.context_window.conversation_history.clone();
             return Ok(true);
