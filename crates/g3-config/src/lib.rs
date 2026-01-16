@@ -112,7 +112,7 @@ pub struct AgentConfig {
 }
 
 fn default_fallback_max_tokens() -> usize {
-    8192
+    32000
 }
 fn default_true() -> bool {
     true
@@ -185,7 +185,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             max_context_length: None,
-            fallback_default_max_tokens: 8192,
+            fallback_default_max_tokens: 32000,
             enable_streaming: true,
             timeout_seconds: 120,
             auto_compact: true,
@@ -234,7 +234,7 @@ impl Default for Config {
             },
             agent: AgentConfig {
                 max_context_length: None,
-                fallback_default_max_tokens: 8192,
+                fallback_default_max_tokens: 32000,
                 enable_streaming: true,
                 timeout_seconds: 60,
                 auto_compact: true,

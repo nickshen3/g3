@@ -66,14 +66,16 @@ pub fn get_thinking_budget_tokens(config: &Config, provider_name: &str) -> Optio
 pub fn resolve_max_tokens(config: &Config, provider_name: &str) -> u32 {
     let (provider_type, _) = parse_provider_ref(provider_name);
     
-    let base = match provider_type {
-        "databricks" => get_max_tokens(config, provider_name)
-            .or(Some(config.agent.fallback_default_max_tokens as u32))
-            .unwrap_or(32000),
-        _ => get_max_tokens(config, provider_name)
-            .or(Some(config.agent.fallback_default_max_tokens as u32))
-            .unwrap_or(16000),
+    // Use provider-specific defaults that match the provider implementations
+    // These defaults should match what the providers use internally
+    let provider_default = match provider_type {
+        "anthropic" => 32000,   // Anthropic provider defaults to 32768, we use 32000
+        "databricks" => 32000,  // Databricks is passthru to Anthropic, match its defaults
+        "openai" => 32000,      // OpenAI models support large outputs
+        "embedded" => 2048,     // Embedded provider defaults to 2048
+        _ => 16000,             // Generic fallback
     };
+    let base = get_max_tokens(config, provider_name).unwrap_or(provider_default);
     
     // For Anthropic with thinking enabled, ensure max_tokens is sufficient
     // Anthropic requires: max_tokens > thinking.budget_tokens

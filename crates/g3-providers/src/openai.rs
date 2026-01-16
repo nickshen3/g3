@@ -393,7 +393,7 @@ impl LLMProvider for OpenAIProvider {
     }
 
     fn max_tokens(&self) -> u32 {
-        self.max_tokens.unwrap_or(16000)
+        self.max_tokens.unwrap_or(32000)
     }
 
     fn temperature(&self) -> f32 {

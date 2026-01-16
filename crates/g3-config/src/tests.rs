@@ -44,7 +44,7 @@ model_path = "test.gguf"
 model_type = "llama"
 
 [agent]
-fallback_default_max_tokens = 8192
+fallback_default_max_tokens = 32000
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true
@@ -88,7 +88,7 @@ token = "test-token"
 model = "test-model"
 
 [agent]
-fallback_default_max_tokens = 8192
+fallback_default_max_tokens = 32000
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true
@@ -132,7 +132,7 @@ token = "test-token"
 model = "test-model"
 
 [agent]
-fallback_default_max_tokens = 8192
+fallback_default_max_tokens = 32000
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true
@@ -169,7 +169,7 @@ api_key = "test-key"
 model = "claude-3"
 
 [agent]
-fallback_default_max_tokens = 8192
+fallback_default_max_tokens = 32000
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true
@@ -210,7 +210,7 @@ model = "claude-opus"
 thinking_budget_tokens = 16000
 
 [agent]
-fallback_default_max_tokens = 8192
+fallback_default_max_tokens = 32000
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true
@@ -248,7 +248,7 @@ token = "test-token"
 model = "test-model"
 
 [agent]
-fallback_default_max_tokens = 8192
+fallback_default_max_tokens = 32000
 enable_streaming = true
 timeout_seconds = 60
 auto_compact = true

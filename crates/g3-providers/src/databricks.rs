@@ -227,7 +227,7 @@ impl DatabricksProvider {
             host: host.trim_end_matches('/').to_string(),
             auth: DatabricksAuth::token(token),
             model,
-            max_tokens: max_tokens.unwrap_or(50000),
+            max_tokens: max_tokens.unwrap_or(32000),
             temperature: temperature.unwrap_or(0.1),
         })
     }
@@ -254,7 +254,7 @@ impl DatabricksProvider {
             host: host.trim_end_matches('/').to_string(),
             auth: DatabricksAuth::token(token),
             model,
-            max_tokens: max_tokens.unwrap_or(50000),
+            max_tokens: max_tokens.unwrap_or(32000),
             temperature: temperature.unwrap_or(0.1),
         })
     }
@@ -281,7 +281,7 @@ impl DatabricksProvider {
             host: host.trim_end_matches('/').to_string(),
             auth: DatabricksAuth::oauth(host.clone()),
             model,
-            max_tokens: max_tokens.unwrap_or(50000),
+            max_tokens: max_tokens.unwrap_or(32000),
             temperature: temperature.unwrap_or(0.1),
         })
     }
@@ -307,7 +307,7 @@ impl DatabricksProvider {
             host: host.trim_end_matches('/').to_string(),
             auth: DatabricksAuth::oauth(host.clone()),
             model,
-            max_tokens: max_tokens.unwrap_or(50000),
+            max_tokens: max_tokens.unwrap_or(32000),
             temperature: temperature.unwrap_or(0.1),
         })
     }
