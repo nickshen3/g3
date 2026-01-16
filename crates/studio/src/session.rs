@@ -211,3 +211,101 @@ impl Session {
 fn default_session_type() -> SessionType {
     SessionType::OneShot
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_new_session_has_short_id() {
+        let session = Session::new("carmack");
+        assert_eq!(session.id.len(), 8);
+        assert_eq!(session.agent, "carmack");
+        assert_eq!(session.status, SessionStatus::Running);
+        assert_eq!(session.session_type, SessionType::OneShot);
+    }
+
+    #[test]
+    fn test_new_interactive_session() {
+        let session = Session::new_interactive();
+        assert_eq!(session.id.len(), 8);
+        assert_eq!(session.agent, "interactive");
+        assert_eq!(session.status, SessionStatus::Running);
+        assert_eq!(session.session_type, SessionType::Interactive);
+    }
+
+    #[test]
+    fn test_branch_name_format() {
+        let session = Session::new("fowler");
+        let branch = session.branch_name();
+        assert!(branch.starts_with("sessions/fowler/"));
+        assert_eq!(branch, format!("sessions/fowler/{}", session.id));
+    }
+
+    #[test]
+    fn test_session_save_and_load() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let worktree_path = repo_root.join("worktree");
+
+        let session = Session::new("hopper");
+        session.save(repo_root, &worktree_path).unwrap();
+
+        let loaded = Session::load(repo_root, &session.id).unwrap();
+        assert_eq!(loaded.id, session.id);
+        assert_eq!(loaded.agent, "hopper");
+        assert_eq!(loaded.worktree_path, Some(worktree_path));
+    }
+
+    #[test]
+    fn test_session_mark_complete() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let worktree_path = repo_root.join("worktree");
+
+        let session = Session::new("lamport");
+        session.save(repo_root, &worktree_path).unwrap();
+        session.mark_complete(repo_root, true).unwrap();
+
+        let loaded = Session::load(repo_root, &session.id).unwrap();
+        assert_eq!(loaded.status, SessionStatus::Complete);
+    }
+
+    #[test]
+    fn test_session_mark_paused() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let worktree_path = repo_root.join("worktree");
+
+        let session = Session::new_interactive();
+        session.save(repo_root, &worktree_path).unwrap();
+        session.mark_paused(repo_root).unwrap();
+
+        let loaded = Session::load(repo_root, &session.id).unwrap();
+        assert_eq!(loaded.status, SessionStatus::Paused);
+    }
+
+    #[test]
+    fn test_list_empty_sessions() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions = Session::list_all(temp_dir.path()).unwrap();
+        assert!(sessions.is_empty());
+    }
+
+    #[test]
+    fn test_backwards_compatibility_no_session_type() {
+        // Old sessions don't have session_type field - should default to OneShot
+        let json = r#"{
+            "id": "abc12345",
+            "agent": "carmack",
+            "created_at": "2025-01-15T10:00:00Z",
+            "status": "Complete",
+            "pid": null,
+            "worktree_path": null
+        }"#;
+
+        let session: Session = serde_json::from_str(json).unwrap();
+        assert_eq!(session.session_type, SessionType::OneShot);
+    }
+}

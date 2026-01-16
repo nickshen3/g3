@@ -17,3 +17,6 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 termimad = "0.31"
+
+[dev-dependencies]
+tempfile = "3"
