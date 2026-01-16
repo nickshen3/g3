@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Core engine for G3 AI coding agent"
 
+[features]
+test-support = []
+
 [dependencies]
 g3-providers = { path = "../g3-providers" }
 g3-config = { path = "../g3-config" }

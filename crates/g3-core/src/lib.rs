@@ -180,6 +180,64 @@ impl<W: UiWriter> Agent<W> {
         .await
     }
 
+    /// Create a new agent with a custom provider registry (for testing).
+    /// This allows tests to inject mock providers without needing real API credentials.
+    /// 
+    /// **Note**: This method is intended for testing only. Do not use in production code.
+    #[doc(hidden)]
+    pub async fn new_for_test(
+        config: Config,
+        ui_writer: W,
+        providers: ProviderRegistry,
+    ) -> Result<Self> {
+        use crate::context_window::ContextWindow;
+        use crate::prompts::get_system_prompt_for_native;
+        use g3_providers::{Message, MessageRole};
+
+        // Use a reasonable default context length for tests
+        let context_length = config.agent.max_context_length.unwrap_or(200_000);
+        let mut context_window = ContextWindow::new(context_length);
+
+        // Add system prompt
+        let system_prompt = get_system_prompt_for_native();
+        let system_message = Message::new(MessageRole::System, system_prompt);
+        context_window.add_message(system_message);
+
+        Ok(Self {
+            providers,
+            context_window,
+            auto_compact: false,
+            pending_90_compaction: false,
+            thinning_events: Vec::new(),
+            compaction_events: Vec::new(),
+            first_token_times: Vec::new(),
+            config,
+            session_id: None,
+            tool_call_metrics: Vec::new(),
+            ui_writer,
+            todo_content: std::sync::Arc::new(tokio::sync::RwLock::new(String::new())),
+            is_autonomous: false,
+            quiet: true,
+            computer_controller: None,
+            webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            tool_call_count: 0,
+            tool_calls_this_turn: Vec::new(),
+            requirements_sha: None,
+            working_dir: None,
+            background_process_manager: std::sync::Arc::new(
+                background_process::BackgroundProcessManager::new(
+                    paths::get_background_processes_dir(),
+                ),
+            ),
+            pending_images: Vec::new(),
+            is_agent_mode: false,
+            agent_name: None,
+            auto_memory: false,
+            acd_enabled: false,
+        })
+    }
+
     async fn new_with_mode(
         config: Config,
         ui_writer: W,
