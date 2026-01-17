@@ -112,7 +112,8 @@ pub fn load_config_with_cli_overrides(cli: &Cli) -> Result<Config> {
     }
 
     // Apply chrome-headless flag override
-    if cli.chrome_headless {
+    // Only apply chrome-headless if safari is not explicitly set
+    if cli.chrome_headless && !cli.safari {
         config.webdriver.enabled = true;
         config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
 
