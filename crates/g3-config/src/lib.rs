@@ -179,6 +179,10 @@ pub struct WebDriverConfig {
     pub chromedriver_binary: Option<String>,
     #[serde(default)]
     pub browser: WebDriverBrowser,
+    #[serde(default)]
+    /// Keep chromedriver running after session ends for faster subsequent startups
+    /// When true, chromedriver process is not killed on webdriver_quit
+    pub persistent_chrome: bool,
 }
 
 impl Default for AgentConfig {

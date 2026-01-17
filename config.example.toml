@@ -80,3 +80,4 @@ model = "claude-sonnet-4-5"
 # browser = "chrome-headless"     # Default. Alternative: "safari"
 # chrome_binary = "/path/to/chrome"        # Optional: custom Chrome path
 # chromedriver_binary = "/path/to/driver"  # Optional: custom ChromeDriver path
+# persistent_chrome = true                  # Keep chromedriver running between sessions for faster startup

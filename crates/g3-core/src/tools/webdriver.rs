@@ -12,6 +12,25 @@ use crate::ToolCall;
 use super::executor::ToolContext;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Port checking helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Check if chromedriver is already running on the given port.
+async fn check_chromedriver_running(port: u16) -> bool {
+    // Try to connect to the chromedriver status endpoint
+    let url = format!("http://localhost:{}/status", port);
+    match reqwest::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_millis(500))
+        .send()
+        .await
+    {
+        Ok(response) => response.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Session helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,6 +137,32 @@ async fn start_safari_driver<W: UiWriter>(ctx: &ToolContext<'_, W>) -> Result<St
 
 async fn start_chrome_driver<W: UiWriter>(ctx: &ToolContext<'_, W>) -> Result<String> {
     let port = ctx.config.webdriver.chrome_port;
+
+    // Check if chromedriver is already running on this port
+    let already_running = check_chromedriver_running(port).await;
+    
+    if already_running {
+        // Try to connect to existing chromedriver
+        let driver_result = match &ctx.config.webdriver.chrome_binary {
+            Some(binary) => {
+                g3_computer_control::ChromeDriver::with_port_headless_and_binary(port, Some(binary))
+                    .await
+            }
+            None => g3_computer_control::ChromeDriver::with_port_headless(port).await,
+        };
+
+        if let Ok(driver) = driver_result {
+            let session =
+                std::sync::Arc::new(tokio::sync::Mutex::new(WebDriverSession::Chrome(driver)));
+            *ctx.webdriver_session.write().await = Some(session);
+            // Don't store process - we didn't start it
+            return Ok(
+                "✅ WebDriver session started (reusing existing chromedriver)."
+                    .to_string(),
+            );
+        }
+        // If connection failed, fall through to start a new one
+    }
 
     // Use configured chromedriver binary or fall back to 'chromedriver' in PATH
     let chromedriver_cmd = ctx
@@ -599,22 +644,33 @@ pub async fn execute_webdriver_quit<W: UiWriter>(
                 Ok(_) => {
                     debug!("WebDriver session closed successfully");
 
-                    // Kill the driver process
-                    if let Some(mut process) = ctx.webdriver_process.write().await.take() {
+                    // Kill the driver process (unless persistent_chrome is enabled for Chrome)
+                    use g3_config::WebDriverBrowser;
+                    let is_chrome = matches!(&ctx.config.webdriver.browser, WebDriverBrowser::ChromeHeadless);
+                    let keep_running = is_chrome && ctx.config.webdriver.persistent_chrome;
+                    
+                    if keep_running {
+                        debug!("Keeping chromedriver running (persistent_chrome enabled)");
+                        // Still take the process handle but don't kill it
+                        let _ = ctx.webdriver_process.write().await.take();
+                    } else if let Some(mut process) = ctx.webdriver_process.write().await.take() {
                         if let Err(e) = process.kill().await {
                             warn!("Failed to kill driver process: {}", e);
                         } else {
                             debug!("Driver process terminated");
                         }
-                    }
+                        }
 
                     // Return appropriate message based on browser type
-                    use g3_config::WebDriverBrowser;
                     let driver_name = match &ctx.config.webdriver.browser {
                         WebDriverBrowser::Safari => "safaridriver",
                         WebDriverBrowser::ChromeHeadless => "chromedriver",
                     };
-                    Ok(format!("✅ WebDriver session closed and {} stopped", driver_name))
+                    if keep_running {
+                        Ok(format!("✅ WebDriver session closed ({} still running for reuse)", driver_name))
+                    } else {
+                        Ok(format!("✅ WebDriver session closed and {} stopped", driver_name))
+                    }
                 }
                 Err(e) => Ok(format!("❌ Failed to quit WebDriver: {}", e)),
             }
