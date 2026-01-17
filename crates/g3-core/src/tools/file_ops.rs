@@ -738,9 +738,9 @@ pub fn print_imgcat(
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or(name);
-    // iTerm2 inline image protocol (single space prefix)
+    // iTerm2 inline image protocol with preserveAspectRatio (single space prefix)
     print!(
-        " \x1b]1337;File=inline=1;height={};name={}:{}\x07\n",
+        " \x1b]1337;File=inline=1;height={};preserveAspectRatio=1;name={}:{}\x07\n",
         max_height, name, encoded
     );
     // Print dimmed info line with filename only (no │ prefix)
