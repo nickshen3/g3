@@ -36,8 +36,10 @@ pub async fn run_interactive<W: UiWriter>(
       if let Ok(Some(continuation)) = g3_core::load_continuation() {
         // Print session info and prompt on same line (no newline)
         print!(
-            "\n >> session in progress: {} | {:.1}% used | resume? [y/n] ",
+            "\n >> session in progress: {}{}{} | {:.1}% used | resume? [y/n] ",
+            SetForegroundColor(Color::Cyan),
             &continuation.session_id[..continuation.session_id.len().min(20)],
+            ResetColor,
             continuation.context_percentage
         );
         use std::io::Write;
