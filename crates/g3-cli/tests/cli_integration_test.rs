@@ -243,3 +243,65 @@ fn test_quiet_option_accepted() {
         "--quiet option should be recognized"
     );
 }
+
+// =============================================================================
+// Test: Include prompt option is accepted
+// =============================================================================
+
+#[test]
+fn test_include_prompt_option_accepted() {
+    let output = Command::new(get_g3_binary())
+        .args(["--include-prompt", "/tmp/prompt.md", "--help"])
+        .output()
+        .expect("Failed to execute g3 with include-prompt option");
+
+    assert!(
+        output.status.success(),
+        "--include-prompt option should be recognized"
+    );
+}
+
+#[test]
+fn test_include_prompt_in_help_output() {
+    let output = Command::new(get_g3_binary())
+        .arg("--help")
+        .output()
+        .expect("Failed to execute g3 --help");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--include-prompt"),
+        "Help output should mention --include-prompt flag"
+    );
+}
+
+// =============================================================================
+// Test: No auto-memory option is accepted
+// =============================================================================
+
+#[test]
+fn test_no_auto_memory_option_accepted() {
+    let output = Command::new(get_g3_binary())
+        .args(["--no-auto-memory", "--help"])
+        .output()
+        .expect("Failed to execute g3 with no-auto-memory option");
+
+    assert!(
+        output.status.success(),
+        "--no-auto-memory option should be recognized"
+    );
+}
+
+#[test]
+fn test_no_auto_memory_in_help_output() {
+    let output = Command::new(get_g3_binary())
+        .arg("--help")
+        .output()
+        .expect("Failed to execute g3 --help");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--no-auto-memory"),
+        "Help output should mention --no-auto-memory flag"
+    );
+}
