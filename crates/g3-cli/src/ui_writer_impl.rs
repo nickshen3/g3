@@ -213,7 +213,8 @@ impl UiWriter for ConsoleUiWriter {
 
     fn print_g3_progress(&self, message: &str) {
         use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
-        println!(
+        use std::io::Write;
+        print!(
             "{}{}g3:{}{} {} ...",
             SetAttribute(Attribute::Bold),
             SetForegroundColor(Color::Green),
@@ -221,29 +222,23 @@ impl UiWriter for ConsoleUiWriter {
             SetAttribute(Attribute::Reset),
             message
         );
+        let _ = std::io::stdout().flush();
     }
 
     fn print_g3_status(&self, message: &str, status: &str) {
-        use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
+        use crossterm::style::{Color, ResetColor, SetForegroundColor};
+        let _ = message; // unused now - progress already printed the message
         let status_colored = if status.starts_with("error") || status == "failed" {
             format!(
-                "{}[{}]{}",
+                " {}[{}]{}",
                 SetForegroundColor(Color::Red),
                 status,
                 ResetColor
             )
         } else {
-            format!("[{}]", status)
+            format!(" [{}]", status)
         };
-        println!(
-            "{}{}g3:{}{} {} ... {}",
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(Color::Green),
-            ResetColor,
-            SetAttribute(Attribute::Reset),
-            message,
-            status_colored
-        );
+        println!("{}", status_colored);
     }
 
     fn print_context_thinning(&self, message: &str) {
