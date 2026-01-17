@@ -114,4 +114,8 @@ pub struct Cli {
     /// Enable aggressive context dehydration (save context to disk on compaction)
     #[arg(long)]
     pub acd: bool,
+
+    /// Include additional prompt content from a file (appended before memory)
+    #[arg(long, value_name = "PATH")]
+    pub include_prompt: Option<PathBuf>,
 }
