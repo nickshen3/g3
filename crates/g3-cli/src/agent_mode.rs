@@ -7,7 +7,7 @@ use tracing::debug;
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
-use crate::project_files::{combine_project_content, read_agents_config, read_project_memory, read_project_readme};
+use crate::project_files::{combine_project_content, read_agents_config, read_include_prompt, read_project_memory, read_project_readme};
 use crate::language_prompts::{get_language_prompts_for_workspace, get_agent_language_prompts_for_workspace_with_langs};
 use crate::simple_output::SimpleOutput;
 use crate::embedded_agents::load_agent_prompt;
@@ -25,6 +25,7 @@ pub async fn run_agent_mode(
     chrome_headless: bool,
     safari: bool,
     chat: bool,
+    include_prompt_path: Option<PathBuf>,
 ) -> Result<()> {
     use g3_core::find_incomplete_agent_session;
     use g3_core::get_agent_system_prompt;
@@ -186,12 +187,16 @@ pub async fn run_agent_mode(
         system_prompt
     };
 
+    // Read include prompt if specified
+    let include_prompt = read_include_prompt(include_prompt_path.as_deref());
+
     // Combine all content for the agent's context
     let combined_content = combine_project_content(
         agents_content_opt,
         readme_content_opt,
         memory_content_opt,
         language_content,
+        include_prompt,
         &workspace_dir,
     );
 
