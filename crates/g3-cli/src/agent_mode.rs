@@ -26,6 +26,7 @@ pub async fn run_agent_mode(
     safari: bool,
     chat: bool,
     include_prompt_path: Option<PathBuf>,
+    no_auto_memory: bool,
 ) -> Result<()> {
     use g3_core::find_incomplete_agent_session;
     use g3_core::get_agent_system_prompt;
@@ -210,9 +211,9 @@ pub async fn run_agent_mode(
     // Set agent mode for session tracking
     agent.set_agent_mode(agent_name);
 
-    // Auto-memory is always enabled in agent mode
+    // Auto-memory is enabled by default in agent mode (unless --no-auto-memory is set)
     // This prompts the LLM to save discoveries to project memory after each turn
-    agent.set_auto_memory(true);
+    agent.set_auto_memory(!no_auto_memory);
 
     // If resuming a session, restore context and TODO
     let initial_task = if let Some(ref incomplete_session) = resuming_session {

@@ -90,6 +90,7 @@ pub async fn run() -> Result<()> {
             cli.safari,
             cli.chat,
             cli.include_prompt.clone(),
+            cli.no_auto_memory,
         )
         .await;
     }

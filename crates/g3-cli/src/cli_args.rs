@@ -118,4 +118,8 @@ pub struct Cli {
     /// Include additional prompt content from a file (appended before memory)
     #[arg(long, value_name = "PATH")]
     pub include_prompt: Option<PathBuf>,
+
+    /// Disable automatic memory update reminder at end of agent mode
+    #[arg(long)]
+    pub no_auto_memory: bool,
 }
