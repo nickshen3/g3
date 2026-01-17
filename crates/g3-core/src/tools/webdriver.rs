@@ -644,13 +644,13 @@ pub async fn execute_webdriver_quit<W: UiWriter>(
                 Ok(_) => {
                     debug!("WebDriver session closed successfully");
 
-                    // Kill the driver process (unless persistent_chrome is enabled for Chrome)
+                    // For Chrome, always keep chromedriver running for faster subsequent startups
+                    // For Safari, kill safaridriver as it doesn't benefit from persistence
                     use g3_config::WebDriverBrowser;
                     let is_chrome = matches!(&ctx.config.webdriver.browser, WebDriverBrowser::ChromeHeadless);
-                    let keep_running = is_chrome && ctx.config.webdriver.persistent_chrome;
                     
-                    if keep_running {
-                        debug!("Keeping chromedriver running (persistent_chrome enabled)");
+                    if is_chrome {
+                        debug!("Keeping chromedriver running for reuse");
                         // Still take the process handle but don't kill it
                         let _ = ctx.webdriver_process.write().await.take();
                     } else if let Some(mut process) = ctx.webdriver_process.write().await.take() {
@@ -659,17 +659,13 @@ pub async fn execute_webdriver_quit<W: UiWriter>(
                         } else {
                             debug!("Driver process terminated");
                         }
-                        }
+                    }
 
                     // Return appropriate message based on browser type
-                    let driver_name = match &ctx.config.webdriver.browser {
-                        WebDriverBrowser::Safari => "safaridriver",
-                        WebDriverBrowser::ChromeHeadless => "chromedriver",
-                    };
-                    if keep_running {
-                        Ok(format!("✅ WebDriver session closed ({} still running for reuse)", driver_name))
+                    if is_chrome {
+                        Ok("✅ WebDriver session closed (chromedriver still running for reuse)".to_string())
                     } else {
-                        Ok(format!("✅ WebDriver session closed and {} stopped", driver_name))
+                        Ok("✅ WebDriver session closed and safaridriver stopped".to_string())
                     }
                 }
                 Err(e) => Ok(format!("❌ Failed to quit WebDriver: {}", e)),
