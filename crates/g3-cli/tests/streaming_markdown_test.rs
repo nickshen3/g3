@@ -1910,7 +1910,7 @@ fn test_code_fence_no_trailing_newline() {
     let mut fmt = StreamingMarkdownFormatter::new(skin);
     
     // Note: no newline after closing ```
-    let input = "Done!\n\n```\n>> agent mode | fowler\n-> ~/src/g3\n   ✓ README | ✓ AGENTS.md | ✓ Memory\n```";
+    let input = "Done!\n\n```\n>> agent mode | fowler\n-> ~/src/g3\n   ✓ README  ✓ AGENTS.md  ✓ Memory\n```";
     
     let mut output = String::new();
     for ch in input.chars() {

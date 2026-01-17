@@ -139,29 +139,36 @@ pub async fn run_agent_mode(
     let readme_content_opt = read_project_readme(&workspace_dir);
     let memory_content_opt = read_project_memory(&workspace_dir);
 
-    // Show what was loaded
-    let readme_status = if readme_content_opt.is_some() {
-        "✓"
-    } else {
-        "·"
-    };
-    let agents_status = if agents_content_opt.is_some() {
-        "✓"
-    } else {
-        "·"
-    };
-    let memory_status = if memory_content_opt.is_some() {
-        "✓"
-    } else {
-        "·"
-    };
-    // Always print status line (part of minimal output)
-    print!(
-        "{}   {} README  {} AGENTS.md  {} Memory{}\n",
-        crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey),
-        readme_status, agents_status, memory_status,
-        crossterm::style::ResetColor
-    );
+    // Read include prompt early so we can show it in the status line
+    let include_prompt = read_include_prompt(include_prompt_path.as_deref());
+
+    // Build status line showing only what was loaded (in load order)
+    let mut loaded_items: Vec<String> = Vec::new();
+    if readme_content_opt.is_some() {
+        loaded_items.push("README".to_string());
+    }
+    if agents_content_opt.is_some() {
+        loaded_items.push("AGENTS.md".to_string());
+    }
+    if let Some(path) = &include_prompt_path {
+        if include_prompt.is_some() {
+            let filename = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "prompt".to_string());
+            loaded_items.push(filename);
+        }
+    }
+    if memory_content_opt.is_some() {
+        loaded_items.push("Memory".to_string());
+    }
+    // Print status line only if something was loaded
+    if !loaded_items.is_empty() {
+        let status_str = loaded_items.iter().map(|s| format!("✓ {}", s)).collect::<Vec<_>>().join("  ");
+        print!(
+            "{}   {}{}\n",
+            crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey),
+            status_str,
+            crossterm::style::ResetColor
+        );
+    }
 
     // Get language-specific prompts (same mechanism as normal mode)
     let language_content = get_language_prompts_for_workspace(&workspace_dir);
@@ -187,9 +194,6 @@ pub async fn run_agent_mode(
     } else {
         system_prompt
     };
-
-    // Read include prompt if specified
-    let include_prompt = read_include_prompt(include_prompt_path.as_deref());
 
     // Combine all content for the agent's context
     let combined_content = combine_project_content(

@@ -102,11 +102,8 @@ pub async fn run_interactive<W: UiWriter>(
             // Check what was loaded
             let has_agents = content.contains("Agent Configuration");
             let has_readme = content.contains("Project README");
-            let has_memory = content.contains("Project Memory");
-
-            let readme_status = if has_readme { "✓" } else { "·" };
-            let agents_status = if has_agents { "✓" } else { "·" };
-            let memory_status = if has_memory { "✓" } else { "·" };
+            let has_include_prompt = content.contains("Included Prompt");
+            let has_memory = content.contains("=== Project Memory");
 
             // Extract project name if README is loaded
             let project_name = if has_readme {
@@ -119,12 +116,31 @@ pub async fn run_interactive<W: UiWriter>(
             if let Some(name) = project_name {
                 print!("{}>> {}{}\n", SetForegroundColor(Color::DarkGrey), name, ResetColor);
             }
-            print!(
-                "{}   {} README | {} AGENTS.md | {} Memory{}\n",
-                SetForegroundColor(Color::DarkGrey),
-                readme_status, agents_status, memory_status,
-                ResetColor
-            );
+
+            // Build status line showing only what was loaded (in load order)
+            let mut loaded_items: Vec<&str> = Vec::new();
+            if has_readme {
+                loaded_items.push("README");
+            }
+            if has_agents {
+                loaded_items.push("AGENTS.md");
+            }
+            if has_include_prompt {
+                loaded_items.push("prompt");
+            }
+            if has_memory {
+                loaded_items.push("Memory");
+            }
+            // Print status line only if something was loaded
+            if !loaded_items.is_empty() {
+                let status_str = loaded_items.iter().map(|s| format!("✓ {}", s)).collect::<Vec<_>>().join("  ");
+                print!(
+                    "{}   {}{}\n",
+                    SetForegroundColor(Color::DarkGrey),
+                    status_str,
+                    ResetColor
+                );
+            }
         }
 
         // Display workspace path
