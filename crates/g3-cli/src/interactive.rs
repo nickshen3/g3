@@ -34,13 +34,14 @@ pub async fn run_interactive<W: UiWriter>(
     // Agent mode with --chat should start fresh without prompting
     if !new_session && !from_agent_mode {
       if let Ok(Some(continuation)) = g3_core::load_continuation() {
-        output.print("");
-        output.print(&format!(
-            " >> session in progress: {} | {:.1}% used",
+        // Print session info and prompt on same line (no newline)
+        print!(
+            "\n >> session in progress: {} | {:.1}% used | resume? [y/n] ",
             &continuation.session_id[..continuation.session_id.len().min(20)],
             continuation.context_percentage
-        ));
-        output.print("    > resume? [Y/n] ");
+        );
+        use std::io::Write;
+        std::io::stdout().flush()?;
 
         // Read user input
         let mut input = String::new();
@@ -51,24 +52,23 @@ pub async fn run_interactive<W: UiWriter>(
             // Resume the session
             match agent.restore_from_continuation(&continuation) {
                 Ok(true) => {
-                    output.print("✅ Full context restored from previous session");
+                    // Print bold green [done]
+                    println!("{}... resuming ... [done]{}", SetForegroundColor(Color::Green), ResetColor);
                 }
                 Ok(false) => {
-                    output.print("✅ Session resumed with summary (context was > 80%)");
+                    println!("{}... resuming ... [done]{}", SetForegroundColor(Color::Green), ResetColor);
                 }
                 Err(e) => {
-                    output.print(&format!("⚠️ Could not restore session: {}", e));
-                    output.print("Starting fresh session instead.");
+                    println!("{}... failed: {}{}", SetForegroundColor(Color::Yellow), e, ResetColor);
                     // Clear the invalid continuation
                     let _ = g3_core::clear_continuation();
                 }
             }
         } else {
             // User declined, clear the continuation
-            output.print("🧹 Starting fresh session...");
+            println!("{}... starting fresh{}", SetForegroundColor(Color::DarkGrey), ResetColor);
             let _ = g3_core::clear_continuation();
         }
-        output.print("");
       }
     }
 
