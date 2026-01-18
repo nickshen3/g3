@@ -554,30 +554,34 @@ async fn handle_command<W: UiWriter>(
                             current_marker
                         ));
                     }
-                    output.print("");
-                    output.print("Enter session number to resume (or press Enter to cancel):");
 
+                    output.print_inline("\nSession number to resume (Enter to cancel): ");
                     // Read user selection
-                    if let Ok(selection) = rl.readline("> ") {
+                    if let Ok(selection) = rl.readline("") {
                         let selection = selection.trim();
                         if selection.is_empty() {
-                            output.print("Resume cancelled.");
+                            output.print("Cancelled.");
                         } else if let Ok(num) = selection.parse::<usize>() {
                             if num >= 1 && num <= sessions.len() {
                                 let selected = &sessions[num - 1];
-                                output.print(&format!(
-                                    "🔄 Switching to session: {}",
-                                    selected.session_id
-                                ));
                                 match agent.switch_to_session(selected) {
                                     Ok(true) => {
-                                        output.print("✅ Full context restored from session.")
+                                        output.print_inline(&format!(
+                                            "... resuming \x1b[36m{}\x1b[0m \x1b[1;32m[done]\x1b[0m\n",
+                                            selected.session_id
+                                        ));
                                     }
                                     Ok(false) => {
-                                        output.print("✅ Session restored from summary.")
+                                        output.print_inline(&format!(
+                                            "... resuming \x1b[36m{}\x1b[0m (summary) \x1b[1;32m[done]\x1b[0m\n",
+                                            selected.session_id
+                                        ));
                                     }
                                     Err(e) => {
-                                        output.print(&format!("❌ Error restoring session: {}", e))
+                                        output.print_inline(&format!(
+                                            "... resuming \x1b[36m{}\x1b[0m \x1b[1;31m[error: {}]\x1b[0m\n",
+                                            selected.session_id, e
+                                        ));
                                     }
                                 }
                             } else {

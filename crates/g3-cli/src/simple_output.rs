@@ -13,6 +13,12 @@ impl SimpleOutput {
         println!("{}", message);
     }
 
+    pub fn print_inline(&self, message: &str) {
+        use std::io::{Write, stdout};
+        print!("{}", message);
+        let _ = stdout().flush();
+    }
+
     pub fn print_smart(&self, message: &str) {
         println!("{}", message);
     }
