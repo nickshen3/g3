@@ -19,6 +19,15 @@ const MAX_BASE64_SIZE: usize = 5 * 1024 * 1024;
 /// Maximum raw image size before base64 encoding (~3.75MB to stay under 5MB after encoding)
 const MAX_IMAGE_SIZE: usize = (MAX_BASE64_SIZE * 3) / 4;
 
+/// Maximum recommended image dimension (longest edge) for optimal API performance.
+/// Images larger than this are auto-scaled by Claude anyway, wasting bandwidth.
+/// Per Anthropic docs: "We recommend resizing images to no more than 1.15 megapixels"
+const MAX_IMAGE_DIMENSION: u32 = 1568;
+
+/// Maximum total payload size for all images combined (leave room for context).
+/// Anthropic's limit is 32MB total request size; we target 20MB for images to leave headroom.
+const MAX_TOTAL_IMAGE_PAYLOAD: usize = 20 * 1024 * 1024;
+
 /// Bytes per token heuristic (conservative estimate for code/text mix)
 const BYTES_PER_TOKEN: f32 = 3.5;
 
@@ -280,6 +289,7 @@ pub async fn execute_read_image<W: UiWriter>(
 
     let mut results: Vec<String> = Vec::new();
     let mut success_count = 0;
+    let mut cumulative_payload_size: usize = 0;
 
     // Print └─ and newline before images to break out of tool output box
     println!("└─\n");
@@ -321,16 +331,33 @@ pub async fn execute_read_image<W: UiWriter>(
 
                 let original_size = bytes.len();
 
-                // Resize image if it exceeds MAX_IMAGE_SIZE (~3.75MB raw = ~5MB base64)
-                // Target slightly smaller to leave margin for base64 overhead
-                let (bytes, was_resized) = if original_size >= MAX_IMAGE_SIZE {
-                    match resize_image_if_needed(&bytes, path, MAX_IMAGE_SIZE - 150 * 1024) {
+                // Get dimensions early to decide if we need to resize
+                let original_dimensions = get_image_dimensions(&bytes, media_type);
+
+                // Determine if resize is needed based on:
+                // 1. Dimensions exceed MAX_IMAGE_DIMENSION (1568px) - Claude auto-scales anyway
+                // 2. File size exceeds MAX_IMAGE_SIZE (~3.75MB)
+                // 3. Adding this image would exceed cumulative payload limit
+                let needs_resize = original_size >= MAX_IMAGE_SIZE
+                    || original_dimensions
+                        .map(|(w, h)| w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION)
+                        .unwrap_or(false)
+                    || (cumulative_payload_size + (original_size * 4 / 3)) > MAX_TOTAL_IMAGE_PAYLOAD;
+
+                let (bytes, was_resized) = if needs_resize {
+                    // Calculate target size: either fit under per-image limit or leave room in cumulative budget
+                    let remaining_budget = MAX_TOTAL_IMAGE_PAYLOAD.saturating_sub(cumulative_payload_size);
+                    let target_raw_size = (remaining_budget * 3 / 4).min(MAX_IMAGE_SIZE - 150 * 1024);
+                    
+                    match resize_image_to_dimensions(&bytes, path, MAX_IMAGE_DIMENSION, target_raw_size) {
                         Ok(resized) => {
                             let resized_size = resized.len();
                             if resized_size < original_size {
                                 (resized, true)
                             } else {
-                                (bytes, false)
+                                // Resize didn't help, use original but warn if it's huge
+                                debug!("Resize didn't reduce size, using original");
+                                (bytes, original_dimensions.map(|(w, h)| w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION).unwrap_or(false))
                             }
                         }
                         Err(e) => {
@@ -344,8 +371,8 @@ pub async fn execute_read_image<W: UiWriter>(
 
                 let file_size = bytes.len();
 
-                // Try to get image dimensions
-                let dimensions = get_image_dimensions(&bytes, media_type);
+                // Get final dimensions (may have changed if resized)
+                let dimensions = if was_resized { get_image_dimensions(&bytes, "image/jpeg") } else { original_dimensions };
 
                 // Build info string
                 let dim_str = dimensions
@@ -385,6 +412,18 @@ pub async fn execute_read_image<W: UiWriter>(
                 // Store the image to be attached to the next user message
                 use base64::Engine;
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let encoded_size = encoded.len();
+                
+                // Track cumulative payload and warn if approaching limit
+                cumulative_payload_size += encoded_size;
+                if cumulative_payload_size > MAX_TOTAL_IMAGE_PAYLOAD {
+                    results.push(format!(
+                        "⚠️  Warning: Total image payload ({:.1} MB) exceeds recommended limit ({:.1} MB). Request may fail.",
+                        cumulative_payload_size as f64 / (1024.0 * 1024.0),
+                        MAX_TOTAL_IMAGE_PAYLOAD as f64 / (1024.0 * 1024.0)
+                    ));
+                }
+                
                 let image = g3_providers::ImageContent::new(final_media_type, encoded);
                 ctx.pending_images.push(image);
 
@@ -579,6 +618,79 @@ fn extract_path_and_content(args: &serde_json::Value) -> (Option<&str>, Option<&
         }
         _ => (None, None),
     }
+}
+
+/// Resize an image to fit within max_dimension pixels (longest edge) and target_size bytes.
+/// This is the primary resize function that handles both dimension and size constraints.
+/// 
+/// Uses ImageMagick to:
+/// 1. First resize to fit within max_dimension (if needed)
+/// 2. Then reduce quality/scale to fit within target_size (if needed)
+pub fn resize_image_to_dimensions(
+    bytes: &[u8],
+    path: &std::path::Path,
+    max_dimension: u32,
+    target_size: usize,
+) -> std::io::Result<Vec<u8>> {
+    debug!(
+        "Resizing image {} to max {}px and under {} bytes",
+        path.display(),
+        max_dimension,
+        target_size
+    );
+
+    // Create temp files for processing
+    let temp_dir = std::env::temp_dir();
+    let input_path = temp_dir.join(format!("g3_resize_input_{}", std::process::id()));
+    let output_path = temp_dir.join(format!("g3_resize_output_{}.jpg", std::process::id()));
+
+    // Write input bytes to temp file
+    std::fs::write(&input_path, bytes)?;
+
+    // Quality levels to try (start high for best quality)
+    let quality_levels = [90, 80, 70, 60, 50, 40];
+
+    for &quality in &quality_levels {
+        // Use ImageMagick to resize: constrain to max_dimension on longest edge
+        // The "WxH>" syntax means "resize only if larger, maintain aspect ratio"
+        let resize_spec = format!("{}x{}>", max_dimension, max_dimension);
+        
+        let result = std::process::Command::new("convert")
+            .arg(&input_path)
+            .arg("-resize")
+            .arg(&resize_spec)
+            .arg("-quality")
+            .arg(format!("{}", quality))
+            .arg(&output_path)
+            .output();
+
+        if let Ok(output) = result {
+            if output.status.success() {
+                if let Ok(resized_bytes) = std::fs::read(&output_path) {
+                    if resized_bytes.len() <= target_size {
+                        debug!(
+                            "Resized image to {} bytes (max_dim={}, quality={})",
+                            resized_bytes.len(),
+                            max_dimension,
+                            quality
+                        );
+                        // Clean up temp files
+                        let _ = std::fs::remove_file(&input_path);
+                        let _ = std::fs::remove_file(&output_path);
+                        return Ok(resized_bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    // Clean up temp files
+    let _ = std::fs::remove_file(&input_path);
+    let _ = std::fs::remove_file(&output_path);
+
+    // If all attempts failed, return original bytes
+    debug!("Failed to resize image to target constraints, using original");
+    Ok(bytes.to_vec())
 }
 
 /// Resize an image to be under the target size using ImageMagick.
