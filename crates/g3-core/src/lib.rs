@@ -1904,9 +1904,7 @@ Skip if nothing new. Be brief."#;
         const MAX_ITERATIONS: usize = 400; // Prevent infinite loops
         let mut response_started = false;
         let mut any_tool_executed = false; // Track if ANY tool was executed across all iterations
-        let mut auto_summary_attempts = 0; // Track auto-summary prompt attempts
-        const MAX_AUTO_SUMMARY_ATTEMPTS: usize = 5; // Limit auto-summary retries (increased from 2 for better recovery)
-                                                    //
+        let mut assistant_message_added = false; // Track if assistant message was added to context this iteration
                                                     // Note: Session-level duplicate tracking was removed - we only prevent sequential duplicates (DUP IN CHUNK, DUP IN MSG)
         let mut turn_accumulated_usage: Option<g3_providers::Usage> = None; // Track token usage for timing footer
 
@@ -2388,10 +2386,6 @@ Skip if nothing new. Be brief."#;
                             tool_executed = true;
                             any_tool_executed = true; // Track across all iterations
 
-                            // Reset auto-continue attempts after successful tool execution
-                            // This gives the LLM fresh attempts since it's making progress
-                            auto_summary_attempts = 0;
-
                             // Reset the JSON tool call filter state after each tool execution
                             // This ensures the filter doesn't stay in suppression mode for subsequent streaming content
                             self.ui_writer.reset_json_filter();
@@ -2515,18 +2509,19 @@ Skip if nothing new. Be brief."#;
                                 }
 
                                 // If tools were executed in previous iterations,
-                                // break to let the outer loop's auto-continue logic handle it
+                                // break to let the outer loop handle finalization
                                 if any_tool_executed {
-                                    debug!("Tools were executed, continuing - breaking to auto-continue");
+                                    debug!("Tools were executed in previous iterations, breaking to finalize");
                                     // IMPORTANT: Save any text response to context window before breaking
                                     // This ensures text displayed after tool execution is not lost
-                                    if !current_response.trim().is_empty() {
-                                        debug!("Saving current_response ({} chars) to context before auto-continue", current_response.len());
+                                    if !current_response.trim().is_empty() && !assistant_message_added {
+                                        debug!("Saving current_response ({} chars) to context before finalization", current_response.len());
                                         let assistant_msg = Message::new(
                                             MessageRole::Assistant,
                                             current_response.clone(),
                                         );
                                         self.context_window.add_message(assistant_msg);
+                                        assistant_message_added = true;
                                     }
 
                                     // NOTE: We intentionally do NOT set full_response here.
@@ -2535,6 +2530,18 @@ Skip if nothing new. Be brief."#;
                                     // function eventually returns.
                                     // Context window is updated separately via add_message().
                                     break;
+                                }
+
+                                // Save assistant message before returning (no tools were executed)
+                                // This ensures text-only responses are saved to context
+                                if !current_response.trim().is_empty() && !assistant_message_added {
+                                    debug!("Saving current_response ({} chars) to context before early return", current_response.len());
+                                    let assistant_msg = Message::new(
+                                        MessageRole::Assistant,
+                                        current_response.clone(),
+                                    );
+                                    self.context_window.add_message(assistant_msg);
+                                    // assistant_message_added = true; // Not needed, we're returning
                                 }
 
                                 // Set full_response to empty to avoid duplication in return value
@@ -2623,18 +2630,10 @@ Skip if nothing new. Be brief."#;
                 let has_response = !current_response.is_empty() || !full_response.is_empty();
 
                 // Check if the response is essentially empty (just whitespace or timing lines)
-                // This detects cases where the LLM outputs nothing substantive
-                let response_text = if !current_response.is_empty() {
-                    &current_response
-                } else {
-                    &full_response
-                };
-                let is_empty_response = streaming::is_empty_response(response_text);
-
-                // Check if there's an incomplete tool call in the buffer
+                // Check if there's an incomplete tool call in the buffer (for debugging)
                 let has_incomplete_tool_call = parser.has_incomplete_tool_call();
 
-                // Check if there's a complete but unexecuted tool call in the buffer
+                // Check if there's a complete but unexecuted tool call in the buffer (for debugging)
                 let has_unexecuted_tool_call = parser.has_unexecuted_tool_call();
 
                 // Log when we detect unexecuted or incomplete tool calls for debugging
@@ -2652,106 +2651,11 @@ Skip if nothing new. Be brief."#;
                     stream_stop_reason.as_deref() == Some("max_tokens");
                 if was_truncated_by_max_tokens {
                     debug!("Response was truncated due to max_tokens limit");
-                    warn!("LLM response was cut off due to max_tokens limit - will auto-continue");
+                    warn!("LLM response was cut off due to max_tokens limit");
                 }
 
-                // --- Phase 3: Auto-Continue Decision ---
-                let auto_continue_reason = streaming::should_auto_continue(
-                    self.is_autonomous,
-                    any_tool_executed,
-                    has_incomplete_tool_call,
-                    has_unexecuted_tool_call,
-                    was_truncated_by_max_tokens,
-                );
-
-                if let Some(reason) = auto_continue_reason {
-                    if auto_summary_attempts < MAX_AUTO_SUMMARY_ATTEMPTS {
-                        auto_summary_attempts += 1;
-
-                        // Log and display appropriate message based on reason
-                        use streaming::AutoContinueReason::*;
-                        let (log_msg, ui_msg) = match reason {
-                            IncompleteToolCall => (
-                                "LLM emitted incomplete tool call",
-                                "\n🔄 Model emitted incomplete tool call. Auto-continuing...\n",
-                            ),
-                            UnexecutedToolCall => (
-                                "LLM emitted unexecuted tool call",
-                                "\n🔄 Model emitted tool call that wasn't executed. Auto-continuing...\n",
-                            ),
-                            MaxTokensTruncation => (
-                                "LLM response truncated by max_tokens",
-                                "\n🔄 Model response was truncated. Auto-continuing...\n",
-                            ),
-                            ToolsExecuted => (
-                                "LLM stopped after executing tools",
-                                "\n🔄 Model stopped without providing summary. Auto-continuing...\n",
-                            ),
-                        };
-                        warn!(
-                            "{} ({} iterations, auto-continue attempt {}/{})",
-                            log_msg,
-                            iteration_count,
-                            auto_summary_attempts,
-                            MAX_AUTO_SUMMARY_ATTEMPTS
-                        );
-                        self.ui_writer.print_context_status(ui_msg);
-
-                        // Add any text response to context before prompting for continuation
-                        if has_response {
-                            let response_text = if !current_response.is_empty() {
-                                current_response.clone()
-                            } else {
-                                full_response.clone()
-                            };
-                            if !response_text.trim().is_empty() {
-                                let assistant_msg = Message::new(
-                                    MessageRole::Assistant,
-                                    response_text.trim().to_string(),
-                                );
-                                self.context_window.add_message(assistant_msg);
-                            }
-                        }
-
-                        // Add a follow-up message asking for continuation
-                        let continue_prompt = match reason {
-                            IncompleteToolCall => Message::new(
-                                MessageRole::User,
-                                "Your previous response was cut off mid-tool-call. Please complete the tool call and continue.".to_string(),
-                            ),
-                            _ => Message::new(
-                                MessageRole::User,
-                                "Please continue until you are done. Provide a summary when complete.".to_string(),
-                            ),
-                        };
-                        self.context_window.add_message(continue_prompt);
-                        request.messages = self.context_window.conversation_history.clone();
-
-                        // Continue the loop
-                        continue;
-                    } else {
-                        // Max attempts reached, give up gracefully
-                        warn!(
-                            "Max auto-continue attempts ({}) reached after {} iterations. Conditions: any_tool_executed={}, has_incomplete={}, has_unexecuted={}, is_empty_response={}",
-                            MAX_AUTO_SUMMARY_ATTEMPTS,
-                            iteration_count,
-                            any_tool_executed,
-
-                            has_incomplete_tool_call,
-                            has_unexecuted_tool_call,
-                            is_empty_response
-                        );
-                        self.ui_writer.print_agent_response(
-                            &format!("\n⚠️ The model stopped without providing a summary after {} auto-continue attempts.\n", MAX_AUTO_SUMMARY_ATTEMPTS)
-                        );
-                    }
-                } else if has_response {
-                    // Only set full_response if it's empty (first iteration without tools)
-                    // This prevents duplication when the agent responds
-                    // NOTE: We intentionally do NOT set full_response here anymore.
-                    // The content was already displayed during streaming via print_agent_response().
-                    // Setting full_response would cause the CLI to print it again.
-                    // We only need full_response for the context window (handled separately).
+                // Log response status for debugging
+                if has_response {
                     debug!(
                         "Response already streamed, not setting full_response. current_response: {} chars",
                         current_response.len()
@@ -2762,15 +2666,21 @@ Skip if nothing new. Be brief."#;
                 // This ensures the log contains the true raw content including any JSON.
                 // Note: We check current_response, not full_response, because full_response
                 // may be empty to avoid display duplication (content was already streamed).
-                if !current_response.trim().is_empty() {
+                if !current_response.trim().is_empty() && !assistant_message_added {
                     // Get the raw text from the parser (before filtering)
                     let raw_text = parser.get_text_content();
                     let raw_clean = streaming::clean_llm_tokens(&raw_text);
 
-                    if !raw_clean.trim().is_empty() {
-                        let assistant_message = Message::new(MessageRole::Assistant, raw_clean);
-                        self.context_window.add_message(assistant_message);
-                    }
+                    // Use raw_clean if available, otherwise fall back to current_response.
+                    // This fixes a bug where the parser buffer might be empty/cleared
+                    // even though current_response has content that was displayed.
+                    let content_to_save = if !raw_clean.trim().is_empty() {
+                        raw_clean
+                    } else {
+                        current_response.clone()
+                    };
+                    let assistant_message = Message::new(MessageRole::Assistant, content_to_save);
+                    self.context_window.add_message(assistant_message);
                 }
 
                 return Ok(self.finalize_streaming_turn(
