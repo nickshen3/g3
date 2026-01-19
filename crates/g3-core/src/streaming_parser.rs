@@ -41,6 +41,13 @@ pub struct StreamingToolParser {
     in_json_tool_call: bool,
     /// Start position of JSON tool call (for fallback parsing)
     json_tool_start: Option<usize>,
+    /// Whether we're currently inside a code fence (``` block)
+    /// When true, tool call detection is disabled to prevent false positives
+    /// from JSON examples in code blocks.
+    in_code_fence: bool,
+    /// Buffer for the current incomplete line (text since last newline)
+    /// Used to detect code fence markers which must be at line start.
+    current_line: String,
 }
 
 impl Default for StreamingToolParser {
@@ -57,6 +64,8 @@ impl StreamingToolParser {
             message_stopped: false,
             in_json_tool_call: false,
             json_tool_start: None,
+            in_code_fence: false,
+            current_line: String::new(),
         }
     }
 
@@ -153,8 +162,11 @@ impl StreamingToolParser {
     pub fn process_chunk(&mut self, chunk: &g3_providers::CompletionChunk) -> Vec<ToolCall> {
         let mut completed_tools = Vec::new();
 
-        // Add text content to buffer
+        // Add text content to buffer and track code fence state
         if !chunk.content.is_empty() {
+            // Update code fence state based on new content
+            self.update_code_fence_state(&chunk.content);
+            
             self.text_buffer.push_str(&chunk.content);
         }
 
@@ -193,9 +205,13 @@ impl StreamingToolParser {
         }
 
         // Fallback: Try to parse JSON tool calls from current chunk content if no native tool calls
+        // IMPORTANT: Skip JSON fallback parsing when inside a code fence to prevent
+        // false positives from JSON examples in code blocks.
         if completed_tools.is_empty() && !chunk.content.is_empty() && !chunk.finished {
-            if let Some(json_tool) = self.try_parse_json_tool_call(&chunk.content) {
-                completed_tools.push(json_tool);
+            if !self.in_code_fence {
+                if let Some(json_tool) = self.try_parse_json_tool_call(&chunk.content) {
+                    completed_tools.push(json_tool);
+                }
             }
         }
 
@@ -214,6 +230,9 @@ impl StreamingToolParser {
     /// - `{"tool": "read_file` followed by `\nsome regular text` is NOT a tool call
     /// - The newline followed by non-JSON text invalidates the partial JSON
     fn try_parse_json_tool_call(&mut self, _content: &str) -> Option<ToolCall> {
+        // Pre-compute fence ranges to skip tool calls inside code fences
+        let fence_ranges = Self::find_code_fence_ranges(&self.text_buffer);
+        
         // If we're not currently in a JSON tool call, look for the start
         if !self.in_json_tool_call {
             // Only search in the unconsumed portion of the buffer to avoid
@@ -223,6 +242,13 @@ impl StreamingToolParser {
             // This ensures we process tool calls in order when multiple arrive together.
             if let Some(relative_pos) = Self::find_first_tool_call_start(unchecked_buffer) {
                 let pos = self.last_consumed_position + relative_pos;
+                
+                // Skip if this position is inside a code fence
+                if Self::is_position_in_fence_ranges(pos, &fence_ranges) {
+                    debug!("Skipping tool call at position {} - inside code fence", pos);
+                    return None;
+                }
+                
                 debug!("Found JSON tool call pattern at position {} (relative: {})", pos, relative_pos);
                 self.in_json_tool_call = true;
                 self.json_tool_start = Some(pos);
@@ -287,6 +313,10 @@ impl StreamingToolParser {
     fn try_parse_all_json_tool_calls_from_buffer(&self) -> Vec<ToolCall> {
         let mut tool_calls = Vec::new();
         let mut search_start = 0;
+        
+        // Pre-compute fence ranges to know which positions are inside code fences
+        // This is more efficient than re-scanning for each potential tool call
+        let fence_ranges = Self::find_code_fence_ranges(&self.text_buffer);
 
         while search_start < self.text_buffer.len() {
             let search_text = &self.text_buffer[search_start..];
@@ -295,6 +325,13 @@ impl StreamingToolParser {
             if let Some(relative_pos) = Self::find_first_tool_call_start(search_text) {
                 let abs_start = search_start + relative_pos;
                 let json_text = &self.text_buffer[abs_start..];
+                
+                // Skip if this position is inside a code fence
+                if Self::is_position_in_fence_ranges(abs_start, &fence_ranges) {
+                    // Move past this position and continue searching
+                    search_start = abs_start + 1;
+                    continue;
+                }
 
                 // Try to find a complete JSON object
                 if let Some(end_pos) = Self::find_complete_json_object_end(json_text) {
@@ -474,6 +511,107 @@ impl StreamingToolParser {
         None // No complete JSON object found
     }
 
+    /// Find all code fence ranges in the given text.
+    ///
+    /// Returns a vector of (start, end) byte positions where code fences are.
+    /// Each range represents content INSIDE a fence (between ``` markers).
+    fn find_code_fence_ranges(text: &str) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let mut in_fence = false;
+        let mut fence_start = 0;
+        let mut line_start = 0;
+        
+        for (i, ch) in text.char_indices() {
+            if ch == '\n' {
+                // Check if the line we just finished is a fence marker
+                let line = &text[line_start..i];
+                let trimmed = line.trim_start();
+                
+                if trimmed.starts_with("```") {
+                    let backtick_count = trimmed.chars().take_while(|&c| c == '`').count();
+                    if backtick_count >= 3 {
+                        if in_fence {
+                            // Closing fence - record the range
+                            // The range is from after the opening fence line to before this line
+                            ranges.push((fence_start, line_start));
+                            in_fence = false;
+                        } else {
+                            // Opening fence - mark the start (after this line)
+                            fence_start = i + 1; // +1 to skip the newline
+                            in_fence = true;
+                        }
+                    }
+                }
+                
+                line_start = i + 1;
+            }
+        }
+        
+        // If we ended while still in a fence, include everything to the end
+        if in_fence {
+            ranges.push((fence_start, text.len()));
+        }
+        
+        ranges
+    }
+    
+    /// Check if a position is inside any of the fence ranges.
+    fn is_position_in_fence_ranges(pos: usize, ranges: &[(usize, usize)]) -> bool {
+        ranges.iter().any(|(start, end)| pos >= *start && pos < *end)
+    }
+
+    /// Update code fence state based on new content.
+    ///
+    /// Tracks whether we're inside a markdown code fence (``` block).
+    /// Code fences toggle state when we see a line that starts with ```
+    /// (with optional leading whitespace).
+    ///
+    /// This is intentionally simple - we don't try to handle:
+    /// - Fences inside comments (// ```, # ```, etc.)
+    /// - Nested fences (which aren't valid markdown anyway)
+    /// - Indented code blocks (4 spaces)
+    ///
+    /// The simple approach handles 90%+ of real-world cases where LLMs
+    /// show JSON examples in code blocks.
+    fn update_code_fence_state(&mut self, content: &str) {
+        for ch in content.chars() {
+            if ch == '\n' {
+                // End of line - check if this line is a fence marker
+                self.check_and_toggle_fence();
+                self.current_line.clear();
+            } else {
+                self.current_line.push(ch);
+            }
+        }
+    }
+
+    /// Check if current_line is a code fence marker and toggle state if so.
+    ///
+    /// A fence marker is a line that starts with ``` (after optional whitespace).
+    /// The fence can have a language tag (```json, ```rust, etc.) which we ignore.
+    fn check_and_toggle_fence(&mut self) {
+        let trimmed = self.current_line.trim_start();
+        
+        // Must start with at least 3 backticks
+        if !trimmed.starts_with("```") {
+            return;
+        }
+        
+        // Count consecutive backticks
+        let backtick_count = trimmed.chars().take_while(|&c| c == '`').count();
+        if backtick_count < 3 {
+            return;
+        }
+        
+        // This is a fence marker - toggle state
+        self.in_code_fence = !self.in_code_fence;
+        debug!(
+            "Code fence toggled: in_code_fence={} (line: {:?})",
+            self.in_code_fence,
+            self.current_line
+        );
+    }
+
     /// Reset the parser state for a new message.
     pub fn reset(&mut self) {
         self.text_buffer.clear();
@@ -481,6 +619,8 @@ impl StreamingToolParser {
         self.message_stopped = false;
         self.in_json_tool_call = false;
         self.json_tool_start = None;
+        self.in_code_fence = false;
+        self.current_line = String::new();
     }
 
     /// Get the current text buffer length (for position tracking).
@@ -686,5 +826,54 @@ Some text after"#;
             assert!(StreamingToolParser::find_first_tool_call_start(pattern).is_none(),
                 "Inline pattern '{}' should be ignored", pattern);
         }
+    }
+
+    #[test]
+    fn test_find_code_fence_ranges_simple() {
+        let text = "Before\n```\ncode\n```\nAfter";
+        let ranges = StreamingToolParser::find_code_fence_ranges(text);
+        
+        assert_eq!(ranges.len(), 1, "Should find one fence range");
+        
+        // The range should cover "code\n"
+        let (start, end) = ranges[0];
+        let inside = &text[start..end];
+        assert!(inside.contains("code"), "Range should contain 'code', got: {:?}", inside);
+    }
+
+    #[test]
+    fn test_find_code_fence_ranges_multiple() {
+        let text = "First:\n```json\ncode1\n```\n\nSecond:\n```\ncode2\n```\nEnd";
+        let ranges = StreamingToolParser::find_code_fence_ranges(text);
+        
+        assert_eq!(ranges.len(), 2, "Should find two fence ranges, got {:?}", ranges);
+    }
+
+    #[test]
+    fn test_find_code_fence_ranges_with_tool_json() {
+        // Use a simple string without backticks to avoid raw string issues
+        let text = "Example:\n```json\n{\"tool\": \"shell\", \"args\": {}}\n```\nDone.";
+        let ranges = StreamingToolParser::find_code_fence_ranges(text);
+        
+        assert_eq!(ranges.len(), 1, "Should find one fence range");
+        
+        // Find where the tool pattern would be
+        let tool_pos = text.find("{\"tool\"").unwrap();
+        
+        // The tool position should be inside the fence range
+        assert!(
+            StreamingToolParser::is_position_in_fence_ranges(tool_pos, &ranges),
+            "Tool pattern at {} should be inside fence range {:?}",
+            tool_pos, ranges
+        );
+    }
+
+    #[test]
+    fn test_is_position_in_fence_ranges() {
+        let ranges = vec![(10, 20), (30, 40)];
+        assert!(!StreamingToolParser::is_position_in_fence_ranges(5, &ranges));
+        assert!(StreamingToolParser::is_position_in_fence_ranges(15, &ranges));
+        assert!(!StreamingToolParser::is_position_in_fence_ranges(25, &ranges));
+        assert!(StreamingToolParser::is_position_in_fence_ranges(35, &ranges));
     }
 }
