@@ -1,4 +1,7 @@
 mod streaming;
+pub mod mock;
+pub use mock::{MockProvider, MockResponse, MockChunk};
+
 pub use streaming::{decode_utf8_streaming, is_incomplete_json_error, make_final_chunk, make_text_chunk, make_tool_chunk};
 
 use anyhow::Result;
