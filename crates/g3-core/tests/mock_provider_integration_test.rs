@@ -741,3 +741,78 @@ async fn test_token_counting_no_double_count() {
         final_percentage
     );
 }
+
+/// Test: LLM re-outputting same text before each tool call causes duplicate display
+///
+/// Scenario from stress test session:
+/// 1. User asks for stress test
+/// 2. LLM outputs "Sure! Let me stress test..." + tool call 1
+/// 3. Tool 1 executes, result returned
+/// 4. LLM outputs "Sure! Let me stress test..." + tool call 2 (SAME TEXT!)
+/// 5. Tool 2 executes, result returned
+///
+/// The duplicate text is stored in context (correctly - they're different messages)
+/// but displayed twice on screen (bug - should detect and suppress duplicate prefix).
+///
+/// This test verifies the current behavior and documents the expected fix.
+#[tokio::test]
+async fn test_llm_repeats_text_before_each_tool_call() {
+    // Simulate LLM that outputs the same preamble before each tool call
+    let preamble = "Sure! Let me run some commands for you.\n\nHere's what I'll do:";
+    
+    let provider = MockProvider::new()
+        // First response: preamble + tool call 1
+        .with_response(MockResponse::custom(
+            vec![
+                MockChunk::content(preamble),
+                MockChunk::content("\n\n"),
+                MockChunk::content(r#"{"tool": "shell", "args": {"command": "echo first"}}"#),
+                MockChunk::content("\n"),
+                MockChunk::finished("end_turn"),
+            ],
+            g3_providers::Usage {
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                total_tokens: 150,
+            },
+        ))
+        // Second response: SAME preamble + tool call 2
+        .with_response(MockResponse::custom(
+            vec![
+                MockChunk::content(preamble),  // Same text repeated!
+                MockChunk::content("\n\n"),
+                MockChunk::content(r#"{"tool": "shell", "args": {"command": "echo second"}}"#),
+                MockChunk::content("\n"),
+                MockChunk::finished("end_turn"),
+            ],
+            g3_providers::Usage {
+                prompt_tokens: 150,
+                completion_tokens: 50,
+                total_tokens: 200,
+            },
+        ))
+        // Third response: final acknowledgment
+        .with_response(MockResponse::text("Done! Both commands executed."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run two commands", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Check context window for the duplicate text pattern
+    let history = &agent.get_context_window().conversation_history;
+    
+    // Count how many assistant messages contain the preamble
+    let preamble_count = history
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::Assistant) && m.content.contains("Sure! Let me run some commands"))
+        .count();
+    
+    // Currently this will be 2 (the bug) - both messages are stored
+    // After fix, this should still be 2 in storage (correct) but display should dedupe
+    assert_eq!(
+        preamble_count, 2,
+        "Both assistant messages with preamble should be stored (current behavior). Got: {}",
+        preamble_count
+    );
+}
