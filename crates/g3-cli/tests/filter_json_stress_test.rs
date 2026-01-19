@@ -420,7 +420,8 @@ fn test_tabs_before_brace() {
     reset_json_tool_state();
     let input = "Text\n\t\t{\"tool\": \"x\", \"args\": {}}\nMore";
     let result = filter_json_tool_calls(input);
-    assert_eq!(result, "Text\n\nMore");
+    // Indented JSON should NOT be filtered - real tool calls are never indented
+    assert_eq!(result, input);
 }
 
 #[test]
@@ -428,7 +429,8 @@ fn test_spaces_before_brace() {
     reset_json_tool_state();
     let input = "Text\n    {\"tool\": \"x\", \"args\": {}}\nMore";
     let result = filter_json_tool_calls(input);
-    assert_eq!(result, "Text\n\nMore");
+    // Indented JSON should NOT be filtered - real tool calls are never indented
+    assert_eq!(result, input);
 }
 
 #[test]
@@ -436,7 +438,8 @@ fn test_mixed_whitespace_before_brace() {
     reset_json_tool_state();
     let input = "Text\n \t \t {\"tool\": \"x\", \"args\": {}}\nMore";
     let result = filter_json_tool_calls(input);
-    assert_eq!(result, "Text\n\nMore");
+    // Indented JSON should NOT be filtered - real tool calls are never indented
+    assert_eq!(result, input);
 }
 
 #[test]

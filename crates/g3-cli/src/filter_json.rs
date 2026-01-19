@@ -54,6 +54,10 @@ struct FilterState {
     state: State,
     /// Buffer for potential tool call detection (Buffering state)
     buffer: String,
+    /// Are we inside a code fence? (``` ... ```)
+    in_code_fence: bool,
+    /// Buffer for detecting code fence markers
+    fence_buffer: String,
     /// Brace depth for JSON tracking (Suppressing state) - string-aware
     brace_depth: i32,
     /// Are we inside a JSON string? (for proper brace counting)
@@ -73,6 +77,8 @@ impl FilterState {
         Self {
             state: State::Streaming,
             buffer: String::new(),
+            in_code_fence: false,
+            fence_buffer: String::new(),
             brace_depth: 0,
             in_string: false,
             escape_next: false,
@@ -85,6 +91,8 @@ impl FilterState {
     fn reset(&mut self) {
         self.state = State::Streaming;
         self.buffer.clear();
+        self.in_code_fence = false;
+        self.fence_buffer.clear();
         self.brace_depth = 0;
         self.in_string = false;
         self.escape_next = false;
@@ -185,6 +193,15 @@ pub fn filter_json_tool_calls(content: &str) -> String {
 
 /// Handle a character in Streaming state
 fn handle_streaming_char(state: &mut FilterState, ch: char, output: &mut String) {
+    // Track code fence state
+    track_code_fence(state, ch);
+    
+    // If inside a code fence, pass through everything
+    if state.in_code_fence {
+        pass_through_char(state, ch, output);
+        return;
+    }
+    
     match ch {
         '\n' => {
             // Buffer extra newlines at line start - they may precede a tool call
@@ -202,13 +219,23 @@ fn handle_streaming_char(state: &mut FilterState, ch: char, output: &mut String)
             // Accumulate whitespace at line start
             state.pending_whitespace.push(ch);
         }
-        '{' if state.at_line_start => {
+        '{' if state.at_line_start && state.pending_whitespace.is_empty() => {
             // Potential tool call! Enter buffering mode
+            // BUT only if there's no leading whitespace (indented JSON is not a tool call)
             debug!("Potential tool call detected - entering Buffering state");
             state.state = State::Buffering;
             state.buffer.clear();
             state.buffer.push(ch);
             // Don't output pending_newlines or pending_whitespace yet - we might need to suppress them
+        }
+        '{' if state.at_line_start && !state.pending_whitespace.is_empty() => {
+            // Indented JSON - not a tool call, pass through
+            output.push_str(&state.pending_newlines);
+            output.push_str(&state.pending_whitespace);
+            state.pending_newlines.clear();
+            state.pending_whitespace.clear();
+            output.push(ch);
+            state.at_line_start = false;
         }
         _ => {
             // Regular character - output any pending newlines and whitespace first
@@ -218,6 +245,45 @@ fn handle_streaming_char(state: &mut FilterState, ch: char, output: &mut String)
             state.pending_whitespace.clear();
             output.push(ch);
             state.at_line_start = false;
+        }
+    }
+}
+
+/// Pass through a character without filtering (used inside code fences)
+fn pass_through_char(state: &mut FilterState, ch: char, output: &mut String) {
+    // Output any pending content first
+    output.push_str(&state.pending_newlines);
+    output.push_str(&state.pending_whitespace);
+    state.pending_newlines.clear();
+    state.pending_whitespace.clear();
+    output.push(ch);
+    state.at_line_start = ch == '\n';
+}
+
+/// Track code fence state (``` markers)
+fn track_code_fence(state: &mut FilterState, ch: char) {
+    match ch {
+        '`' => {
+            state.fence_buffer.push(ch);
+        }
+        '\n' => {
+            // Check if we have a fence marker
+            if state.fence_buffer.starts_with("```") {
+                // Toggle fence state
+                state.in_code_fence = !state.in_code_fence;
+                debug!("Code fence toggled: in_code_fence={}", state.in_code_fence);
+            }
+            state.fence_buffer.clear();
+        }
+        _ => {
+            // If we were accumulating backticks but got something else,
+            // check if we have a fence marker (for opening fences with language)
+            if state.fence_buffer.starts_with("```") && !state.in_code_fence {
+                // Opening fence with language specifier (e.g., ```json)
+                state.in_code_fence = true;
+                debug!("Code fence opened with language: in_code_fence=true");
+            }
+            state.fence_buffer.clear();
         }
     }
 }
@@ -507,5 +573,41 @@ mod tests {
         let input = "Memory checkpoint: {\"tool\": \"remember\", \"args\": {}}";
         let result = filter_json_tool_calls(input);
         assert_eq!(result, input, "Tool calls not at line start should pass through");
+    }
+
+    #[test]
+    fn test_tool_json_in_code_fence_passes_through() {
+        // JSON inside code fences should NOT be filtered, even if it looks like a tool call
+        reset_json_tool_state();
+        let input = "Before\n```json\n{\"tool\": \"shell\", \"args\": {}}\n```\nAfter";
+        let result = filter_json_tool_calls(input);
+        assert_eq!(result, input, "Tool JSON inside code fence should pass through");
+    }
+
+    #[test]
+    fn test_tool_json_in_plain_code_fence_passes_through() {
+        // JSON inside plain code fences (no language) should also pass through
+        reset_json_tool_state();
+        let input = "Before\n```\n{\"tool\": \"shell\", \"args\": {}}\n```\nAfter";
+        let result = filter_json_tool_calls(input);
+        assert_eq!(result, input, "Tool JSON inside plain code fence should pass through");
+    }
+
+    #[test]
+    fn test_indented_tool_json_passes_through() {
+        // Indented JSON should NOT be filtered (real tool calls are never indented)
+        reset_json_tool_state();
+        let input = "Before\n    {\"tool\": \"shell\", \"args\": {}}\nAfter";
+        let result = filter_json_tool_calls(input);
+        assert_eq!(result, input, "Indented tool JSON should pass through");
+    }
+
+    #[test]
+    fn test_tab_indented_tool_json_passes_through() {
+        // Tab-indented JSON should also pass through
+        reset_json_tool_state();
+        let input = "Before\n\t{\"tool\": \"shell\", \"args\": {}}\nAfter";
+        let result = filter_json_tool_calls(input);
+        assert_eq!(result, input, "Tab-indented tool JSON should pass through");
     }
 }
