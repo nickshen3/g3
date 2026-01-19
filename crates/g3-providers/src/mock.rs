@@ -159,13 +159,49 @@ impl MockResponse {
         }
     }
 
+    /// Create a response with text followed by a native tool call
+    pub fn text_then_native_tool(text: &str, tool: &str, args: serde_json::Value) -> Self {
+        Self {
+            chunks: vec![
+                MockChunk::content(text),
+                MockChunk::tool_streaming(tool),
+                MockChunk::tool_call(tool, args),
+                MockChunk::finished("tool_use"),
+            ],
+            usage: Usage {
+                prompt_tokens: 100,
+                completion_tokens: 50 + text.len() as u32 / 4,
+                total_tokens: 150 + text.len() as u32 / 4,
+            },
+        }
+    }
+
+    /// Create a response with duplicate native tool calls (same tool called twice)
+    /// Used to test duplicate detection
+    pub fn duplicate_native_tool_calls(tool: &str, args: serde_json::Value) -> Self {
+        Self {
+            chunks: vec![
+                MockChunk::tool_streaming(tool),
+                MockChunk::tool_call(tool, args.clone()),
+                // Second identical tool call
+                MockChunk::tool_streaming(tool),
+                MockChunk::tool_call(tool, args),
+                MockChunk::finished("tool_use"),
+            ],
+            usage: Usage {
+                prompt_tokens: 100,
+                completion_tokens: 100,
+                total_tokens: 200,
+            },
+        }
+    }
+
     /// Create a response with text followed by a JSON tool call (non-native)
     pub fn text_with_json_tool(text: &str, tool: &str, args: serde_json::Value) -> Self {
-        let tool_json = serde_json::json!({
-            "tool": tool,
-            "args": args
-        });
-        let tool_str = serde_json::to_string(&tool_json).unwrap();
+        // Manually construct JSON to ensure "tool" comes before "args"
+        // (serde_json::json! alphabetizes keys, which breaks pattern detection)
+        let args_str = serde_json::to_string(&args).unwrap();
+        let tool_str = format!(r#"{{"tool": "{}", "args": {}}}"#, tool, args_str);
         let full_content = format!("{}\n\n{}", text, tool_str);
 
         Self {

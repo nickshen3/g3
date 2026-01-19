@@ -462,3 +462,186 @@ async fn test_streaming_no_chunk_duplication() {
         content
     );
 }
+
+// =============================================================================
+// Tool Execution Tests
+// =============================================================================
+
+/// Test: Text before a tool call is preserved in context
+///
+/// When the LLM outputs text followed by a tool call, both should be preserved.
+#[tokio::test]
+async fn test_text_before_tool_call_preserved() {
+    let provider = MockProvider::new()
+        .with_native_tool_calling(true)
+        .with_response(MockResponse::text_then_native_tool(
+            "Let me check that for you.",
+            "shell",
+            serde_json::json!({"command": "echo hello"}),
+        ))
+        .with_default_response(MockResponse::text("Done!"));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run a command", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Find the assistant message that contains the pre-tool text
+    let history = &agent.get_context_window().conversation_history;
+    let has_pre_tool_text = history
+        .iter()
+        .any(|m| matches!(m.role, MessageRole::Assistant) && m.content.contains("check that for you"));
+    
+    assert!(has_pre_tool_text, "Pre-tool text should be preserved in context");
+}
+
+/// Test: Native tool calls are executed correctly
+#[tokio::test]
+async fn test_native_tool_call_execution() {
+    let provider = MockProvider::new()
+        .with_native_tool_calling(true)
+        .with_response(MockResponse::native_tool_call(
+            "shell",
+            serde_json::json!({"command": "echo test_output"}),
+        ))
+        .with_default_response(MockResponse::text("Command executed successfully."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run echo", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Check that tool result is in context
+    let history = &agent.get_context_window().conversation_history;
+    let has_tool_result = history
+        .iter()
+        .any(|m| matches!(m.role, MessageRole::User) && m.content.contains("Tool result:") && m.content.contains("test_output"));
+    
+    assert!(has_tool_result, "Tool result should be in context");
+}
+
+/// Test: Duplicate sequential tool calls are skipped
+///
+/// When the LLM emits the same tool call twice in a row, only one should execute.
+#[tokio::test]
+async fn test_duplicate_tool_calls_skipped() {
+    // This test uses native tool calling with duplicate tool calls
+    let provider = MockProvider::new()
+        .with_native_tool_calling(true)
+        .with_response(MockResponse::duplicate_native_tool_calls(
+            "shell",
+            serde_json::json!({"command": "echo duplicate_test"}),
+        ))
+        .with_default_response(MockResponse::text("Done."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run command", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Count tool results - should only have one
+    let history = &agent.get_context_window().conversation_history;
+    let tool_result_count = history
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::User) && m.content.contains("Tool result:") && m.content.contains("duplicate_test"))
+        .count();
+    
+    assert_eq!(tool_result_count, 1, "Duplicate tool call should be skipped, got {} results", tool_result_count);
+}
+
+/// Test: JSON fallback tool calling works when provider doesn't support native
+///
+/// When the provider doesn't have native tool calling, the agent should
+/// detect JSON tool calls in the text content.
+#[tokio::test]
+async fn test_json_fallback_tool_calling() {
+    // Provider WITHOUT native tool calling - uses JSON fallback
+    let provider = MockProvider::new()
+        .with_native_tool_calling(false)
+        .with_response(MockResponse::text_with_json_tool(
+            "Let me run that command.",
+            "shell",
+            serde_json::json!({"command": "echo json_fallback_test"}),
+        ))
+        .with_default_response(MockResponse::text("Command completed."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run a command", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Check that tool result is in context (proves JSON was parsed and executed)
+    let history = &agent.get_context_window().conversation_history;
+    let has_tool_result = history
+        .iter()
+        .any(|m| matches!(m.role, MessageRole::User) && m.content.contains("Tool result:") && m.content.contains("json_fallback_test"));
+    
+    assert!(has_tool_result, "JSON fallback tool should have been executed");
+}
+
+/// Test: Text after tool execution is preserved
+///
+/// When the LLM outputs text after a tool is executed (in the follow-up response),
+/// that text should be preserved in context.
+#[tokio::test]
+async fn test_text_after_tool_execution_preserved() {
+    let provider = MockProvider::new()
+        .with_native_tool_calling(true)
+        .with_response(MockResponse::native_tool_call(
+            "shell",
+            serde_json::json!({"command": "echo hello"}),
+        ))
+        // The follow-up response after tool execution
+        .with_response(MockResponse::text("The command ran successfully and output 'hello'."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run echo hello", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Check that the follow-up text is in context
+    let history = &agent.get_context_window().conversation_history;
+    let has_followup = history
+        .iter()
+        .any(|m| matches!(m.role, MessageRole::Assistant) && m.content.contains("ran successfully"));
+    
+    assert!(has_followup, "Follow-up text after tool execution should be preserved");
+}
+
+/// Test: Multiple different tool calls in sequence
+///
+/// When the LLM makes multiple tool calls, they should all be executed.
+#[tokio::test]
+async fn test_multiple_tool_calls_executed() {
+    // First response: tool call 1
+    // Second response: tool call 2  
+    // Third response: final text
+    let provider = MockProvider::new()
+        .with_native_tool_calling(true)
+        .with_response(MockResponse::native_tool_call(
+            "shell",
+            serde_json::json!({"command": "echo first_tool"}),
+        ))
+        .with_response(MockResponse::native_tool_call(
+            "shell",
+            serde_json::json!({"command": "echo second_tool"}),
+        ))
+        .with_response(MockResponse::text("Both commands completed."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    let result = agent.execute_task("Run two commands", None, false).await;
+    assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
+
+    // Check that both tool results are in context
+    let history = &agent.get_context_window().conversation_history;
+    let first_result = history
+        .iter()
+        .any(|m| matches!(m.role, MessageRole::User) && m.content.contains("first_tool"));
+    let second_result = history
+        .iter()
+        .any(|m| matches!(m.role, MessageRole::User) && m.content.contains("second_tool"));
+    
+    assert!(first_result, "First tool result should be in context");
+    assert!(second_result, "Second tool result should be in context");
+}
