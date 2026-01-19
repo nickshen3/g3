@@ -2174,9 +2174,14 @@ Skip if nothing new. Be brief."#;
                             // Clone working_dir to avoid borrow checker issues
                             let working_dir = self.working_dir.clone();
                             let exec_start = Instant::now();
-                            // Add 8-minute timeout for tool execution
+                            // Tool execution timeout: 20 minutes for research, 8 minutes for others
+                            let timeout_duration = if tool_call.tool == "research" {
+                                Duration::from_secs(20 * 60) // 20 minutes for research
+                            } else {
+                                Duration::from_secs(8 * 60) // 8 minutes for other tools
+                            };
                             let tool_result = match tokio::time::timeout(
-                                Duration::from_secs(8 * 60), // 8 minutes
+                                timeout_duration,
                                 // Use working_dir if set (from --codebase-fast-start)
                                 self.execute_tool_in_dir(&tool_call, working_dir.as_deref()),
                             )
@@ -2184,8 +2189,12 @@ Skip if nothing new. Be brief."#;
                             {
                                 Ok(result) => result?,
                                 Err(_) => {
-                                    warn!("Tool call {} timed out after 8 minutes", tool_call.tool);
-                                    "❌ Tool execution timed out after 8 minutes".to_string()
+                                    let timeout_mins = if tool_call.tool == "research" { 20 } else { 8 };
+                                    warn!("Tool call {} timed out after {} minutes", tool_call.tool, timeout_mins);
+                                    format!(
+                                        "❌ Tool execution timed out after {} minutes",
+                                        timeout_mins
+                                    )
                                 }
                             };
                             let exec_duration = exec_start.elapsed();
