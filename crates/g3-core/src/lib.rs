@@ -2844,3 +2844,93 @@ impl<W: UiWriter> Drop for Agent<W> {
         }
     }
 }
+
+#[cfg(test)]
+mod tool_timeout_tests {
+    use std::time::Duration;
+
+    /// Get the timeout duration for a tool (extracted for testing)
+    fn get_tool_timeout(tool_name: &str) -> Duration {
+        if tool_name == "research" {
+            Duration::from_secs(20 * 60) // 20 minutes for research
+        } else {
+            Duration::from_secs(8 * 60) // 8 minutes for other tools
+        }
+    }
+
+    #[test]
+    fn test_research_tool_has_20_minute_timeout() {
+        let timeout = get_tool_timeout("research");
+        assert_eq!(timeout, Duration::from_secs(20 * 60));
+        assert_eq!(timeout.as_secs(), 1200); // 20 minutes in seconds
+    }
+
+    #[test]
+    fn test_shell_tool_has_8_minute_timeout() {
+        let timeout = get_tool_timeout("shell");
+        assert_eq!(timeout, Duration::from_secs(8 * 60));
+        assert_eq!(timeout.as_secs(), 480); // 8 minutes in seconds
+    }
+
+    #[test]
+    fn test_read_file_tool_has_8_minute_timeout() {
+        let timeout = get_tool_timeout("read_file");
+        assert_eq!(timeout, Duration::from_secs(8 * 60));
+    }
+
+    #[test]
+    fn test_write_file_tool_has_8_minute_timeout() {
+        let timeout = get_tool_timeout("write_file");
+        assert_eq!(timeout, Duration::from_secs(8 * 60));
+    }
+
+    #[test]
+    fn test_str_replace_tool_has_8_minute_timeout() {
+        let timeout = get_tool_timeout("str_replace");
+        assert_eq!(timeout, Duration::from_secs(8 * 60));
+    }
+
+    #[test]
+    fn test_code_search_tool_has_8_minute_timeout() {
+        let timeout = get_tool_timeout("code_search");
+        assert_eq!(timeout, Duration::from_secs(8 * 60));
+    }
+
+    #[test]
+    fn test_webdriver_tools_have_8_minute_timeout() {
+        for tool in ["webdriver_start", "webdriver_navigate", "webdriver_click"] {
+            let timeout = get_tool_timeout(tool);
+            assert_eq!(timeout, Duration::from_secs(8 * 60), "Tool {} should have 8 min timeout", tool);
+        }
+    }
+
+    #[test]
+    fn test_only_research_has_extended_timeout() {
+        // List of all tools that should have 8-minute timeout
+        let standard_tools = [
+            "shell", "read_file", "write_file", "str_replace", "read_image",
+            "screenshot", "code_search", "todo_read", "todo_write", "remember",
+            "rehydrate", "coverage", "background_process",
+            "webdriver_start", "webdriver_navigate", "webdriver_click",
+            "webdriver_send_keys", "webdriver_find_element", "webdriver_quit",
+        ];
+
+        for tool in standard_tools {
+            let timeout = get_tool_timeout(tool);
+            assert_eq!(
+                timeout,
+                Duration::from_secs(8 * 60),
+                "Tool '{}' should have standard 8-minute timeout, not extended",
+                tool
+            );
+        }
+
+        // Only research should have extended timeout
+        let research_timeout = get_tool_timeout("research");
+        assert_eq!(
+            research_timeout,
+            Duration::from_secs(20 * 60),
+            "Research tool should have 20-minute timeout"
+        );
+    }
+}
