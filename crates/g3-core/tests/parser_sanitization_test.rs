@@ -432,3 +432,53 @@ mod streaming_repro {
         assert_eq!(tools[0].tool, "shell");
     }
 }
+
+/// Test that inline JSON is not detected even when stream finishes
+/// This tests the try_parse_all_json_tool_calls_from_buffer path
+#[test]
+fn test_inline_json_not_detected_at_stream_end() {
+    use g3_core::StreamingToolParser;
+    use g3_providers::CompletionChunk;
+    
+    fn chunk(content: &str, finished: bool) -> CompletionChunk {
+        CompletionChunk {
+            content: content.to_string(),
+            finished,
+            tool_calls: None,
+            usage: None,
+            stop_reason: if finished { Some("end_turn".to_string()) } else { None },
+            tool_call_streaming: None,
+        }
+    }
+    
+    let mut parser = StreamingToolParser::new();
+    
+    // Send chunks exactly as MockProvider would
+    let tools = parser.process_chunk(&chunk("To run a command, you can use the format ", false));
+    assert!(tools.is_empty(), "Chunk 1: no tools");
+    
+    let tools = parser.process_chunk(&chunk(r#"{"tool": "shell", "args": {"command": "ls"}}"#, false));
+    assert!(tools.is_empty(), "Chunk 2: inline JSON should not trigger tool detection");
+    
+    let tools = parser.process_chunk(&chunk(" in your request. ", false));
+    assert!(tools.is_empty(), "Chunk 3: no tools");
+    
+    let tools = parser.process_chunk(&chunk("Let me know if you need help!", false));
+    assert!(tools.is_empty(), "Chunk 4: no tools");
+    
+    // Finish chunk - this triggers try_parse_all_json_tool_calls_from_buffer
+    let tools = parser.process_chunk(&chunk("", true));
+    assert!(
+        tools.is_empty(),
+        "Finish chunk: inline JSON should NOT be detected as tool call. Found: {:?}",
+        tools.iter().map(|t| &t.tool).collect::<Vec<_>>()
+    );
+    
+    // Verify the full buffer content
+    let buffer = parser.get_text_content();
+    assert!(
+        buffer.contains(r#"{"tool": "shell"#),
+        "Buffer should contain the inline JSON: {}",
+        buffer
+    );
+}

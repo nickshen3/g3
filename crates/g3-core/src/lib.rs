@@ -2432,11 +2432,6 @@ Skip if nothing new. Be brief."#;
                                     self.ui_writer.print_agent_response(&filtered_content);
                                     self.ui_writer.flush();
                                     current_response.push_str(&filtered_content);
-
-                                    // Mark parser buffer as consumed up to current position
-                                    // This prevents tool-call-like patterns in displayed text
-                                    // from triggering false positives in has_unexecuted_tool_call()
-                                    parser.mark_tool_calls_consumed();
                                 }
                             }
                         }

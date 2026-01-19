@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-15T00:50:41Z | Size: 12.9k chars
+> Updated: 2026-01-19T08:32:03Z | Size: 14.0k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -230,3 +230,26 @@ Injects agent+language-specific guidance when running in agent mode in a workspa
 To add a new agent+lang prompt:
 1. Create `prompts/langs/<agent>.<lang>.md`
 2. Add entry to `AGENT_LANGUAGE_PROMPTS` in `language_prompts.rs` with `include_str!`
+
+### MockProvider for Testing
+Configurable mock LLM provider for integration testing without real API calls.
+
+- `crates/g3-providers/src/mock.rs`
+  - `MockProvider` [220..320] - mock provider with response queue, request tracking
+  - `MockResponse` [35..200] - configurable response with chunks and usage
+  - `MockChunk` [45..100] - individual streaming chunk (content, finished, tool_calls)
+  - `scenarios` module [410..480] - preset scenarios: `text_only_response()`, `multi_turn()`, `tool_then_response()`
+
+- `crates/g3-core/tests/mock_provider_integration_test.rs`
+  - `test_butler_bug_scenario()` - reproduces consecutive user messages bug
+  - `test_text_only_response_saves_to_context()` - verifies text responses saved
+  - `test_multi_turn_text_only_maintains_alternation()` - verifies user/assistant alternation
+
+Usage pattern:
+```rust
+let provider = MockProvider::new()
+    .with_response(MockResponse::text("Hello!"));
+let mut registry = ProviderRegistry::new();
+registry.register(provider);
+let agent = Agent::new_for_test(config, NullUiWriter, registry).await?;
+```
