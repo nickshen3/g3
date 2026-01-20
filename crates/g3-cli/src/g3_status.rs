@@ -289,6 +289,23 @@ impl G3Status {
             Self::complete(&format!("{} ... {}%", scope_desc, result.before_percentage), Status::NoChanges);
         }
     }
+
+    /// Print a complete status message with a path highlighted in cyan.
+    /// Format: "g3: <message> <path> [status]"
+    /// - "g3:" is bold green
+    /// - path is cyan
+    /// - status is formatted per Status type
+    pub fn complete_with_path(message: &str, path: &str, status: Status) {
+        print!(
+            "{} {} {}{}{}",
+            Self::format_prefix(),
+            message,
+            SetForegroundColor(Color::Cyan),
+            path,
+            ResetColor
+        );
+        Self::status(&status);
+    }
 }
 
 #[cfg(test)]
