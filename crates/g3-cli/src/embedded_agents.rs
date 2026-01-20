@@ -10,6 +10,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::template::process_template;
+
 /// Embedded agent prompts, keyed by agent name.
 static EMBEDDED_AGENTS: &[(&str, &str)] = &[
     ("breaker", include_str!("../../../agents/breaker.md")),
@@ -43,12 +45,13 @@ pub fn load_agent_prompt(name: &str, workspace_dir: &Path) -> Option<(String, bo
     let workspace_path = workspace_dir.join("agents").join(format!("{}.md", name));
     if workspace_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&workspace_path) {
-            return Some((content, true));
+            let processed = process_template(&content);
+            return Some((processed, true));
         }
     }
 
     // Fall back to embedded prompt
-    get_embedded_agent(name).map(|content| (content.to_string(), false))
+    get_embedded_agent(name).map(|content| (process_template(content), false))
 }
 
 /// Get a map of all available agents (both embedded and from workspace).
