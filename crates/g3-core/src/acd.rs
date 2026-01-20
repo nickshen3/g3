@@ -116,37 +116,24 @@ impl Fragment {
             stub.push_str(&format!("📋 Task: {}\n\n", task));
         }
 
-        stub.push_str(&format!(
-            "⚡ DEHYDRATED CONTEXT (fragment_id: {})\n",
-            self.fragment_id
-        ));
-        stub.push_str(&format!(
-            "   • {} messages ({} user, {} assistant)\n",
-            self.message_count, self.user_message_count, self.assistant_message_count
-        ));
-
         // Tool call summary
-        if !self.tool_call_summary.is_empty() {
+        let tool_part = if !self.tool_call_summary.is_empty() {
             let total_calls: usize = self.tool_call_summary.values().sum();
             let tool_details: Vec<String> = self
                 .tool_call_summary
                 .iter()
-                .map(|(tool, count)| format!("{} ×{}", tool, count))
+                .map(|(tool, count)| format!("{} x{}", tool, count))
                 .collect();
-            stub.push_str(&format!(
-                "   • {} tool calls ({})\n",
-                total_calls,
-                tool_details.join(", ")
-            ));
-        }
+            format!("{} tool calls ({})", total_calls, tool_details.join(", "))
+        } else {
+            "no tool calls".to_string()
+        };
 
-        stub.push_str(&format!("   • ~{} tokens saved\n", self.estimated_tokens));
-
-        stub.push_str("\n");
         stub.push_str(&format!(
-            "   To restore this history, call: rehydrate(fragment_id: \"{}\")\n",
-            self.fragment_id
+            "⚡ DEHYDRATED CONTEXT: {}, {} total msgs. To restore, call: rehydrate(fragment_id: \"{}\")\n",
+            tool_part, self.message_count, self.fragment_id
         ));
+
         stub.push_str("---");
 
         stub
@@ -488,9 +475,8 @@ mod tests {
 
         assert!(stub.contains("DEHYDRATED CONTEXT"));
         assert!(stub.contains(&fragment.fragment_id));
-        assert!(stub.contains("2 messages"));
-        assert!(stub.contains("1 user"));
-        assert!(stub.contains("1 assistant"));
+        assert!(stub.contains("2 total msgs"));
+        assert!(stub.contains("1 tool calls"));
         assert!(stub.contains("rehydrate"));
     }
 
@@ -613,8 +599,8 @@ mod tests {
         let fragment = Fragment::new(messages, None);
         let stub = fragment.generate_stub();
 
-        // Should not have tool call line
-        assert!(!stub.contains("tool calls"));
+        // Should have "no tool calls" in the compact format
+        assert!(stub.contains("no tool calls"));
     }
 
     #[test]

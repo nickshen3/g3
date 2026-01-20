@@ -221,7 +221,7 @@ fn test_large_fragment() {
     // Stub should still be concise
     let stub = fragment.generate_stub();
     assert!(stub.len() < 1000, "Stub should be concise even for large fragments");
-    assert!(stub.contains("200 messages"));
+    assert!(stub.contains("200 total msgs"));
 }
 
 /// Test fragment with tool calls
