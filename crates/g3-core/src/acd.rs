@@ -111,9 +111,9 @@ impl Fragment {
     pub fn generate_stub(&self) -> String {
         let mut stub = String::new();
         stub.push_str("---\n");
-        // Include the full first user message (task) for forensics
+        // Include the first user message for context
         if let Some(ref task) = self.first_user_message {
-            stub.push_str(&format!("📋 Task: {}\n\n", task));
+            stub.push_str(&format!("{}\n\n", task));
         }
 
         // Tool call summary
