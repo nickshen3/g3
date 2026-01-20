@@ -10,6 +10,7 @@ use tracing::{debug, error};
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
+use crate::g3_status::{G3Status, Status};
 use crate::project_files::extract_readme_heading;
 use crate::simple_output::SimpleOutput;
 use crate::task_execution::execute_task_with_retry;
@@ -54,21 +55,20 @@ pub async fn run_interactive<W: UiWriter>(
             // Resume the session
             match agent.restore_from_continuation(&continuation) {
                 Ok(true) => {
-                    // Print bold green [done]
-                    println!("{}... resuming ... [done]{}", SetForegroundColor(Color::Green), ResetColor);
+                    G3Status::resuming(&continuation.session_id, Status::Done);
                 }
                 Ok(false) => {
-                    println!("{}... resuming ... [done]{}", SetForegroundColor(Color::Green), ResetColor);
+                    G3Status::resuming_summary(&continuation.session_id);
                 }
                 Err(e) => {
-                    println!("{}... failed: {}{}", SetForegroundColor(Color::Yellow), e, ResetColor);
+                    G3Status::resuming(&continuation.session_id, Status::Error(e.to_string()));
                     // Clear the invalid continuation
                     let _ = g3_core::clear_continuation();
                 }
             }
         } else {
             // User declined, clear the continuation
-            println!("{}... starting fresh{}", SetForegroundColor(Color::DarkGrey), ResetColor);
+            G3Status::info_inline("starting fresh");
             let _ = g3_core::clear_continuation();
         }
       }
@@ -371,13 +371,13 @@ async fn handle_command<W: UiWriter>(
             Ok(true)
         }
         "/thinnify" => {
-            let summary = agent.force_thin();
-            println!("{}", summary);
+            let result = agent.force_thin();
+            G3Status::thin_result(&result);
             Ok(true)
         }
         "/skinnify" => {
-            let summary = agent.force_thin_all();
-            println!("{}", summary);
+            let result = agent.force_thin_all();
+            G3Status::thin_result(&result);
             Ok(true)
         }
         "/fragments" => {
@@ -566,22 +566,13 @@ async fn handle_command<W: UiWriter>(
                                 let selected = &sessions[num - 1];
                                 match agent.switch_to_session(selected) {
                                     Ok(true) => {
-                                        output.print_inline(&format!(
-                                            "... resuming \x1b[36m{}\x1b[0m \x1b[1;32m[done]\x1b[0m\n",
-                                            selected.session_id
-                                        ));
+                                        G3Status::resuming(&selected.session_id, Status::Done);
                                     }
                                     Ok(false) => {
-                                        output.print_inline(&format!(
-                                            "... resuming \x1b[36m{}\x1b[0m (summary) \x1b[1;32m[done]\x1b[0m\n",
-                                            selected.session_id
-                                        ));
+                                        G3Status::resuming_summary(&selected.session_id);
                                     }
                                     Err(e) => {
-                                        output.print_inline(&format!(
-                                            "... resuming \x1b[36m{}\x1b[0m \x1b[1;31m[error: {}]\x1b[0m\n",
-                                            selected.session_id, e
-                                        ));
+                                        G3Status::resuming(&selected.session_id, Status::Error(e.to_string()));
                                     }
                                 }
                             } else {

@@ -27,8 +27,11 @@ pub trait UiWriter: Send + Sync {
     /// - "g3:" should be bold green, "failed"/"error" status should be red
     fn print_g3_status(&self, message: &str, status: &str);
 
-    /// Print a context thinning success message with highlight and animation
-    fn print_context_thinning(&self, message: &str);
+    /// Print a context thinning result
+    fn print_thin_result(&self, result: &crate::ThinResult);
+
+    /// Print a context thinning message (legacy - for pre-formatted messages)
+    fn print_context_thinning(&self, _message: &str) {}
 
     /// Print a tool execution header
     fn print_tool_header(&self, tool_name: &str, tool_args: Option<&serde_json::Value>);
@@ -136,7 +139,7 @@ impl UiWriter for NullUiWriter {
     fn print_context_status(&self, _message: &str) {}
     fn print_g3_progress(&self, _message: &str) {}
     fn print_g3_status(&self, _message: &str, _status: &str) {}
-    fn print_context_thinning(&self, _message: &str) {}
+    fn print_thin_result(&self, _result: &crate::ThinResult) {}
     fn print_tool_header(&self, _tool_name: &str, _tool_args: Option<&serde_json::Value>) {}
     fn print_tool_arg(&self, _key: &str, _value: &str) {}
     fn print_tool_output_header(&self) {}

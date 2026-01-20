@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-19T08:32:03Z | Size: 14.0k chars
+> Updated: 2026-01-20T04:10:35Z | Size: 15.8k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -253,3 +253,36 @@ let mut registry = ProviderRegistry::new();
 registry.register(provider);
 let agent = Agent::new_for_test(config, NullUiWriter, registry).await?;
 ```
+
+### G3 Status Message Formatting
+Centralized formatting for all "g3:" prefixed system status messages.
+
+- `crates/g3-cli/src/g3_status.rs`
+  - `G3Status` - static methods for consistent status message formatting
+  - `Status` enum - `Done`, `Failed`, `Error(String)`, `Custom(String)`, `Resolved`, `Insufficient`
+  - `progress()` [64..76] - prints "g3: <message> ..." (no newline, stays on same line)
+  - `progress_ln()` [79..90] - prints "g3: <message> ..." with newline
+  - `done()` [93..101] - prints bold green "[done]"
+  - `failed()` [104..111] - prints red "[failed]"
+  - `error()` [114..122] - prints red "[error: <msg>]"
+  - `status()` [125..152] - dispatches to appropriate status method
+  - `complete()` [155..158] - one-shot progress + status
+  - `info_inline()` [168..178] - ANSI escape to append to previous line
+  - `format_status()` [181..214] - returns formatted status string
+  - `resuming()` [227..236] - session resume message with cyan session ID
+  - `resuming_summary()` [239..248] - resume with "(summary)" note
+
+### ThinResult Struct
+Semantic data for context thinning operations, replacing pre-formatted strings.
+
+- `crates/g3-core/src/context_window.rs`
+  - `ThinResult` [16..36] - struct with scope, before/after percentages, counts, chars_saved, had_changes
+  - `thin_context_with_scope()` [373..450] - returns `ThinResult` instead of `(String, usize)`
+  - `build_thin_result()` [720..740] - constructs `ThinResult` from operation data
+
+- `crates/g3-core/src/ui_writer.rs`
+  - `print_thin_result(&self, result: &ThinResult)` [31] - trait method for UI formatting
+
+- `crates/g3-cli/src/g3_status.rs`
+  - `Status::NoChanges` [42] - new status variant for thinning with no changes
+  - `G3Status::thin_result()` [265..292] - formats ThinResult with proper colors/styling

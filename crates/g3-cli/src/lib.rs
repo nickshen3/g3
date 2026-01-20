@@ -17,6 +17,7 @@ mod simple_output;
 mod task_execution;
 mod ui_writer_impl;
 mod utils;
+mod g3_status;
 
 use anyhow::Result;
 use std::path::PathBuf;

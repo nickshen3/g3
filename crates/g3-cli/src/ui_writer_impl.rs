@@ -212,38 +212,18 @@ impl UiWriter for ConsoleUiWriter {
     }
 
     fn print_g3_progress(&self, message: &str) {
-        use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
-        use std::io::Write;
-        print!(
-            "{}{}g3:{}{} {} ...",
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(Color::Green),
-            ResetColor,
-            SetAttribute(Attribute::Reset),
-            message
-        );
-        let _ = std::io::stdout().flush();
+        crate::g3_status::G3Status::progress(message);
     }
 
     fn print_g3_status(&self, message: &str, status: &str) {
-        use crossterm::style::{Color, ResetColor, SetForegroundColor};
+        use crate::g3_status::Status;
         let _ = message; // unused now - progress already printed the message
-        let status_colored = if status.starts_with("error") || status == "failed" {
-            format!(
-                " {}[{}]{}",
-                SetForegroundColor(Color::Red),
-                status,
-                ResetColor
-            )
-        } else {
-            format!(" [{}]", status)
-        };
-        println!("{}", status_colored);
+        crate::g3_status::G3Status::status(&Status::from_str(status));
     }
 
-    fn print_context_thinning(&self, message: &str) {
-        // Simple status line output - message already contains ANSI formatting
-        println!("{}", message);
+    fn print_thin_result(&self, result: &g3_core::ThinResult) {
+        // Use centralized G3Status formatting
+        crate::g3_status::G3Status::thin_result(result);
     }
 
     fn print_tool_header(&self, tool_name: &str, _tool_args: Option<&serde_json::Value>) {

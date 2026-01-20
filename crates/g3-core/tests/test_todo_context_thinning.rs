@@ -30,9 +30,9 @@ fn test_todo_read_results_not_thinned() {
 
     // Trigger thinning at 50%
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    println!("Thinning summary: {}", summary);
+    println!("Thinning result: {:?}", result);
 
     // Check that the TODO result was NOT thinned
     let first_third_end = context.conversation_history.len() / 3;
@@ -87,9 +87,9 @@ fn test_todo_write_results_not_thinned() {
 
     // Trigger thinning at 50%
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    println!("Thinning summary: {}", summary);
+    println!("Thinning result: {:?}", result);
 
     // Check that the TODO write result was NOT thinned
     let first_third_end = context.conversation_history.len() / 3;
@@ -135,14 +135,13 @@ fn test_non_todo_results_still_thinned() {
 
     // Trigger thinning at 50%
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    println!("Thinning summary: {}", summary);
+    println!("Thinning result: {:?}", result);
 
-    // Should show the new format with percentage change (indicating thinning happened)
-    assert!(summary.contains("g3:"), "Non-TODO results should be thinned");
-    assert!(summary.contains("thinning context"));
-    assert!(summary.contains("[done]"));
+    // Should have made changes (non-TODO results should be thinned)
+    assert!(result.had_changes, "Non-TODO results should be thinned");
+    assert!(result.chars_saved > 0, "Expected chars to be saved");
 
     // Check that the result was actually thinned
     let first_third_end = context.conversation_history.len() / 3;
@@ -184,7 +183,7 @@ fn test_todo_read_with_spaces_in_tool_name() {
 
     // Trigger thinning
     context.used_tokens = 5000;
-    let (_summary, _chars_saved) = context.thin_context(None);
+    let _result = context.thin_context(None);
 
     // Verify TODO result was not thinned
     let first_third_end = context.conversation_history.len() / 3;

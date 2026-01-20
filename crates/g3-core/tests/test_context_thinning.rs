@@ -69,14 +69,13 @@ fn test_thin_context_basic() {
 
     // Trigger thinning at 50%
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    println!("Thinning summary: {}", summary);
+    println!("Thinning result: {:?}", result);
 
-    // Should show the new format with percentage change
-    assert!(summary.contains("g3:"), "Summary was: {}", summary);
-    assert!(summary.contains("thinning context"));
-    assert!(summary.contains("[done]"));
+    // Should have made changes
+    assert!(result.had_changes, "Expected thinning to make changes");
+    assert!(result.chars_saved > 0, "Expected chars to be saved");
 
     // Check that the large tool results were replaced
     let first_third_end = context.conversation_history.len() / 3;
@@ -127,14 +126,13 @@ fn test_thin_write_file_tool_calls() {
 
     // Trigger thinning at 50%
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    println!("Thinning summary: {}", summary);
+    println!("Thinning result: {:?}", result);
 
-    // Should show the new format with percentage change
-    assert!(summary.contains("g3:"));
-    assert!(summary.contains("thinning context"));
-    assert!(summary.contains("[done]"));
+    // Should have made changes
+    assert!(result.had_changes, "Expected thinning to make changes");
+    assert!(result.chars_saved > 0, "Expected chars to be saved");
 
     // Check that the large content was replaced with a file reference
     let first_third_end = context.conversation_history.len() / 3;
@@ -189,14 +187,13 @@ fn test_thin_str_replace_tool_calls() {
 
     // Trigger thinning at 50%
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    println!("Thinning summary: {}", summary);
+    println!("Thinning result: {:?}", result);
 
-    // Should show the new format with percentage change
-    assert!(summary.contains("g3:"));
-    assert!(summary.contains("thinning context"));
-    assert!(summary.contains("[done]"));
+    // Should have made changes
+    assert!(result.had_changes, "Expected thinning to make changes");
+    assert!(result.chars_saved > 0, "Expected chars to be saved");
 
     // Check that the large diff was replaced with a file reference
     let first_third_end = context.conversation_history.len() / 3;
@@ -225,12 +222,12 @@ fn test_thin_context_no_large_results() {
     }
 
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    // Should report no large results found
-    assert!(summary.contains("g3:"));
-    assert!(summary.contains("thinning context"));
-    assert!(summary.contains("[no changes]"));
+    // Should report no changes (no large results found)
+    assert!(!result.had_changes, "Expected no changes");
+    assert_eq!(result.chars_saved, 0, "Expected no chars saved");
+    assert_eq!(result.leaned_count, 0, "Expected no messages thinned");
 }
 
 #[test]
@@ -256,11 +253,10 @@ fn test_thin_context_only_affects_first_third() {
     }
 
     context.used_tokens = 5000;
-    let (summary, _chars_saved) = context.thin_context(None);
+    let result = context.thin_context(None);
 
-    // Should show the new format with percentage change
-    assert!(summary.contains("g3:"));
-    assert!(summary.contains("[done]"));
+    // Should have made changes
+    assert!(result.had_changes, "Expected thinning to make changes");
 
     // Check that messages after the first third are NOT thinned
     let first_third_end = context.conversation_history.len() / 3;

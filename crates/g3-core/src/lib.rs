@@ -35,7 +35,7 @@ pub use session_continuation::{
 pub use task_result::TaskResult;
 
 // Re-export context window types
-pub use context_window::{ContextWindow, ThinScope};
+pub use context_window::{ContextWindow, ThinResult, ThinScope};
 
 // Export agent prompt generation for CLI use
 pub use prompts::get_agent_system_prompt;
@@ -500,8 +500,8 @@ impl<W: UiWriter> Agent<W> {
         // Step 1: Try thinnify (first third of context)
         self.ui_writer
             .print_context_status("🥒 Step 1: Trying thinnify...\n");
-        let thin_msg = self.do_thin_context();
-        self.ui_writer.print_context_thinning(&thin_msg);
+        let thin_result = self.do_thin_context();
+        self.ui_writer.print_thin_result(&thin_result);
 
         // Recalculate after thinnify
         let (new_max, still_needs_reduction) =
@@ -516,8 +516,8 @@ impl<W: UiWriter> Agent<W> {
         // Step 2: Try skinnify (entire context)
         self.ui_writer
             .print_context_status("🦴 Step 2: Trying skinnify...\n");
-        let skinny_msg = self.do_thin_context_all();
-        self.ui_writer.print_context_thinning(&skinny_msg);
+        let skinny_result = self.do_thin_context_all();
+        self.ui_writer.print_thin_result(&skinny_result);
 
         // Recalculate after skinnify
         let (final_max, final_needs_reduction) =
@@ -1084,32 +1084,32 @@ impl<W: UiWriter> Agent<W> {
         }
     }
     /// Manually trigger context thinning regardless of thresholds
-    pub fn force_thin(&mut self) -> String {
+    pub fn force_thin(&mut self) -> ThinResult {
         debug!("Manual context thinning triggered");
         self.do_thin_context()
     }
 
     /// Manually trigger context thinning for the ENTIRE context window
     /// Unlike force_thin which only processes the first third, this processes all messages
-    pub fn force_thin_all(&mut self) -> String {
+    pub fn force_thin_all(&mut self) -> ThinResult {
         debug!("Manual full context skinnifying triggered");
         self.do_thin_context_all()
     }
 
     /// Internal helper: thin context and track the event
-    fn do_thin_context(&mut self) -> String {
-        let (message, chars_saved) = self.context_window.thin_context(self.session_id.as_deref());
-        self.thinning_events.push(chars_saved);
-        message
+    fn do_thin_context(&mut self) -> ThinResult {
+        let result = self.context_window.thin_context(self.session_id.as_deref());
+        self.thinning_events.push(result.chars_saved);
+        result
     }
 
     /// Internal helper: thin all context and track the event
-    fn do_thin_context_all(&mut self) -> String {
-        let (message, chars_saved) = self
+    fn do_thin_context_all(&mut self) -> ThinResult {
+        let result = self
             .context_window
             .thin_context_all(self.session_id.as_deref());
-        self.thinning_events.push(chars_saved);
-        message
+        self.thinning_events.push(result.chars_saved);
+        result
     }
 
     /// Ensure context window has capacity before streaming.
@@ -1127,8 +1127,8 @@ impl<W: UiWriter> Agent<W> {
                 self.context_window.percentage_used() as u32
             ));
 
-            let thin_summary = self.do_thin_context();
-            self.ui_writer.print_context_thinning(&thin_summary);
+            let thin_result = self.do_thin_context();
+            self.ui_writer.print_thin_result(&thin_result);
 
             if !self.context_window.should_compact() {
                 self.ui_writer.print_g3_status("thinning", "resolved");
@@ -2096,8 +2096,8 @@ Skip if nothing new. Be brief."#;
 
                             // Thin context if needed before tool execution
                             if self.context_window.should_thin() {
-                                let thin_summary = self.do_thin_context();
-                                self.ui_writer.print_context_thinning(&thin_summary);
+                                let thin_result = self.do_thin_context();
+                                self.ui_writer.print_thin_result(&thin_result);
                             }
 
                             // Calculate new content to display (skip already-shown text)

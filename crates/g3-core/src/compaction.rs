@@ -234,9 +234,9 @@ fn apply_summary_fallback_sequence<W: UiWriter>(
     
     // Step 1: Try thinnify (first third of context)
     ui_writer.print_context_status("🥒 Step 1: Trying thinnify...\n");
-    let (thin_msg, chars_saved) = context_window.thin_context(None);
-    thinning_events.push(chars_saved);
-    ui_writer.print_context_thinning(&thin_msg);
+    let thin_result = context_window.thin_context(None);
+    thinning_events.push(thin_result.chars_saved);
+    ui_writer.print_thin_result(&thin_result);
     
     // Recalculate after thinnify
     let (new_max, still_needs_reduction) = provider_config::calculate_summary_max_tokens(
@@ -253,9 +253,9 @@ fn apply_summary_fallback_sequence<W: UiWriter>(
     
     // Step 2: Try skinnify (entire context)
     ui_writer.print_context_status("🦴 Step 2: Trying skinnify...\n");
-    let (skinny_msg, chars_saved) = context_window.thin_context_all(None);
-    thinning_events.push(chars_saved);
-    ui_writer.print_context_thinning(&skinny_msg);
+    let skinny_result = context_window.thin_context_all(None);
+    thinning_events.push(skinny_result.chars_saved);
+    ui_writer.print_thin_result(&skinny_result);
     
     // Recalculate after skinnify
     let (final_max, final_needs_reduction) = provider_config::calculate_summary_max_tokens(

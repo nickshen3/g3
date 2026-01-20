@@ -13,6 +13,26 @@ use tracing::{debug, warn};
 use crate::paths::get_thinned_dir;
 use crate::ToolCall;
 
+/// Result of a context thinning operation.
+/// Contains semantic data for the UI layer to format.
+#[derive(Debug, Clone)]
+pub struct ThinResult {
+    /// Scope of the thinning operation
+    pub scope: ThinScope,
+    /// Context percentage before thinning
+    pub before_percentage: u32,
+    /// Context percentage after thinning
+    pub after_percentage: u32,
+    /// Number of tool result messages that were thinned
+    pub leaned_count: usize,
+    /// Number of tool calls in assistant messages that were thinned
+    pub tool_call_leaned_count: usize,
+    /// Total characters saved
+    pub chars_saved: usize,
+    /// Whether any changes were made
+    pub had_changes: bool,
+}
+
 /// Scope for context thinning operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThinScope {
@@ -349,12 +369,12 @@ Format this as a detailed but concise summary that can be used to resume the con
     /// * `scope` - Controls which messages to process (first third or all)
     ///
     /// # Returns
-    /// A tuple of (summary message, chars saved)
+    /// A `ThinResult` with semantic data about the operation
     pub fn thin_context_with_scope(
         &mut self,
         session_id: Option<&str>,
         scope: ThinScope,
-    ) -> (String, usize) {
+    ) -> ThinResult {
         let current_percentage = self.percentage_used() as u32;
 
         // Only update last_thinning_percentage for incremental thinning
@@ -373,7 +393,17 @@ Format this as a detailed but concise summary that can be used to resume the con
         // Determine output directory: use session dir if available, otherwise ~/tmp
         let tmp_dir = match Self::resolve_thinned_dir(session_id, scope) {
             Ok(dir) => dir,
-            Err(msg) => return (msg, 0),
+            Err(_) => {
+                return ThinResult {
+                    scope,
+                    before_percentage: current_percentage,
+                    after_percentage: current_percentage,
+                    leaned_count: 0,
+                    tool_call_leaned_count: 0,
+                    chars_saved: 0,
+                    had_changes: false,
+                };
+            }
         };
 
         // Collect modifications to apply (avoids borrow checker issues)
@@ -409,7 +439,7 @@ Format this as a detailed but concise summary that can be used to resume the con
         let new_percentage = self.percentage_used() as u32;
 
         // Build result message
-        self.build_thin_result_message(
+        self.build_thin_result(
             scope,
             current_percentage,
             new_percentage,
@@ -466,13 +496,13 @@ Format this as a detailed but concise summary that can be used to resume the con
         modifications
     }
 
-    /// Backward-compatible wrapper for thin_context (first third only)
-    pub fn thin_context(&mut self, session_id: Option<&str>) -> (String, usize) {
+    /// Thin context (first third only)
+    pub fn thin_context(&mut self, session_id: Option<&str>) -> ThinResult {
         self.thin_context_with_scope(session_id, ThinScope::FirstThird)
     }
 
-    /// Backward-compatible wrapper for thin_context_all (entire history)
-    pub fn thin_context_all(&mut self, session_id: Option<&str>) -> (String, usize) {
+    /// Thin entire context (all messages)
+    pub fn thin_context_all(&mut self, session_id: Option<&str>) -> ThinResult {
         self.thin_context_with_scope(session_id, ThinScope::All)
     }
 
@@ -697,7 +727,7 @@ Format this as a detailed but concise summary that can be used to resume the con
     }
 
     /// Build the result message for thinning operations
-    fn build_thin_result_message(
+    fn build_thin_result(
         &self,
         scope: ThinScope,
         current_percentage: u32,
@@ -705,27 +735,17 @@ Format this as a detailed but concise summary that can be used to resume the con
         leaned_count: usize,
         tool_call_leaned_count: usize,
         chars_saved: usize,
-    ) -> (String, usize) {
-        // Nothing was thinned
-        if leaned_count == 0 && tool_call_leaned_count == 0 {
-            let scope_desc = match scope {
-                ThinScope::FirstThird => "",
-                ThinScope::All => " (full)",
-            };
-            let msg = format!(
-                "\x1b[1;32mg3:\x1b[0m thinning context{} ... {}% ... \x1b[38;5;208m[no changes]\x1b[0m",
-                scope_desc, current_percentage
-            );
-            return (msg, 0);
+    ) -> ThinResult {
+        let had_changes = leaned_count > 0 || tool_call_leaned_count > 0;
+        ThinResult {
+            scope,
+            before_percentage: current_percentage,
+            after_percentage: new_percentage,
+            leaned_count,
+            tool_call_leaned_count,
+            chars_saved: if had_changes { chars_saved } else { 0 },
+            had_changes,
         }
-
-        // Format: "g3: thinning context ... 70% -> 40% ... [done]"
-        // with "g3:" and "[done]" in bold green
-        let msg = format!(
-            "\x1b[1;32mg3:\x1b[0m thinning context ... {}% -> {}% ... \x1b[1;32m[done]\x1b[0m",
-            current_percentage, new_percentage
-        );
-        (msg, chars_saved)
     }
 
     /// Recalculate token usage based on current conversation history

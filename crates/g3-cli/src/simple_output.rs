@@ -1,4 +1,4 @@
-use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
+use crate::g3_status::{G3Status, Status};
 
 /// Simple output helper for printing messages
 #[derive(Clone)]
@@ -25,45 +25,16 @@ impl SimpleOutput {
 
     /// Print a g3 status message with colored tag and status
     /// Format: "g3: <message> ... [status]"
-    /// - "g3:" is bold green
-    /// - "done" status is normal
-    /// - "failed" and "error" statuses are red
+    /// Uses centralized G3Status formatting.
     pub fn print_g3_status(&self, message: &str, status: &str) {
-        let status_colored = match status {
-            s if s.starts_with("error") || s == "failed" => {
-                format!(
-                    "{}[{}]{}",
-                    SetForegroundColor(Color::Red),
-                    status,
-                    ResetColor
-                )
-            }
-            _ => format!("[{}]", status),
-        };
-
-        println!(
-            "{}{}g3:{}{} {} ... {}",
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(Color::Green),
-            ResetColor,
-            SetAttribute(Attribute::Reset),
-            message,
-            status_colored
-        );
+        G3Status::complete(message, Status::from_str(status));
     }
 
     /// Print a g3 status message in progress (no status yet)
     /// Format: "g3: <message> ..."
-    /// - "g3:" is bold green
+    /// Uses centralized G3Status formatting.
     pub fn print_g3_progress(&self, message: &str) {
-        println!(
-            "{}{}g3:{}{} {} ...",
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(Color::Green),
-            ResetColor,
-            SetAttribute(Attribute::Reset),
-            message
-        );
+        G3Status::progress_ln(message);
     }
 }
 

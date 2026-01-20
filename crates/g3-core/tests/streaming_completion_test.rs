@@ -274,7 +274,7 @@ impl UiWriter for TrackingUiWriter {
     fn print_context_status(&self, _message: &str) {}
     fn print_g3_progress(&self, _message: &str) {}
     fn print_g3_status(&self, _message: &str, _status: &str) {}
-    fn print_context_thinning(&self, _message: &str) {}
+    fn print_thin_result(&self, _result: &g3_core::ThinResult) {}
 
     fn print_tool_header(&self, _tool_name: &str, _tool_args: Option<&serde_json::Value>) {
         // Count each tool call

@@ -242,8 +242,16 @@ impl g3_core::ui_writer::UiWriter for PlannerUiWriter {
         println!("g3: {} ... [{}]", message, status);
     }
     
-    fn print_context_thinning(&self, message: &str) {
-        println!("🗜️  {}", message);
+    fn print_thin_result(&self, result: &g3_core::ThinResult) {
+        // Simple text output for planner
+        if result.had_changes {
+            println!(
+                "🗜️  thinning context ... {}% -> {}% ... [done]",
+                result.before_percentage, result.after_percentage
+            );
+        } else {
+            println!("🗜️  thinning context ... {}% ... [no changes]", result.before_percentage);
+        }
     }
     
     fn print_tool_header(&self, tool_name: &str, tool_args: Option<&serde_json::Value>) {
