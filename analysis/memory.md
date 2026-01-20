@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-20T09:01:08Z | Size: 16.7k chars
+> Updated: 2026-01-20T09:35:59Z | Size: 17.5k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -303,3 +303,14 @@ Handles `/` commands in interactive mode (extracted from interactive.rs).
 - `crates/g3-cli/src/commands.rs`
   - `handle_command()` [17..320] - dispatches `/help`, `/compact`, `/thinnify`, `/skinnify`, `/fragments`, `/rehydrate`, `/run`, `/dump`, `/clear`, `/readme`, `/stats`, `/resume`
   - Returns `Result<bool>` - true if command handled and loop should continue
+
+### Streaming State Management
+State structs for the main streaming loop in `stream_completion_with_tools()`.
+
+- `crates/g3-core/src/streaming.rs`
+  - `StreamingState` [17..42] - cross-iteration state: `full_response`, `first_token_time`, `stream_start`, `iteration_count`, `response_started`, `any_tool_executed`, `assistant_message_added`, `turn_accumulated_usage`
+  - `IterationState` [65..90] - per-iteration state: `parser`, `current_response`, `tool_executed`, `chunks_received`, `raw_chunks`, `accumulated_usage`, `stream_stop_reason`
+  - `MAX_ITERATIONS` [15] - constant (400) for loop safety
+
+- `crates/g3-core/src/lib.rs`
+  - `stream_completion_with_tools()` [1879..2712] - 834-line main streaming loop, uses `state: StreamingState` and `iter: IterationState`

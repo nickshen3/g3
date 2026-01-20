@@ -2120,8 +2120,8 @@ Skip if nothing new. Be brief."#;
 
                             self.ui_writer.finish_streaming_markdown();
 
-                            let is_todo_tool =
-                                tool_call.tool == "todo_read" || tool_call.tool == "todo_write";
+                            let is_todo_tool = streaming::is_self_handled_tool(&tool_call.tool);
+                            let is_compact_tool = streaming::is_compact_tool(&tool_call.tool);
 
                             // Tool call header (TODO tools print their own)
                             if !is_todo_tool {
@@ -2138,19 +2138,6 @@ Skip if nothing new. Be brief."#;
                                     }
                                 }
                             }
-
-                            // Check if this is a compact tool (file operations)
-                            let is_compact_tool = matches!(
-                                tool_call.tool.as_str(),
-                                "read_file"
-                                    | "write_file"
-                                    | "str_replace"
-                                    | "remember"
-                                    | "screenshot"
-                                    | "coverage"
-                                    | "rehydrate"
-                                    | "code_search"
-                            );
 
                             // Only print output header for non-compact tools
                             if !is_compact_tool && !is_todo_tool {
@@ -2201,50 +2188,15 @@ Skip if nothing new. Be brief."#;
                                 const MAX_LINE_WIDTH: usize = 80;
                                 let output_len = output_lines.len();
 
-                                // Determine output format based on tool type
-                                if is_todo_tool {
-                                    // TODO tools handle their own output
-                                    None
-                                } else if is_compact_tool {
-                                    // Compact tools: show one-line summary
-                                    if !tool_success {
-                                        Some(streaming::truncate_for_display(&tool_result, 60))
-                                    } else {
-                                        match tool_call.tool.as_str() {
-                                            "read_file" => {
-                                                Some(streaming::format_read_file_summary(
-                                                    output_len,
-                                                    tool_result.len(),
-                                                ))
-                                            }
-                                            "write_file" => Some(
-                                                streaming::format_write_file_result(&tool_result),
-                                            ),
-                                            "str_replace" => {
-                                                let (ins, del) = parse_diff_stats(&tool_result);
-                                                Some(streaming::format_str_replace_summary(
-                                                    ins, del,
-                                                ))
-                                            }
-                                            "remember" => Some(streaming::format_remember_summary(
-                                                &tool_result,
-                                            )),
-                                            "screenshot" => Some(
-                                                streaming::format_screenshot_summary(&tool_result),
-                                            ),
-                                            "coverage" => Some(streaming::format_coverage_summary(
-                                                &tool_result,
-                                            )),
-                                            "rehydrate" => Some(
-                                                streaming::format_rehydrate_summary(&tool_result),
-                                            ),
-                                            "code_search" => Some(
-                                                streaming::format_code_search_summary(&tool_result),
-                                            ),
-                                            _ => Some("✅ completed".to_string()),
-                                        }
-                                    }
-                                } else {
+                                // Use centralized tool output formatting
+                                match streaming::format_tool_result_summary(
+                                    &tool_call.tool,
+                                    &tool_result,
+                                    tool_success,
+                                ) {
+                                    streaming::ToolOutputFormat::SelfHandled => None,
+                                    streaming::ToolOutputFormat::Compact(summary) => Some(summary),
+                                    streaming::ToolOutputFormat::Regular => {
                                     // Regular tools: show truncated output lines
                                     let max_lines_to_show =
                                         if wants_full { output_len } else { MAX_LINES };
@@ -2264,6 +2216,7 @@ Skip if nothing new. Be brief."#;
                                         self.ui_writer.print_tool_output_summary(output_len);
                                     }
                                     None
+                                    }
                                 }
                             };
 
@@ -2770,33 +2723,6 @@ Skip if nothing new. Be brief."#;
 // Re-export utility functions
 pub use utils::apply_unified_diff_to_string;
 use utils::truncate_to_word_boundary;
-
-/// Parse insertions and deletions from a str_replace result.
-/// Result format: "✅ +N insertions | -M deletions"
-fn parse_diff_stats(result: &str) -> (i32, i32) {
-    let mut insertions = 0i32;
-    let mut deletions = 0i32;
-
-    // Look for "+N insertions" pattern
-    if let Some(pos) = result.find("+") {
-        let after_plus = &result[pos + 1..];
-        insertions = after_plus
-            .split_whitespace()
-            .next()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-    }
-    // Look for "-M deletions" pattern
-    if let Some(pos) = result.find("-") {
-        let after_minus = &result[pos + 1..];
-        deletions = after_minus
-            .split_whitespace()
-            .next()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-    }
-    (insertions, deletions)
-}
 
 // Implement Drop to clean up safaridriver process
 impl<W: UiWriter> Drop for Agent<W> {

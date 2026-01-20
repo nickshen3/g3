@@ -53,6 +53,118 @@ impl StreamingState {
     }
 }
 
+/// Result of formatting a tool's output for display
+pub enum ToolOutputFormat {
+    /// Tool handles its own output (e.g., TODO tools)
+    SelfHandled,
+    /// Compact one-line summary for file operations
+    Compact(String),
+    /// Regular multi-line output (already displayed via ui_writer)
+    Regular,
+}
+
+/// Format a tool result for compact display.
+/// Returns the appropriate format based on tool type and success.
+pub fn format_tool_result_summary(
+    tool_name: &str,
+    tool_result: &str,
+    tool_success: bool,
+) -> ToolOutputFormat {
+    let is_todo_tool = tool_name == "todo_read" || tool_name == "todo_write";
+    let is_compact_tool = matches!(
+        tool_name,
+        "read_file"
+            | "write_file"
+            | "str_replace"
+            | "remember"
+            | "screenshot"
+            | "coverage"
+            | "rehydrate"
+            | "code_search"
+    );
+
+    if is_todo_tool {
+        ToolOutputFormat::SelfHandled
+    } else if is_compact_tool {
+        if !tool_success {
+            ToolOutputFormat::Compact(truncate_for_display(tool_result, 60))
+        } else {
+            let summary = format_compact_tool_summary(tool_name, tool_result);
+            ToolOutputFormat::Compact(summary)
+        }
+    } else {
+        ToolOutputFormat::Regular
+    }
+}
+
+/// Check if a tool is a "compact" tool that shows one-line summaries
+pub fn is_compact_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "read_file"
+            | "write_file"
+            | "str_replace"
+            | "remember"
+            | "screenshot"
+            | "coverage"
+            | "rehydrate"
+            | "code_search"
+    )
+}
+
+/// Check if a tool handles its own output display
+pub fn is_self_handled_tool(tool_name: &str) -> bool {
+    tool_name == "todo_read" || tool_name == "todo_write"
+}
+
+/// Format a compact summary for a successful compact tool
+fn format_compact_tool_summary(tool_name: &str, tool_result: &str) -> String {
+    let output_lines: Vec<&str> = tool_result.lines().collect();
+    let output_len = output_lines.len();
+
+    match tool_name {
+        "read_file" => format_read_file_summary(output_len, tool_result.len()),
+        "write_file" => format_write_file_result(tool_result),
+        "str_replace" => {
+            let (ins, del) = parse_diff_stats(tool_result);
+            format_str_replace_summary(ins, del)
+        }
+        "remember" => format_remember_summary(tool_result),
+        "screenshot" => format_screenshot_summary(tool_result),
+        "coverage" => format_coverage_summary(tool_result),
+        "rehydrate" => format_rehydrate_summary(tool_result),
+        "code_search" => format_code_search_summary(tool_result),
+        _ => "✅ completed".to_string(),
+    }
+}
+
+/// Parse diff stats from str_replace result
+fn parse_diff_stats(result: &str) -> (i32, i32) {
+    // Format: "✅ +N insertions | -M deletions"
+    let mut insertions = 0i32;
+    let mut deletions = 0i32;
+
+    // Look for "+N insertions" pattern
+    if let Some(pos) = result.find("+") {
+        let after_plus = &result[pos + 1..];
+        insertions = after_plus
+            .split_whitespace()
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+    }
+    // Look for "-M deletions" pattern
+    if let Some(pos) = result.find("-") {
+        let after_minus = &result[pos + 1..];
+        deletions = after_minus
+            .split_whitespace()
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+    }
+    (insertions, deletions)
+}
+
 impl Default for StreamingState {
     fn default() -> Self {
         Self::new()
