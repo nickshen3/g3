@@ -414,4 +414,47 @@ mod tests {
             Err(e) => println!("Error: {:?}", e),
         }
     }
+
+    #[test]
+    fn test_no_completion_for_bare_quote() {
+        use rustyline::completion::Completer;
+        use rustyline::Context;
+        
+        let helper = G3Helper::new();
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        
+        // Just a quote with no path prefix - should NOT trigger completion
+        let line = "edit \"";
+        let pos = line.len();
+        let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
+        println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
+        
+        // Should return no completions since "" is not a path prefix
+        assert_eq!(completions.len(), 0, "Bare quote should not trigger path completion");
+    }
+
+    #[test]
+    fn test_no_completion_for_random_text_in_quotes() {
+        use rustyline::completion::Completer;
+        use rustyline::Context;
+        
+        let helper = G3Helper::new();
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        
+        // Random text in quotes - should NOT trigger completion
+        let line = "edit \"hello world";
+        let pos = line.len();
+        let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
+        println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
+        assert_eq!(completions.len(), 0, "Random quoted text should not trigger path completion");
+        
+        // Just "foo - no path prefix
+        let line = "edit \"foo";
+        let pos = line.len();
+        let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
+        println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
+        assert_eq!(completions.len(), 0, "Quoted non-path should not trigger completion");
+    }
 }
