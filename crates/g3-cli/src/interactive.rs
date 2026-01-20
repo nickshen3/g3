@@ -462,7 +462,7 @@ async fn handle_command<W: UiWriter>(
                         if prompt.is_empty() {
                             output.print("❌ File is empty.");
                         } else {
-                            G3Status::progress(&format!("running {}", file_path));
+                            G3Status::progress(&format!("loading {}", file_path));
                             G3Status::done();
                             execute_task_with_retry(agent, prompt, show_prompt, show_code, output).await;
                         }
