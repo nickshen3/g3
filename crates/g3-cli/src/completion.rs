@@ -129,23 +129,39 @@ impl G3Helper {
         result
     }
     
-    /// List available session IDs from .g3/sessions/
-    fn list_sessions(&self) -> Vec<String> {
+    /// List available session IDs from .g3/sessions/, sorted by newest first.
+    /// If `limit` is Some(n), returns at most n sessions.
+    fn list_sessions(&self, limit: Option<usize>) -> Vec<String> {
         let sessions_dir = PathBuf::from(".g3/sessions");
         if !sessions_dir.is_dir() {
             return Vec::new();
         }
         
-        std::fs::read_dir(&sessions_dir)
+        let mut sessions: Vec<_> = std::fs::read_dir(&sessions_dir)
             .ok()
             .map(|entries| {
                 entries
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| entry.path().is_dir())
-                    .map(|entry| entry.file_name().to_string_lossy().to_string())
+                    .filter_map(|entry| {
+                        let modified = entry.metadata().ok()?.modified().ok()?;
+                        Some((entry.file_name().to_string_lossy().to_string(), modified))
+                    })
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        
+        // Sort by modification time, newest first
+        sessions.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        // Apply limit if specified
+        let sessions: Vec<String> = sessions
+            .into_iter()
+            .map(|(name, _)| name)
+            .take(limit.unwrap_or(usize::MAX))
+            .collect();
+        
+        sessions
     }
 }
 
@@ -261,7 +277,8 @@ impl Completer for G3Helper {
         // Case 4: Session ID completion for /resume command
         if line_to_cursor.starts_with("/resume ") {
             let partial = word;
-            let sessions = self.list_sessions();
+            // Get all sessions sorted by newest first, then filter and limit
+            let sessions = self.list_sessions(None);
             let matches: Vec<Pair> = sessions
                 .into_iter()
                 .filter(|s| s.starts_with(partial))
@@ -269,6 +286,7 @@ impl Completer for G3Helper {
                     display: s.clone(),
                     replacement: s,
                 })
+                .take(8)  // Show at most 8 most recent matches
                 .collect();
             return Ok((word_start, matches));
         }
@@ -537,7 +555,7 @@ mod tests {
         
         // Test list_sessions directly - should not panic regardless of whether
         // .g3/sessions exists or not
-        let sessions = helper.list_sessions();
+        let sessions = helper.list_sessions(None);
         
         // This will either return sessions (if .g3/sessions exists) or empty
         // The important thing is it doesn't panic
