@@ -794,7 +794,7 @@ impl<W: UiWriter> Agent<W> {
         // Add user message to context window
         let mut user_message = {
             let provider = self.providers.get(None)?;
-            let content = format!("Task: {}", description);
+            let content = description.to_string();
 
             // Apply cache control if provider supports it
             if let Some(cache_config) = self.get_provider_cache_control() {
