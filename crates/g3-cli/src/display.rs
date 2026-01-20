@@ -64,6 +64,7 @@ impl LoadedContent {
     }
 
     /// Create with explicit include prompt filename.
+    #[allow(dead_code)] // Used in tests, may be useful for future callers
     pub fn with_include_prompt_filename(mut self, filename: Option<String>) -> Self {
         if self.include_prompt_filename.is_some() {
             self.include_prompt_filename = filename;

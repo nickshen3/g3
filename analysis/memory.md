@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-20T04:10:35Z | Size: 15.8k chars
+> Updated: 2026-01-20T08:53:25Z | Size: 16.3k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -286,3 +286,13 @@ Semantic data for context thinning operations, replacing pre-formatted strings.
 - `crates/g3-cli/src/g3_status.rs`
   - `Status::NoChanges` [42] - new status variant for thinning with no changes
   - `G3Status::thin_result()` [265..292] - formats ThinResult with proper colors/styling
+
+### CLI Display Utilities
+Shared display functions for interactive and agent modes.
+
+- `crates/g3-cli/src/display.rs`
+  - `format_workspace_path()` [9..17] - formats path with ~ for home dir
+  - `print_workspace_path()` [20..29] - prints formatted workspace path
+  - `LoadedContent` [32..39] - tracks loaded project files (README, AGENTS.md, Memory, include prompt)
+  - `print_loaded_status()` [87..103] - prints "✓ README  ✓ AGENTS.md" status line
+  - `print_project_heading()` [106..114] - prints project name from README

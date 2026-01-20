@@ -509,7 +509,6 @@ mod tests {
         println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
         assert_eq!(completions.len(), 0, "Quoted non-path should not trigger completion");
     }
-}
 
     #[test]
     fn test_resume_completion_lists_sessions() {
@@ -561,3 +560,4 @@ mod tests {
         // The important thing is it doesn't panic
         println!("list_sessions returned {} sessions", sessions.len());
     }
+}
