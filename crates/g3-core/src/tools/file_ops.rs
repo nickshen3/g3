@@ -582,7 +582,7 @@ pub async fn execute_str_replace<W: UiWriter>(
 
     // Write the result back to the file
     match std::fs::write(&file_path, &result) {
-        Ok(()) => Ok(format!("✅ \x1b[32m+{} insertions\x1b[0m | \x1b[31m-{} deletions\x1b[0m", insertions, deletions)),
+        Ok(()) => Ok(format!("✅ +{} insertions | -{} deletions", insertions, deletions)),
         Err(e) => Ok(format!("❌ Failed to write to file '{}': {}", file_path, e)),
     }
 }

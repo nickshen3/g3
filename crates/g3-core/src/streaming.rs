@@ -142,11 +142,11 @@ pub fn format_timing_footer(
     // Add token usage info if available (dimmed)
     if let Some(tokens) = turn_tokens {
         format!(
-            "{}  \x1b[2m{} ◉ | {:.0}%\x1b[0m",
+            "{}  {} ◉ | {:.0}%",
             timing, tokens, context_percentage
         )
     } else {
-        format!("{}  \x1b[2m{:.0}%\x1b[0m", timing, context_percentage)
+        format!("{}  {:.0}%", timing, context_percentage)
     }
 }
 
@@ -326,11 +326,11 @@ pub fn format_write_file_result(tool_result: &str) -> String {
 /// Format a str_replace result summary.
 pub fn format_str_replace_summary(insertions: i32, deletions: i32) -> String {
     if insertions > 0 && deletions > 0 {
-        format!("\x1b[32m+{}\x1b[0m \x1b[2m|\x1b[0m \x1b[31m-{}\x1b[0m", insertions, deletions)
+        format!("+{} | -{}", insertions, deletions)
     } else if insertions > 0 {
-        format!("\x1b[32m+{}\x1b[0m", insertions)
+        format!("+{}", insertions)
     } else {
-        format!("\x1b[31m-{}\x1b[0m", deletions)
+        format!("-{}", deletions)
     }
 }
 

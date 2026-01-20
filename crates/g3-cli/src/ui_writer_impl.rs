@@ -15,6 +15,22 @@ mod ansi {
     pub const RED: &str = "\x1b[31m";
 }
 
+/// Colorize a str_replace summary (e.g., "+5 | -3" -> green "+5" | red "-3")
+fn colorize_str_replace_summary(summary: &str) -> String {
+    // Parse patterns like "+5 | -3", "+5", "-3"
+    if summary.contains(" | ") {
+        let parts: Vec<&str> = summary.split(" | ").collect();
+        if parts.len() == 2 {
+            return format!("\x1b[32m{}\x1b[0m \x1b[2m|\x1b[0m \x1b[31m{}\x1b[0m", parts[0], parts[1]);
+        }
+    } else if summary.starts_with('+') {
+        return format!("\x1b[32m{}\x1b[0m", summary);
+    } else if summary.starts_with('-') {
+        return format!("\x1b[31m{}\x1b[0m", summary);
+    }
+    summary.to_string()
+}
+
 /// ANSI color codes for tool names
 const TOOL_COLOR_NORMAL: &str = "\x1b[32m";
 const TOOL_COLOR_NORMAL_BOLD: &str = "\x1b[1;32m";
@@ -523,6 +539,13 @@ impl UiWriter for ConsoleUiWriter {
         // Color for tool name
         let tool_color = if is_agent_mode { TOOL_COLOR_AGENT } else { TOOL_COLOR_NORMAL };
 
+        // Colorize summary for str_replace (green insertions, red deletions)
+        let display_summary = if tool_name == "str_replace" {
+            colorize_str_replace_summary(summary)
+        } else {
+            summary.to_string()
+        };
+
         // Print compact single line
         if is_continuation {
             // Continuation line for consecutive read_file on same file:
@@ -530,7 +553,7 @@ impl UiWriter for ConsoleUiWriter {
             println!(
                 "   \x1b[2m└─ reading further\x1b[0m\x1b[35m{}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
                 range_suffix,
-                summary,
+                display_summary,
                 tokens_delta,
                 duration_str
             );
@@ -539,14 +562,14 @@ impl UiWriter for ConsoleUiWriter {
             // Pad to align with longest compact tool (str_replace = 11 chars)
             println!(
                 " \x1b[2m●\x1b[0m {}{:<11}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
-                tool_color, tool_name, summary, tokens_delta, duration_str
+                tool_color, tool_name, display_summary, tokens_delta, duration_str
             );
         } else {
             // Tools with file path: " ● tool_name | path [range] | summary | tokens ◉ time"
             // Pad to align with longest compact tool (str_replace = 11 chars)
             println!(
                 " \x1b[2m●\x1b[0m {}{:<11}\x1b[0m \x1b[2m|\x1b[0m \x1b[35m{}{}\x1b[0m \x1b[2m| {}\x1b[0m \x1b[2m| {} ◉ {}\x1b[0m",
-                tool_color, tool_name, display_arg, range_suffix, summary, tokens_delta, duration_str
+                tool_color, tool_name, display_arg, range_suffix, display_summary, tokens_delta, duration_str
             );
         }
 
