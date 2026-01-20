@@ -3,7 +3,8 @@
 use anyhow::Result;
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use rustyline::{Config, Editor};
+use crate::completion::G3Helper;
 use std::path::Path;
 use tracing::{debug, error};
 
@@ -166,7 +167,11 @@ pub async fn run_interactive<W: UiWriter>(
     }
 
     // Initialize rustyline editor with history
-    let mut rl = DefaultEditor::new()?;
+    let config = Config::builder()
+        .completion_type(rustyline::CompletionType::List)
+        .build();
+    let mut rl = Editor::with_config(config)?;
+    rl.set_helper(Some(G3Helper::new()));
 
     // Try to load history from a file in the user's home directory
     let history_file = dirs::home_dir().map(|mut path| {
@@ -334,7 +339,7 @@ async fn handle_command<W: UiWriter>(
     input: &str,
     agent: &mut Agent<W>,
     output: &SimpleOutput,
-    rl: &mut DefaultEditor,
+    rl: &mut Editor<G3Helper, rustyline::history::DefaultHistory>,
     show_prompt: bool,
     show_code: bool,
 ) -> Result<bool> {
