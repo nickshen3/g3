@@ -5,6 +5,8 @@
 use std::path::Path;
 use tracing::error;
 
+use crate::template::process_template;
+
 /// Read AGENTS.md configuration from the workspace directory.
 /// Returns formatted content with emoji prefix, or None if not found.
 pub fn read_agents_config(workspace_dir: &Path) -> Option<String> {
@@ -97,7 +99,10 @@ pub fn read_include_prompt(path: Option<&std::path::Path>) -> Option<String> {
     }
 
     match std::fs::read_to_string(path) {
-        Ok(content) => Some(format!("📎 Included Prompt (from {}):\n{}", path.display(), content)),
+        Ok(content) => {
+            let processed = process_template(&content);
+            Some(format!("📎 Included Prompt (from {}):\n{}", path.display(), processed))
+        }
         Err(e) => {
             tracing::error!("Failed to read include prompt file {}: {}", path.display(), e);
             None
@@ -376,6 +381,25 @@ mod tests {
         let content = result.unwrap();
         assert!(content.contains("📎 Included Prompt"));
         assert!(content.contains("Test prompt content"));
+        
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_read_include_prompt_with_template_variables() {
+        // Create a temp file with template variables
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_include_prompt_template.md");
+        std::fs::write(&temp_file, "Today is {{today}} and {{unknown}} stays").unwrap();
+        
+        let result = read_include_prompt(Some(&temp_file));
+        assert!(result.is_some());
+        let content = result.unwrap();
+        
+        // {{today}} should be replaced with a date, {{unknown}} should remain
+        assert!(!content.contains("{{today}}"));
+        assert!(content.contains("{{unknown}}"));
         
         // Cleanup
         let _ = std::fs::remove_file(&temp_file);
