@@ -164,6 +164,7 @@ impl G3Status {
 
     /// Print an info message in dimmed/grey text.
     /// Format: "... <message>"
+    #[allow(dead_code)]
     pub fn info(message: &str) {
         println!(
             "{}... {}{}",
@@ -202,9 +203,13 @@ impl G3Status {
                 ResetColor
             ),
             Status::Error(msg) => format!(
-                "{}[error: {}]{}",
+                "{}{}{}",
                 SetForegroundColor(Color::Red),
-                msg,
+                if msg.is_empty() {
+                    "[error]".to_string()
+                } else {
+                    format!("[error: {}]", msg)
+                },
                 ResetColor
             ),
             Status::Resolved => format!(

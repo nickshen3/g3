@@ -10,7 +10,7 @@ use crate::ui_writer::UiWriter;
 use crate::{Agent, DiscoveryOptions, TaskResult};
 use anyhow::Result;
 use std::time::Instant;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Configuration for retry behavior
 #[derive(Debug, Clone)]
@@ -206,11 +206,11 @@ where
                         let delay_secs = delay.as_secs_f64();
 
                         // Clean error message
-                        let msg = format!("g3: {:?} [error: attempt {}/{}]", recoverable_type, retry_count, config.max_retries);
+                        let msg = format!("g3: {:?} [error]", recoverable_type);
                         print_fn(&msg);
 
                         // Retry message - note: can't show [done] here since we don't control when sleep finishes
-                        let retry_msg = format!("g3: retrying in {:.1}s ...", delay_secs);
+                        let retry_msg = format!("g3: retrying in {:.1}s ({}/{}) ...", delay_secs, retry_count, config.max_retries);
                         print_fn(&retry_msg); 
 
                         debug!(
@@ -283,10 +283,10 @@ where
                         let delay_secs = delay.as_secs_f64();
 
                         // Clean error message
-                        let msg = format!("g3: {:?} [error: attempt {}/{}]", recoverable_type, retry_count, max_retries);
+                        let msg = format!("g3: {:?} [error]", recoverable_type);
                         print_fn(&msg);
 
-                        let retry_msg = format!("g3: retrying in {:.1}s ...", delay_secs);
+                        let retry_msg = format!("g3: retrying in {:.1}s ({}/{}) ...", delay_secs, retry_count, max_retries);
                         print_fn(&retry_msg);
 
                         tokio::time::sleep(delay).await;

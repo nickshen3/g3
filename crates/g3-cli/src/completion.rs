@@ -224,7 +224,7 @@ impl Completer for G3Helper {
             let path: &str = &path_unescaped;
             
             // Complete just the path portion
-            let (rel_start, completions) = self.file_completer.complete(path, path.len(), ctx)?;
+            let (_rel_start, completions) = self.file_completer.complete(path, path.len(), ctx)?;
             
             if completions.is_empty() {
                 return Ok((pos, vec![]));

@@ -84,11 +84,11 @@ pub async fn execute_task_with_retry<W: UiWriter>(
                         // Print error status
                         G3Status::complete(
                             recoverable_error_name(&recoverable_error),
-                            crate::g3_status::Status::Error(format!("attempt {}/{}", attempt, MAX_RETRIES)),
+                            crate::g3_status::Status::Error(String::new()),
                         );
 
                         // Print retry message (no newline, will show [done] after sleep)
-                        G3Status::progress(&format!("retrying in {:.1}s", delay_secs));
+                        G3Status::progress(&format!("retrying in {:.1}s ({}/{})", delay_secs, attempt, MAX_RETRIES));
 
                         // Wait before retrying
                         tokio::time::sleep(delay).await;
@@ -106,7 +106,7 @@ pub async fn execute_task_with_retry<W: UiWriter>(
 }
 
 /// Handle execution errors with detailed logging and user-friendly output.
-pub fn handle_execution_error(e: &anyhow::Error, input: &str, output: &SimpleOutput, attempt: u32) {
+pub fn handle_execution_error(e: &anyhow::Error, input: &str, _output: &SimpleOutput, attempt: u32) {
     // Check if this is a recoverable error type (for logging level decision)
     let error_type = classify_error(e);
     let is_recoverable = matches!(error_type, ErrorType::Recoverable(_));
