@@ -51,16 +51,21 @@ impl G3Helper {
         let line_to_cursor = &line[..pos];
         
         // Look backwards for the start of the word
-        // A word starts after a space (unless quoted)
+        // A word starts after a space (unless quoted or escaped)
         let mut word_start = 0;
         let mut in_quotes = false;
         let mut quote_char = ' ';
+        let mut prev_was_backslash = false;
         
-        for (i, c) in line_to_cursor.char_indices() {
+        let chars: Vec<(usize, char)> = line_to_cursor.char_indices().collect();
+        for (idx, &(i, c)) in chars.iter().enumerate() {
             if in_quotes {
-                if c == quote_char {
+                if c == quote_char && !prev_was_backslash {
                     in_quotes = false;
                 }
+            } else if prev_was_backslash {
+                // This char is escaped, don't treat it as special
+                // (e.g., backslash-space is part of the word)
             } else {
                 match c {
                     '"' | '\'' => {
@@ -69,12 +74,17 @@ impl G3Helper {
                         word_start = i;
                     }
                     ' ' | '\t' => {
-                        // Next char starts a new word
-                        word_start = i + 1;
+                        // Space starts a new word (unless escaped)
+                        if idx + 1 < chars.len() {
+                            word_start = chars[idx + 1].0;
+                        } else {
+                            word_start = pos; // At end, empty word
+                        }
                     }
                     _ => {}
                 }
             }
+            prev_was_backslash = c == '\\' && !prev_was_backslash;
         }
         
         (word_start, &line_to_cursor[word_start..])
@@ -82,6 +92,9 @@ impl G3Helper {
 
     /// Check if a word looks like a path prefix
     fn is_path_prefix(&self, word: &str) -> bool {
+        // Strip leading quote if present (for paths like "~/...)
+        let word = word.trim_start_matches('"').trim_start_matches('\'');
+        
         word.starts_with("./")
             || word.starts_with("../")
             || word.starts_with("~/")
@@ -89,6 +102,30 @@ impl G3Helper {
             || word == "."
             || word == ".."
             || word == "~"
+    }
+    
+    /// Strip quotes from a word for path completion
+    fn strip_quotes<'a>(&self, word: &'a str) -> &'a str {
+        word.trim_start_matches('"').trim_start_matches('\'')
+            .trim_end_matches('"').trim_end_matches('\'')
+    }
+    
+    /// Unescape backslash-escaped characters in a path
+    /// e.g., "~/My\ Files" -> "~/My Files"
+    fn unescape_path(&self, path: &str) -> String {
+        let mut result = String::with_capacity(path.len());
+        let mut chars = path.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\' && chars.peek().is_some() {
+                // Skip the backslash, take the next char literally
+                if let Some(next) = chars.next() {
+                    result.push(next);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
     }
 }
 
@@ -137,19 +174,69 @@ impl Completer for G3Helper {
         }
         
         // Case 2: Path completion for path-like prefixes
-        // Delegate to FilenameCompleter which handles:
-        // - Tilde expansion
-        // - Quote handling for spaces
-        // - Proper escaping
-        if self.is_path_prefix(word) || word_start > 0 && line_to_cursor[word_start..].starts_with('/') {
-            return self.file_completer.complete(line, pos, ctx);
+        // We handle quotes ourselves since FilenameCompleter doesn't understand our extraction
+        if self.is_path_prefix(word) || (word_start > 0 && line_to_cursor[word_start..].starts_with('/')) {
+            // Check if word starts with a quote
+            let has_leading_quote = word.starts_with('"') || word.starts_with('\'');
+            let quote_char = if has_leading_quote { &word[..1] } else { "" };
+            // Check if word has backslash escapes
+            let has_escapes = word.contains('\\');
+            
+            // Strip quotes and unescape backslashes to get the actual path
+            let path_str = self.strip_quotes(word);
+            let path_unescaped = self.unescape_path(path_str);
+            let path: &str = &path_unescaped;
+            
+            // Complete just the path portion
+            let (rel_start, completions) = self.file_completer.complete(path, path.len(), ctx)?;
+            
+            if completions.is_empty() {
+                return Ok((pos, vec![]));
+            }
+            
+            // Adjust completions to account for quotes and word position
+            let adjusted: Vec<Pair> = completions
+                .into_iter()
+                .map(|pair| {
+                    // If we had a leading quote, add it back
+                    // Also check if the path has spaces - if so, wrap in quotes
+                    let has_spaces = pair.replacement.contains(' ');
+                    let replacement = if has_leading_quote {
+                        // Preserve the original quote style
+                        format!("{}{}{}", quote_char, pair.replacement, quote_char)
+                    } else if has_escapes && has_spaces {
+                        // User was using backslash escapes, continue with that style
+                        pair.replacement.replace(' ', "\\ ")
+                    } else if has_spaces {
+                        // Add quotes around paths with spaces
+                        format!("\"{}\"" , pair.replacement)
+                    } else {
+                        pair.replacement
+                    };
+                    
+                    let needs_quotes = has_spaces || has_leading_quote;
+                    let display = if needs_quotes && !pair.display.starts_with('"') {
+                        format!("\"{}\"" , pair.display)
+                    } else {
+                        pair.display
+                    };
+                    
+                    Pair { display, replacement }
+                })
+                .collect();
+            
+            // Return with word_start so the whole word gets replaced
+            return Ok((word_start, adjusted));
         }
         
         // Case 3: Check if we're after a command that takes a path argument
         if line_to_cursor.starts_with("/run ") 
             || line_to_cursor.starts_with("/rehydrate ")
         {
-            return self.file_completer.complete(line, pos, ctx);
+            // For commands, just use the file completer on the path portion
+            let path = self.strip_quotes(word);
+            let (_, completions) = self.file_completer.complete(path, path.len(), ctx)?;
+            return Ok((word_start, completions));
         }
 
         // No completion for regular text
@@ -271,5 +358,60 @@ mod tests {
         let (start, matches) = helper.complete("/h", 2, &ctx).unwrap();
         assert_eq!(start, 0);
         assert!(matches.iter().any(|m| m.replacement == "/help"));
+    }
+
+    #[test]
+    fn test_actual_completion_with_quotes() {
+        use rustyline::completion::Completer;
+        use rustyline::Context;
+        
+        let helper = G3Helper::new();
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        
+        // Test 1: "~/ - unclosed quote at start of path
+        println!("\n=== Test 1: Unclosed quote \"~/ ===");
+        let line = "edit \"~/";
+        let pos = line.len();
+        match helper.complete(line, pos, &ctx) {
+            Ok((start, completions)) => {
+                println!("Line: '{}', pos: {}", line, pos);
+                println!("Start: {}, num_completions: {}", start, completions.len());
+                if !completions.is_empty() {
+                    println!("First few: {:?}", completions.iter().take(3).map(|p| &p.replacement).collect::<Vec<_>>());
+                }
+            }
+            Err(e) => println!("Error: {:?}", e),
+        }
+        
+        // Test 2: ~/My\ - backslash before cursor
+        println!("\n=== Test 2: Backslash escape ~/My\\ ===");
+        let line = "edit ~/My\\ ";
+        let pos = line.len();
+        match helper.complete(line, pos, &ctx) {
+            Ok((start, completions)) => {
+                println!("Line: '{}', pos: {}", line, pos);
+                println!("Start: {}, num_completions: {}", start, completions.len());
+                if !completions.is_empty() {
+                    println!("First few: {:?}", completions.iter().take(3).map(|p| &p.replacement).collect::<Vec<_>>());
+                }
+            }
+            Err(e) => println!("Error: {:?}", e),
+        }
+        
+        // Test 3: "~/" - closed quote
+        println!("\n=== Test 3: Closed quote \"/~/\" ===");
+        let line = "edit \"~/\"";
+        let pos = line.len();
+        match helper.complete(line, pos, &ctx) {
+            Ok((start, completions)) => {
+                println!("Line: '{}', pos: {}", line, pos);
+                println!("Start: {}, num_completions: {}", start, completions.len());
+                if !completions.is_empty() {
+                    println!("First few: {:?}", completions.iter().take(3).map(|p| &p.replacement).collect::<Vec<_>>());
+                }
+            }
+            Err(e) => println!("Error: {:?}", e),
+        }
     }
 }
