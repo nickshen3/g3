@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-20T08:53:25Z | Size: 16.3k chars
+> Updated: 2026-01-20T09:01:08Z | Size: 16.7k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -296,3 +296,10 @@ Shared display functions for interactive and agent modes.
   - `LoadedContent` [32..39] - tracks loaded project files (README, AGENTS.md, Memory, include prompt)
   - `print_loaded_status()` [87..103] - prints "✓ README  ✓ AGENTS.md" status line
   - `print_project_heading()` [106..114] - prints project name from README
+
+### Interactive Commands Module
+Handles `/` commands in interactive mode (extracted from interactive.rs).
+
+- `crates/g3-cli/src/commands.rs`
+  - `handle_command()` [17..320] - dispatches `/help`, `/compact`, `/thinnify`, `/skinnify`, `/fragments`, `/rehydrate`, `/run`, `/dump`, `/clear`, `/readme`, `/stats`, `/resume`
+  - Returns `Result<bool>` - true if command handled and loop should continue

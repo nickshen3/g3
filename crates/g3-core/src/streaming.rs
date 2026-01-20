@@ -23,6 +23,7 @@ pub struct StreamingState {
     pub response_started: bool,
     pub any_tool_executed: bool,
     pub auto_summary_attempts: usize,
+    pub assistant_message_added: bool,
     pub turn_accumulated_usage: Option<g3_providers::Usage>,
 }
 
@@ -36,6 +37,7 @@ impl StreamingState {
             response_started: false,
             any_tool_executed: false,
             auto_summary_attempts: 0,
+            assistant_message_added: false,
             turn_accumulated_usage: None,
         }
     }
@@ -65,6 +67,7 @@ pub struct IterationState {
     pub chunks_received: usize,
     pub raw_chunks: Vec<String>,
     pub accumulated_usage: Option<g3_providers::Usage>,
+    pub stream_stop_reason: Option<String>,
 }
 
 impl IterationState {
@@ -76,6 +79,7 @@ impl IterationState {
             chunks_received: 0,
             raw_chunks: Vec::new(),
             accumulated_usage: None,
+            stream_stop_reason: None,
         }
     }
 
