@@ -7,7 +7,7 @@
 //!   - `../` - parent directory  
 //!   - `~/` - home directory
 //!   - `/` (not at start) - root directory
-//! - Extensible for future semantic completions (sessions, fragments, etc.)
+//! - Session ID completion for `/resume` command
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
@@ -15,6 +15,7 @@ use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
+use std::path::PathBuf;
 
 /// Available `/` commands for completion
 const COMMANDS: &[&str] = &[
@@ -127,6 +128,25 @@ impl G3Helper {
         }
         result
     }
+    
+    /// List available session IDs from .g3/sessions/
+    fn list_sessions(&self) -> Vec<String> {
+        let sessions_dir = PathBuf::from(".g3/sessions");
+        if !sessions_dir.is_dir() {
+            return Vec::new();
+        }
+        
+        std::fs::read_dir(&sessions_dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| entry.path().is_dir())
+                    .map(|entry| entry.file_name().to_string_lossy().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 impl Default for G3Helper {
@@ -231,12 +251,26 @@ impl Completer for G3Helper {
         
         // Case 3: Check if we're after a command that takes a path argument
         if line_to_cursor.starts_with("/run ") 
-            || line_to_cursor.starts_with("/rehydrate ")
         {
             // For commands, just use the file completer on the path portion
             let path = self.strip_quotes(word);
             let (_, completions) = self.file_completer.complete(path, path.len(), ctx)?;
             return Ok((word_start, completions));
+        }
+        
+        // Case 4: Session ID completion for /resume command
+        if line_to_cursor.starts_with("/resume ") {
+            let partial = word;
+            let sessions = self.list_sessions();
+            let matches: Vec<Pair> = sessions
+                .into_iter()
+                .filter(|s| s.starts_with(partial))
+                .map(|s| Pair {
+                    display: s.clone(),
+                    replacement: s,
+                })
+                .collect();
+            return Ok((word_start, matches));
         }
 
         // No completion for regular text
@@ -458,3 +492,54 @@ mod tests {
         assert_eq!(completions.len(), 0, "Quoted non-path should not trigger completion");
     }
 }
+
+    #[test]
+    fn test_resume_completion_lists_sessions() {
+        use rustyline::completion::Completer;
+        use rustyline::Context;
+        
+        let helper = G3Helper::new();
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        
+        // Test against real .g3/sessions in current project
+        // This test runs from the project root where .g3/sessions exists
+        let line = "/resume ";
+        let pos = line.len();
+        let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
+        println!("Sessions found: {}", completions.len());
+        
+        // If .g3/sessions exists, we should get some completions
+        if std::path::Path::new(".g3/sessions").is_dir() {
+            assert!(completions.len() > 0, "Should list sessions when .g3/sessions exists");
+            
+            // Test filtering - use first few chars of first session
+            if let Some(first) = completions.first() {
+                let prefix = &first.replacement[..first.replacement.len().min(5)];
+                let line = format!("/resume {}", prefix);
+                let pos = line.len();
+                let (_, filtered) = helper.complete(&line, pos, &ctx).unwrap();
+                assert!(filtered.len() >= 1, "Should find at least one match");
+                assert!(filtered.iter().all(|p| p.replacement.starts_with(prefix)));
+            }
+        }
+        
+        // Test with non-matching prefix - should return empty
+        let line = "/resume zzz_nonexistent_prefix_";
+        let pos = line.len();
+        let (_, completions) = helper.complete(line, pos, &ctx).unwrap();
+        assert_eq!(completions.len(), 0, "Non-matching prefix should return empty");
+    }
+    
+    #[test]
+    fn test_resume_completion_graceful_no_panic() {
+        let helper = G3Helper::new();
+        
+        // Test list_sessions directly - should not panic regardless of whether
+        // .g3/sessions exists or not
+        let sessions = helper.list_sessions();
+        
+        // This will either return sessions (if .g3/sessions exists) or empty
+        // The important thing is it doesn't panic
+        println!("list_sessions returned {} sessions", sessions.len());
+    }
