@@ -14,6 +14,7 @@ use crate::simple_output::SimpleOutput;
 use crate::embedded_agents::load_agent_prompt;
 use crate::ui_writer_impl::ConsoleUiWriter;
 use crate::interactive::run_interactive;
+use crate::template::process_template;
 
 /// Run agent mode - loads a specialized agent prompt and executes a single task.
 pub async fn run_agent_mode(
@@ -252,7 +253,8 @@ pub async fn run_agent_mode(
         "Begin your analysis and work on the current project. Follow your mission and workflow as specified in your instructions."
     };
     // Use provided task if available, otherwise use the default initial_task
-    let final_task = task.as_deref().unwrap_or(initial_task);
+    let task_str = task.as_deref().unwrap_or(initial_task);
+    let final_task = process_template(task_str);
 
     // If chat mode is enabled, run interactive loop instead of single task
     if chat {
@@ -269,7 +271,7 @@ pub async fn run_agent_mode(
     }
 
     // Single-shot mode: execute the task and exit
-    let _result = agent.execute_task(final_task, None, true).await?;
+    let _result = agent.execute_task(&final_task, None, true).await?;
 
     // Send auto-memory reminder if enabled and tools were called
     if let Err(e) = agent.send_auto_memory_reminder().await {

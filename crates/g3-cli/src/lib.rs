@@ -42,6 +42,7 @@ use project_files::{combine_project_content, read_agents_config, read_include_pr
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
 use utils::{initialize_logging, load_config_with_cli_overrides, setup_workspace_directory};
+use template::process_template;
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
@@ -205,9 +206,10 @@ async fn run_console_mode(
         Ok(())
     } else if let Some(task) = cli.task {
         // Single-shot mode
+        let processed_task = process_template(&task);
         let output = SimpleOutput::new();
         let result = agent
-            .execute_task_with_timing(&task, None, false, cli.show_prompt, cli.show_code, true, None)
+            .execute_task_with_timing(&processed_task, None, false, cli.show_prompt, cli.show_code, true, None)
             .await?;
         // Only print response if it's not empty (streaming already displayed it)
         if !result.response.trim().is_empty() {
