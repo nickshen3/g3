@@ -4,9 +4,10 @@ use g3_core::error_handling::{calculate_retry_delay, classify_error, ErrorType, 
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::simple_output::SimpleOutput;
+use crate::g3_status::G3Status;
 
 /// Maximum number of retry attempts for recoverable errors
 const MAX_RETRIES: u32 = 3;
@@ -14,13 +15,13 @@ const MAX_RETRIES: u32 = 3;
 /// Get a human-readable name for a recoverable error type.
 fn recoverable_error_name(err: &RecoverableError) -> &'static str {
     match err {
-        RecoverableError::RateLimit => "Rate limit",
-        RecoverableError::ServerError => "Server error",
-        RecoverableError::NetworkError => "Network error",
-        RecoverableError::Timeout => "Timeout",
-        RecoverableError::ModelBusy => "Model busy",
-        RecoverableError::TokenLimit => "Token limit",
-        RecoverableError::ContextLengthExceeded => "Context length",
+        RecoverableError::RateLimit => "rate limited",
+        RecoverableError::ServerError => "server error",
+        RecoverableError::NetworkError => "network error",
+        RecoverableError::Timeout => "timeout",
+        RecoverableError::ModelBusy => "model overloaded",
+        RecoverableError::TokenLimit => "token limit",
+        RecoverableError::ContextLengthExceeded => "context length exceeded",
     }
 }
 
@@ -78,18 +79,20 @@ pub async fn execute_task_with_retry<W: UiWriter>(
                     if attempt < MAX_RETRIES {
                         // Use shared retry delay calculation (non-autonomous mode)
                         let delay = calculate_retry_delay(attempt, false);
-                        let delay_ms = delay.as_millis();
+                        let delay_secs = delay.as_secs_f64();
 
-                        output.print(&format!(
-                            "⚠️  {} detected (attempt {}/{}). Retrying in {:.1}s...",
+                        // Print error status
+                        G3Status::complete(
                             recoverable_error_name(&recoverable_error),
-                            attempt,
-                            MAX_RETRIES,
-                            delay_ms as f64 / 1000.0
-                        ));
+                            crate::g3_status::Status::Error(format!("attempt {}/{}", attempt, MAX_RETRIES)),
+                        );
+
+                        // Print retry message (no newline, will show [done] after sleep)
+                        G3Status::progress(&format!("retrying in {:.1}s", delay_secs));
 
                         // Wait before retrying
                         tokio::time::sleep(delay).await;
+                        G3Status::done();
                         continue;
                     }
                 }
@@ -104,32 +107,41 @@ pub async fn execute_task_with_retry<W: UiWriter>(
 
 /// Handle execution errors with detailed logging and user-friendly output.
 pub fn handle_execution_error(e: &anyhow::Error, input: &str, output: &SimpleOutput, attempt: u32) {
-    // Enhanced error logging with detailed information
-    error!("=== TASK EXECUTION ERROR ===");
-    error!("Error: {}", e);
-    if attempt > 1 {
-        error!("Failed after {} attempts", attempt);
+    // Check if this is a recoverable error type (for logging level decision)
+    let error_type = classify_error(e);
+    let is_recoverable = matches!(error_type, ErrorType::Recoverable(_));
+
+    // Use debug level for recoverable errors (they're expected), error level for others
+    if is_recoverable {
+        debug!("Task execution failed (recoverable): {}", e);
+        if attempt > 1 {
+            debug!("Failed after {} attempts", attempt);
+        }
+    } else {
+        error!("=== TASK EXECUTION ERROR ===");
+        error!("Error: {}", e);
+        if attempt > 1 {
+            error!("Failed after {} attempts", attempt);
+        }
+
+        // Log error chain only for non-recoverable errors
+        let mut source = e.source();
+        let mut depth = 1;
+        while let Some(err) = source {
+            error!("  Caused by [{}]: {}", depth, err);
+            source = err.source();
+            depth += 1;
+        }
+
+        error!("Task input: {}", input);
+        error!("Error type: {}", std::any::type_name_of_val(&e));
     }
 
-    // Log error chain
-    let mut source = e.source();
-    let mut depth = 1;
-    while let Some(err) = source {
-        error!("  Caused by [{}]: {}", depth, err);
-        source = err.source();
-        depth += 1;
-    }
-
-    // Log additional context
-    error!("Task input: {}", input);
-    error!("Error type: {}", std::any::type_name_of_val(&e));
-
-    // Display user-friendly error message
-    output.print(&format!("❌ Error: {}", e));
-
-    // If it's a stream error, provide helpful guidance
-    if e.to_string().contains("No response received") || e.to_string().contains("timed out") {
-        output.print("💡 This may be a temporary issue. Please try again or check the logs for more details.");
-        output.print("   Log files are saved in the '.g3/sessions/' directory.");
+    // Display user-friendly error message using G3Status
+    if let ErrorType::Recoverable(ref recoverable_error) = error_type {
+        let error_name = recoverable_error_name(recoverable_error);
+        G3Status::complete(error_name, crate::g3_status::Status::Failed);
+    } else {
+        G3Status::complete(&format!("error: {}", e), crate::g3_status::Status::Failed);
     }
 }

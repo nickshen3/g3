@@ -194,8 +194,8 @@ where
 
                         if retry_count >= config.max_retries {
                             let msg = format!(
-                                "🔄 Max retries ({}) reached for {}",
-                                config.max_retries, config.role_name
+                                "g3: {} max retries reached [failed]",
+                                config.role_name
                             );
                             print_fn(&msg);
                             return RetryResult::MaxRetriesReached(e.to_string());
@@ -203,20 +203,17 @@ where
 
                         // Calculate backoff delay
                         let delay = calculate_retry_delay(retry_count, config.is_autonomous);
+                        let delay_secs = delay.as_secs_f64();
 
-                        let msg = format!(
-                            "⚠️ {} error (attempt {}/{}): {:?} - {}",
-                            config.role_name, retry_count, config.max_retries, recoverable_type, e
-                        );
+                        // Clean error message
+                        let msg = format!("g3: {:?} [error: attempt {}/{}]", recoverable_type, retry_count, config.max_retries);
                         print_fn(&msg);
 
-                        let retry_msg = format!(
-                            "🔄 Retrying {} in {:?}...",
-                            config.role_name, delay
-                        );
-                        print_fn(&retry_msg);
+                        // Retry message - note: can't show [done] here since we don't control when sleep finishes
+                        let retry_msg = format!("g3: retrying in {:.1}s ...", delay_secs);
+                        print_fn(&retry_msg); 
 
-                        warn!(
+                        debug!(
                             "Recoverable error ({:?}) in {} (attempt {}/{}). Retrying in {:?}...",
                             recoverable_type, config.role_name, retry_count, config.max_retries, delay
                         );
@@ -225,8 +222,8 @@ where
                     }
                     ErrorType::NonRecoverable => {
                         let msg = format!(
-                            "❌ Non-recoverable error in {}: {}",
-                            config.role_name, e
+                            "g3: {} error [failed]",
+                            config.role_name
                         );
                         print_fn(&msg);
                         return RetryResult::MaxRetriesReached(e.to_string());
@@ -275,30 +272,29 @@ where
 
                         if retry_count >= max_retries {
                             let msg = format!(
-                                "❌ Operation '{}' failed after {} retries: {}",
-                                operation_name, retry_count, e
+                                "g3: {} max retries reached [failed]",
+                                operation_name
                             );
                             print_fn(&msg);
                             return Err(e);
                         }
 
                         let delay = calculate_retry_delay(retry_count, is_autonomous);
-                        let msg = format!(
-                            "⚠️ {} error in '{}' (attempt {}/{}), retrying in {:?}...",
-                            format!("{:?}", recoverable_type),
-                            operation_name,
-                            retry_count,
-                            max_retries,
-                            delay
-                        );
+                        let delay_secs = delay.as_secs_f64();
+
+                        // Clean error message
+                        let msg = format!("g3: {:?} [error: attempt {}/{}]", recoverable_type, retry_count, max_retries);
                         print_fn(&msg);
+
+                        let retry_msg = format!("g3: retrying in {:.1}s ...", delay_secs);
+                        print_fn(&retry_msg);
 
                         tokio::time::sleep(delay).await;
                     }
                     ErrorType::NonRecoverable => {
                         let msg = format!(
-                            "❌ Non-recoverable error in '{}': {}",
-                            operation_name, e
+                            "g3: {} error [failed]",
+                            operation_name
                         );
                         print_fn(&msg);
                         return Err(e);
