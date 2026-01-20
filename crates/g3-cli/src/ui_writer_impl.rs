@@ -623,12 +623,20 @@ impl UiWriter for ConsoleUiWriter {
                     let is_last = i == last_idx;
                     let prefix = if is_last { "└" } else { "│" };
                     
-                    // Convert checkboxes to styled symbols
-                    let styled_line = line
-                        .replace("- [x]", "■")
-                        .replace("- [X]", "■")
-                        .replace("- [ ]", "□");
-                    
+                    // Convert checkboxes to styled symbols and strikethrough completed items
+                    let is_completed = line.contains("- [x]") || line.contains("- [X]");
+                    let styled_line = if is_completed {
+                        // Replace checkbox and apply strikethrough to the task text
+                        let task_text = line
+                            .replace("- [x]", "")
+                            .replace("- [X]", "")
+                            .trim_start()
+                            .to_string();
+                        format!("■ \x1b[9m{}\x1b[0m\x1b[2m", task_text)  // \x1b[9m is strikethrough
+                    } else {
+                        line.replace("- [ ]", "□")
+                    };
+
                     // Dim the line content
                     println!("   \x1b[2m{}  {}\x1b[0m", prefix, styled_line);
                 }
