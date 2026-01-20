@@ -13,23 +13,22 @@ use tracing::{debug, warn};
 use crate::paths::get_thinned_dir;
 use crate::ToolCall;
 
+// ============================================================================
+// Types
+// ============================================================================
+
 /// Result of a context thinning operation.
 /// Contains semantic data for the UI layer to format.
 #[derive(Debug, Clone)]
 pub struct ThinResult {
-    /// Scope of the thinning operation
     pub scope: ThinScope,
-    /// Context percentage before thinning
     pub before_percentage: u32,
-    /// Context percentage after thinning
     pub after_percentage: u32,
     /// Number of tool result messages that were thinned
     pub leaned_count: usize,
     /// Number of tool calls in assistant messages that were thinned
     pub tool_call_leaned_count: usize,
-    /// Total characters saved
     pub chars_saved: usize,
-    /// Whether any changes were made
     pub had_changes: bool,
 }
 
@@ -58,20 +57,29 @@ impl ThinScope {
     }
 }
 
-/// Represents a modification to be applied to a message
+/// Represents a modification to be applied to a message during thinning
 #[derive(Debug)]
 enum ThinModification {
-    /// Replace the entire message content
-    ReplaceContent { index: usize, new_content: String, chars_saved: usize },
+    ReplaceContent {
+        index: usize,
+        new_content: String,
+        chars_saved: usize,
+    },
 }
+
+// ============================================================================
+// ContextWindow
+// ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
     pub used_tokens: u32,
     pub total_tokens: u32,
-    pub cumulative_tokens: u32, // Track cumulative tokens across all interactions
+    /// Track cumulative tokens across all interactions
+    pub cumulative_tokens: u32,
     pub conversation_history: Vec<Message>,
-    pub last_thinning_percentage: u32, // Track the last percentage at which we thinned
+    /// Track the last percentage at which we thinned
+    pub last_thinning_percentage: u32,
 }
 
 impl ContextWindow {
@@ -85,19 +93,21 @@ impl ContextWindow {
         }
     }
 
+    // ========================================================================
+    // Message Management
+    // ========================================================================
+
     pub fn add_message(&mut self, message: Message) {
         self.add_message_with_tokens(message, None);
     }
 
     /// Add a message with optional token count from the provider
     pub fn add_message_with_tokens(&mut self, message: Message, tokens: Option<u32>) {
-        // Skip messages with empty content to avoid API errors
         if message.content.trim().is_empty() {
             warn!("Skipping empty message to avoid API error");
             return;
         }
 
-        // Use provided token count if available, otherwise estimate
         let token_count = tokens.unwrap_or_else(|| Self::estimate_tokens(&message.content));
         self.used_tokens += token_count;
         self.cumulative_tokens += token_count;
@@ -109,66 +119,9 @@ impl ContextWindow {
         );
     }
 
-    /// Update token usage from provider response
-    /// NOTE: This only updates cumulative_tokens (total API usage tracking).
-    /// It does NOT update used_tokens because:
-    /// 1. prompt_tokens represents the ENTIRE context sent to API (already tracked via add_message)
-    /// 2. completion_tokens will be tracked when the assistant message is added via add_message
-    /// Adding total_tokens here would cause double/triple counting and break the 80% threshold check.
-    pub fn update_usage_from_response(&mut self, usage: &Usage) {
-        // Only update cumulative tokens for API usage tracking
-        // Do NOT update used_tokens - that's tracked via add_message to avoid double counting
-        self.cumulative_tokens += usage.total_tokens;
-
-        debug!(
-            "Updated cumulative tokens: {} (used: {}/{}, cumulative: {})",
-            usage.total_tokens, self.used_tokens, self.total_tokens, self.cumulative_tokens
-        );
-    }
-
-    /// More accurate token estimation
-    pub fn estimate_tokens(text: &str) -> u32 {
-        // Better heuristic:
-        // - Average English text: ~4 characters per token
-        // - Code/JSON: ~3 characters per token (more symbols)
-        // - Add 10% buffer for safety
-        let base_estimate = if text.contains("{") || text.contains("```") || text.contains("fn ") {
-            (text.len() as f32 / 3.0).ceil() as u32 // Code/JSON
-        } else {
-            (text.len() as f32 / 4.0).ceil() as u32 // Regular text
-        };
-        (base_estimate as f32 * 1.1).ceil() as u32 // Add 10% buffer
-    }
-
-    pub fn update_usage(&mut self, usage: &Usage) {
-        // Deprecated: Use update_usage_from_response instead
-        self.update_usage_from_response(usage);
-    }
-
-    /// Update cumulative token usage (for streaming) when no provider usage data is available
-    /// NOTE: This only updates cumulative_tokens, not used_tokens.
-    /// The assistant message will be added via add_message which tracks used_tokens.
-    pub fn add_streaming_tokens(&mut self, new_tokens: u32) {
-        // Only update cumulative tokens - used_tokens is tracked via add_message
-        self.cumulative_tokens += new_tokens;
-        debug!(
-            "Updated cumulative streaming tokens: {} (used: {}/{}, cumulative: {})",
-            new_tokens, self.used_tokens, self.total_tokens, self.cumulative_tokens
-        );
-    }
-
-    pub fn percentage_used(&self) -> f32 {
-        if self.total_tokens == 0 {
-            0.0
-        } else {
-            (self.used_tokens as f32 / self.total_tokens as f32) * 100.0
-        }
-    }
-
-    /// Clear the conversation history while preserving system messages
-    /// Used by /clear command to start fresh
+    /// Clear the conversation history while preserving system messages.
+    /// Used by /clear command to start fresh.
     pub fn clear_conversation(&mut self) {
-        // Keep only system messages (system prompt, README, etc.)
         let system_messages: Vec<Message> = self
             .conversation_history
             .iter()
@@ -185,24 +138,102 @@ impl ContextWindow {
         self.last_thinning_percentage = 0;
     }
 
+    // ========================================================================
+    // Token Tracking
+    // ========================================================================
+
+    /// Update token usage from provider response.
+    ///
+    /// NOTE: This only updates cumulative_tokens (total API usage tracking).
+    /// It does NOT update used_tokens because:
+    /// 1. prompt_tokens represents the ENTIRE context sent to API (already tracked via add_message)
+    /// 2. completion_tokens will be tracked when the assistant message is added via add_message
+    /// Adding total_tokens here would cause double/triple counting and break the 80% threshold check.
+    pub fn update_usage_from_response(&mut self, usage: &Usage) {
+        self.cumulative_tokens += usage.total_tokens;
+        debug!(
+            "Updated cumulative tokens: {} (used: {}/{}, cumulative: {})",
+            usage.total_tokens, self.used_tokens, self.total_tokens, self.cumulative_tokens
+        );
+    }
+
+    /// Deprecated: Use update_usage_from_response instead
+    pub fn update_usage(&mut self, usage: &Usage) {
+        self.update_usage_from_response(usage);
+    }
+
+    /// Update cumulative token usage (for streaming) when no provider usage data is available.
+    /// NOTE: This only updates cumulative_tokens, not used_tokens.
+    pub fn add_streaming_tokens(&mut self, new_tokens: u32) {
+        self.cumulative_tokens += new_tokens;
+        debug!(
+            "Updated cumulative streaming tokens: {} (used: {}/{}, cumulative: {})",
+            new_tokens, self.used_tokens, self.total_tokens, self.cumulative_tokens
+        );
+    }
+
+    /// Recalculate token usage based on current conversation history.
+    pub fn recalculate_tokens(&mut self) {
+        self.used_tokens = self
+            .conversation_history
+            .iter()
+            .map(|m| Self::estimate_tokens(&m.content))
+            .sum();
+        debug!("Recalculated tokens after thinning: {} tokens", self.used_tokens);
+    }
+
+    /// More accurate token estimation.
+    pub fn estimate_tokens(text: &str) -> u32 {
+        // Heuristic:
+        // - Average English text: ~4 characters per token
+        // - Code/JSON: ~3 characters per token (more symbols)
+        // - Add 10% buffer for safety
+        let base_estimate = if text.contains('{') || text.contains("```") || text.contains("fn ") {
+            (text.len() as f32 / 3.0).ceil() as u32
+        } else {
+            (text.len() as f32 / 4.0).ceil() as u32
+        };
+        (base_estimate as f32 * 1.1).ceil() as u32
+    }
+
+    // ========================================================================
+    // Capacity Queries
+    // ========================================================================
+
+    pub fn percentage_used(&self) -> f32 {
+        if self.total_tokens == 0 {
+            0.0
+        } else {
+            (self.used_tokens as f32 / self.total_tokens as f32) * 100.0
+        }
+    }
+
     pub fn remaining_tokens(&self) -> u32 {
         self.total_tokens.saturating_sub(self.used_tokens)
     }
 
-    /// Check if we should trigger compaction (at 80% capacity)
+    /// Check if we should trigger compaction (at 80% capacity or 150k tokens).
     pub fn should_compact(&self) -> bool {
-        // Trigger at 80% OR if we're getting close to absolute limits
-        // This prevents issues with models that have large contexts but still hit limits
-        let percentage_trigger = self.percentage_used() >= 80.0;
-
-        // Also trigger if we're approaching common token limits
-        // Most models start having issues around 150k tokens
-        let absolute_trigger = self.used_tokens > 150_000;
-
-        percentage_trigger || absolute_trigger
+        self.percentage_used() >= 80.0 || self.used_tokens > 150_000
     }
 
-    /// Create a summary request prompt for the current conversation
+    /// Check if we should trigger context thinning.
+    /// Triggers at 50%, 60%, 70%, and 80% thresholds.
+    pub fn should_thin(&self) -> bool {
+        let current_percentage = self.percentage_used() as u32;
+        if current_percentage < 50 {
+            return false;
+        }
+
+        let current_threshold = (current_percentage / 10) * 10;
+        current_threshold > self.last_thinning_percentage && current_threshold <= 80
+    }
+
+    // ========================================================================
+    // Compaction / Summary
+    // ========================================================================
+
+    /// Create a summary request prompt for the current conversation.
     pub fn create_summary_prompt(&self) -> String {
         "Please provide a comprehensive summary of our conversation so far. Include:
 
@@ -216,122 +247,56 @@ impl ContextWindow {
 Format this as a detailed but concise summary that can be used to resume the conversation from scratch while maintaining full context.".to_string()
     }
 
-    /// Reset the context window with a summary
-    /// Preserves the original system prompt as the first message
+    /// Reset the context window with a summary.
+    /// Preserves the original system prompt as the first message.
     pub fn reset_with_summary(
         &mut self,
         summary: String,
         latest_user_message: Option<String>,
     ) -> usize {
-        // Calculate chars saved (old history minus new summary)
-        let old_chars: usize = self
-            .conversation_history
-            .iter()
-            .map(|m| m.content.len())
-            .sum();
-
-        // Preserve the original system prompt (first message) and optionally the README (second message)
-        let original_system_prompt = self.conversation_history.first().cloned();
-        let readme_message = self.conversation_history.get(1).and_then(|msg| {
-            if matches!(msg.role, MessageRole::System)
-                && (msg.content.contains("Project README")
-                    || msg.content.contains("Agent Configuration"))
-            {
-                Some(msg.clone())
-            } else {
-                None
-            }
-        });
-
-        // Clear the conversation history
-        self.conversation_history.clear();
-        self.used_tokens = 0;
-
-        // Re-add the original system prompt first (critical invariant)
-        if let Some(system_prompt) = original_system_prompt {
-            self.add_message(system_prompt);
-        }
-
-        // Re-add the README message if it existed
-        if let Some(readme) = readme_message {
-            self.add_message(readme);
-        }
-
-        // Add the summary as a system message
-        let summary_message = Message::new(
-            MessageRole::System,
-            format!("Previous conversation summary:\n\n{}", summary),
-        );
-        self.add_message(summary_message);
-
-        // Add the latest user message if provided
-        if let Some(user_msg) = latest_user_message {
-            self.add_message(Message::new(MessageRole::User, user_msg));
-        }
-
-        let new_chars: usize = self
-            .conversation_history
-            .iter()
-            .map(|m| m.content.len())
-            .sum();
-        old_chars.saturating_sub(new_chars)
+        self.reset_with_summary_and_stub(summary, latest_user_message, None)
     }
 
-    /// Reset context window with a summary and optional ACD stub
-    /// Preserves the original system prompt as the first message
-    /// If stub is provided, it's added as a system message before the summary
+    /// Reset context window with a summary and optional ACD stub.
+    /// Preserves the original system prompt as the first message.
+    /// If stub is provided, it's added as a system message before the summary.
     pub fn reset_with_summary_and_stub(
         &mut self,
         summary: String,
         latest_user_message: Option<String>,
         stub: Option<String>,
     ) -> usize {
-        // Calculate chars saved (old history minus new summary)
         let old_chars: usize = self
             .conversation_history
             .iter()
             .map(|m| m.content.len())
             .sum();
 
-        // Preserve the original system prompt (first message) and optionally the README (second message)
-        let original_system_prompt = self.conversation_history.first().cloned();
-        let readme_message = self.conversation_history.get(1).and_then(|msg| {
-            if matches!(msg.role, MessageRole::System)
-                && (msg.content.contains("Project README")
-                    || msg.content.contains("Agent Configuration"))
-            {
-                Some(msg.clone())
-            } else {
-                None
-            }
-        });
+        // Extract preserved messages before clearing
+        let preserved = self.extract_preserved_messages();
 
-        // Clear the conversation history
+        // Clear and rebuild
         self.conversation_history.clear();
         self.used_tokens = 0;
 
-        // Re-add the original system prompt first (critical invariant)
-        if let Some(system_prompt) = original_system_prompt {
+        // Re-add preserved messages
+        if let Some(system_prompt) = preserved.system_prompt {
             self.add_message(system_prompt);
         }
-
-        // Re-add the README message if it existed
-        if let Some(readme) = readme_message {
+        if let Some(readme) = preserved.readme {
             self.add_message(readme);
         }
 
-        // Add the ACD stub if provided (before summary so LLM knows about dehydrated context)
+        // Add ACD stub if provided (before summary so LLM knows about dehydrated context)
         if let Some(stub_content) = stub {
-            let stub_message = Message::new(MessageRole::System, stub_content);
-            self.add_message(stub_message);
+            self.add_message(Message::new(MessageRole::System, stub_content));
         }
 
-        // Add the summary as a system message
-        let summary_message = Message::new(
+        // Add the summary
+        self.add_message(Message::new(
             MessageRole::System,
             format!("Previous conversation summary:\n\n{}", summary),
-        );
-        self.add_message(summary_message);
+        ));
 
         // Add the latest user message if provided
         if let Some(user_msg) = latest_user_message {
@@ -346,20 +311,39 @@ Format this as a detailed but concise summary that can be used to resume the con
         old_chars.saturating_sub(new_chars)
     }
 
-    /// Check if we should trigger context thinning
-    /// Triggers at 50%, 60%, 70%, and 80% thresholds
-    pub fn should_thin(&self) -> bool {
-        let current_percentage = self.percentage_used() as u32;
+    /// Extract messages that should be preserved across compaction.
+    fn extract_preserved_messages(&self) -> PreservedMessages {
+        let system_prompt = self.conversation_history.first().cloned();
 
-        // Check if we've crossed a new 10% threshold starting at 50%
-        if current_percentage >= 50 {
-            let current_threshold = (current_percentage / 10) * 10; // Round down to nearest 10%
-            if current_threshold > self.last_thinning_percentage && current_threshold <= 80 {
-                return true;
+        let readme = self.conversation_history.get(1).and_then(|msg| {
+            if matches!(msg.role, MessageRole::System)
+                && (msg.content.contains("Project README")
+                    || msg.content.contains("Agent Configuration"))
+            {
+                Some(msg.clone())
+            } else {
+                None
             }
-        }
+        });
 
-        false
+        PreservedMessages {
+            system_prompt,
+            readme,
+        }
+    }
+
+    // ========================================================================
+    // Context Thinning
+    // ========================================================================
+
+    /// Thin context (first third only).
+    pub fn thin_context(&mut self, session_id: Option<&str>) -> ThinResult {
+        self.thin_context_with_scope(session_id, ThinScope::FirstThird)
+    }
+
+    /// Thin entire context (all messages).
+    pub fn thin_context_all(&mut self, session_id: Option<&str>) -> ThinResult {
+        self.thin_context_with_scope(session_id, ThinScope::All)
     }
 
     /// Perform context thinning: scan messages and replace large tool results with file references.
@@ -367,9 +351,6 @@ Format this as a detailed but concise summary that can be used to resume the con
     /// # Arguments
     /// * `session_id` - If provided, thinned content is saved to .g3/session/<session_id>/thinned/
     /// * `scope` - Controls which messages to process (first third or all)
-    ///
-    /// # Returns
-    /// A `ThinResult` with semantic data about the operation
     pub fn thin_context_with_scope(
         &mut self,
         session_id: Option<&str>,
@@ -383,73 +364,58 @@ Format this as a detailed but concise summary that can be used to resume the con
             self.last_thinning_percentage = current_threshold;
         }
 
-        // Calculate message range based on scope
-        let total_messages = self.conversation_history.len();
-        let end_index = match scope {
-            ThinScope::FirstThird => (total_messages / 3).max(1),
-            ThinScope::All => total_messages,
-        };
-
-        // Determine output directory: use session dir if available, otherwise ~/tmp
+        // Resolve output directory
         let tmp_dir = match Self::resolve_thinned_dir(session_id, scope) {
             Ok(dir) => dir,
-            Err(_) => {
-                return ThinResult {
-                    scope,
-                    before_percentage: current_percentage,
-                    after_percentage: current_percentage,
-                    leaned_count: 0,
-                    tool_call_leaned_count: 0,
-                    chars_saved: 0,
-                    had_changes: false,
-                };
-            }
+            Err(_) => return ThinResult::no_changes(scope, current_percentage),
         };
 
-        // Collect modifications to apply (avoids borrow checker issues)
-        let modifications = self.collect_thin_modifications(end_index, &tmp_dir, scope.file_prefix());
+        // Calculate message range based on scope
+        let end_index = match scope {
+            ThinScope::FirstThird => (self.conversation_history.len() / 3).max(1),
+            ThinScope::All => self.conversation_history.len(),
+        };
 
-        // Count results
-        let mut leaned_count = 0;
-        let mut tool_call_leaned_count = 0;
-        let mut chars_saved = 0;
-
-        // Apply modifications
-        for modification in &modifications {
-            match modification {
-                ThinModification::ReplaceContent { index, new_content, chars_saved: saved } => {
-                    if let Some(msg) = self.conversation_history.get_mut(*index) {
-                        // Determine if this was a tool result or tool call based on content
-                        if msg.content.starts_with("Tool result:") {
-                            leaned_count += 1;
-                        } else {
-                            tool_call_leaned_count += 1;
-                        }
-                        msg.content = new_content.clone();
-                        chars_saved += saved;
-                    }
-                }
-            }
-        }
+        // Collect and apply modifications
+        let modifications =
+            self.collect_thin_modifications(end_index, &tmp_dir, scope.file_prefix());
+        let (leaned_count, tool_call_leaned_count, chars_saved) =
+            self.apply_thin_modifications(&modifications);
 
         // Recalculate token usage after thinning
         self.recalculate_tokens();
 
-        // Get new percentage after thinning
-        let new_percentage = self.percentage_used() as u32;
-
-        // Build result message
-        self.build_thin_result(
+        ThinResult {
             scope,
-            current_percentage,
-            new_percentage,
+            before_percentage: current_percentage,
+            after_percentage: self.percentage_used() as u32,
             leaned_count,
             tool_call_leaned_count,
             chars_saved,
-        )
+            had_changes: leaned_count > 0 || tool_call_leaned_count > 0,
+        }
     }
 
-    /// Collect all modifications needed for thinning without mutating
+    /// Resolve the directory for storing thinned content.
+    fn resolve_thinned_dir(session_id: Option<&str>, scope: ThinScope) -> Result<String, String> {
+        let dir = if let Some(sid) = session_id {
+            get_thinned_dir(sid).to_string_lossy().to_string()
+        } else {
+            shellexpand::tilde("~/tmp").to_string()
+        };
+
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            warn!("Failed to create thinned directory: {}", e);
+            return Err(format!(
+                "⚠️  Context {} failed: could not create directory",
+                scope.error_action()
+            ));
+        }
+
+        Ok(dir)
+    }
+
+    /// Collect all modifications needed for thinning without mutating.
     fn collect_thin_modifications(
         &self,
         end_index: usize,
@@ -459,36 +425,29 @@ Format this as a detailed but concise summary that can be used to resume the con
         let mut modifications = Vec::new();
 
         for i in 0..end_index {
-            if let Some(message) = self.conversation_history.get(i) {
-                // Check if the previous message was a TODO tool call
-                let is_todo_result = self.is_todo_tool_result(i);
+            let Some(message) = self.conversation_history.get(i) else {
+                continue;
+            };
 
-                // Process User messages that look like tool results
-                if matches!(message.role, MessageRole::User)
-                    && message.content.starts_with("Tool result:")
-                    && !is_todo_result
-                    && message.content.len() > 500
+            // Process User messages that look like tool results
+            if matches!(message.role, MessageRole::User)
+                && message.content.starts_with("Tool result:")
+                && !self.is_todo_tool_result(i)
+                && message.content.len() > 500
+            {
+                if let Some(m) =
+                    Self::create_tool_result_modification(&message.content, i, tmp_dir, file_prefix)
                 {
-                    if let Some(modification) = Self::create_tool_result_modification(
-                        &message.content,
-                        i,
-                        tmp_dir,
-                        file_prefix,
-                    ) {
-                        modifications.push(modification);
-                    }
+                    modifications.push(m);
                 }
+            }
 
-                // Process Assistant messages that contain tool calls with large arguments
-                if matches!(message.role, MessageRole::Assistant) {
-                    if let Some(modification) = Self::create_tool_call_modification(
-                        &message.content,
-                        i,
-                        tmp_dir,
-                        file_prefix,
-                    ) {
-                        modifications.push(modification);
-                    }
+            // Process Assistant messages that contain tool calls with large arguments
+            if matches!(message.role, MessageRole::Assistant) {
+                if let Some(m) =
+                    Self::create_tool_call_modification(&message.content, i, tmp_dir, file_prefix)
+                {
+                    modifications.push(m);
                 }
             }
         }
@@ -496,59 +455,55 @@ Format this as a detailed but concise summary that can be used to resume the con
         modifications
     }
 
-    /// Thin context (first third only)
-    pub fn thin_context(&mut self, session_id: Option<&str>) -> ThinResult {
-        self.thin_context_with_scope(session_id, ThinScope::FirstThird)
-    }
+    /// Apply collected modifications and return counts.
+    fn apply_thin_modifications(
+        &mut self,
+        modifications: &[ThinModification],
+    ) -> (usize, usize, usize) {
+        let mut leaned_count = 0;
+        let mut tool_call_leaned_count = 0;
+        let mut chars_saved = 0;
 
-    /// Thin entire context (all messages)
-    pub fn thin_context_all(&mut self, session_id: Option<&str>) -> ThinResult {
-        self.thin_context_with_scope(session_id, ThinScope::All)
-    }
+        for modification in modifications {
+            let ThinModification::ReplaceContent {
+                index,
+                new_content,
+                chars_saved: saved,
+            } = modification;
 
-    /// Resolve the directory for storing thinned content
-    fn resolve_thinned_dir(session_id: Option<&str>, scope: ThinScope) -> Result<String, String> {
-        if let Some(sid) = session_id {
-            let thinned_dir = get_thinned_dir(sid);
-            if let Err(e) = std::fs::create_dir_all(&thinned_dir) {
-                warn!("Failed to create thinned directory: {}", e);
-                return Err(format!(
-                    "⚠️  Context {} failed: could not create thinned directory",
-                    scope.error_action()
-                ));
+            if let Some(msg) = self.conversation_history.get_mut(*index) {
+                if msg.content.starts_with("Tool result:") {
+                    leaned_count += 1;
+                } else {
+                    tool_call_leaned_count += 1;
+                }
+                msg.content = new_content.clone();
+                chars_saved += saved;
             }
-            Ok(thinned_dir.to_string_lossy().to_string())
-        } else {
-            let fallback_dir = shellexpand::tilde("~/tmp").to_string();
-            if let Err(e) = std::fs::create_dir_all(&fallback_dir) {
-                warn!("Failed to create ~/tmp directory: {}", e);
-                return Err(format!(
-                    "⚠️  Context {} failed: could not create ~/tmp directory",
-                    scope.error_action()
-                ));
-            }
-            Ok(fallback_dir)
         }
+
+        (leaned_count, tool_call_leaned_count, chars_saved)
     }
 
-    /// Check if message at index i is a result of a TODO tool call
+    /// Check if message at index i is a result of a TODO tool call.
     fn is_todo_tool_result(&self, i: usize) -> bool {
         if i == 0 {
             return false;
         }
 
-        if let Some(prev_message) = self.conversation_history.get(i - 1) {
-            if matches!(prev_message.role, MessageRole::Assistant) {
-                return prev_message.content.contains(r#""tool":"todo_read""#)
-                    || prev_message.content.contains(r#""tool":"todo_write""#)
-                    || prev_message.content.contains(r#""tool": "todo_read""#)
-                    || prev_message.content.contains(r#""tool": "todo_write""#);
-            }
-        }
-        false
+        self.conversation_history
+            .get(i - 1)
+            .map(|prev| {
+                matches!(prev.role, MessageRole::Assistant)
+                    && (prev.content.contains(r#""tool":"todo_read""#)
+                        || prev.content.contains(r#""tool":"todo_write""#)
+                        || prev.content.contains(r#""tool": "todo_read""#)
+                        || prev.content.contains(r#""tool": "todo_write""#))
+            })
+            .unwrap_or(false)
     }
 
-    /// Create a modification for thinning a tool result message
+    /// Create a modification for thinning a tool result message.
     fn create_tool_result_modification(
         content: &str,
         index: usize,
@@ -583,7 +538,7 @@ Format this as a detailed but concise summary that can be used to resume the con
         })
     }
 
-    /// Create a modification for thinning tool calls in an assistant message
+    /// Create a modification for thinning tool calls in an assistant message.
     fn create_tool_call_modification(
         content: &str,
         index: usize,
@@ -644,8 +599,8 @@ Format this as a detailed but concise summary that can be used to resume the con
         })
     }
 
-    /// Thin write_file args by saving content to file
-    /// Returns (chars_saved, new_args) if thinned
+    /// Thin write_file args by saving content to file.
+    /// Returns (chars_saved, new_args) if thinned.
     fn thin_write_file_args(
         args: &serde_json::Value,
         index: usize,
@@ -654,9 +609,8 @@ Format this as a detailed but concise summary that can be used to resume the con
     ) -> Option<(usize, serde_json::Value)> {
         let args_obj = args.as_object()?;
         let content_str = args_obj.get("content")?.as_str()?;
-        let content_len = content_str.len();
 
-        if content_len <= 500 {
+        if content_str.len() <= 500 {
             return None;
         }
 
@@ -664,13 +618,15 @@ Format this as a detailed but concise summary that can be used to resume the con
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let filename = format!("{}_write_file_content_{}_{}.txt", file_prefix, timestamp, index);
+        let filename = format!(
+            "{}_write_file_content_{}_{}.txt",
+            file_prefix, timestamp, index
+        );
         let file_path = format!("{}/{}", tmp_dir, filename);
 
-        if std::fs::write(&file_path, content_str).is_err() {
-            return None;
-        }
+        std::fs::write(&file_path, content_str).ok()?;
 
+        let content_len = content_str.len();
         let mut new_args = args_obj.clone();
         new_args.insert(
             "content".to_string(),
@@ -685,8 +641,8 @@ Format this as a detailed but concise summary that can be used to resume the con
         Some((content_len, serde_json::Value::Object(new_args)))
     }
 
-    /// Thin str_replace args by saving diff to file
-    /// Returns (chars_saved, new_args) if thinned
+    /// Thin str_replace args by saving diff to file.
+    /// Returns (chars_saved, new_args) if thinned.
     fn thin_str_replace_args(
         args: &serde_json::Value,
         index: usize,
@@ -695,9 +651,8 @@ Format this as a detailed but concise summary that can be used to resume the con
     ) -> Option<(usize, serde_json::Value)> {
         let args_obj = args.as_object()?;
         let diff_str = args_obj.get("diff")?.as_str()?;
-        let diff_len = diff_str.len();
 
-        if diff_len <= 500 {
+        if diff_str.len() <= 500 {
             return None;
         }
 
@@ -705,13 +660,15 @@ Format this as a detailed but concise summary that can be used to resume the con
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let filename = format!("{}_str_replace_diff_{}_{}.txt", file_prefix, timestamp, index);
+        let filename = format!(
+            "{}_str_replace_diff_{}_{}.txt",
+            file_prefix, timestamp, index
+        );
         let file_path = format!("{}/{}", tmp_dir, filename);
 
-        if std::fs::write(&file_path, diff_str).is_err() {
-            return None;
-        }
+        std::fs::write(&file_path, diff_str).ok()?;
 
+        let diff_len = diff_str.len();
         let mut new_args = args_obj.clone();
         new_args.insert(
             "diff".to_string(),
@@ -726,41 +683,11 @@ Format this as a detailed but concise summary that can be used to resume the con
         Some((diff_len, serde_json::Value::Object(new_args)))
     }
 
-    /// Build the result message for thinning operations
-    fn build_thin_result(
-        &self,
-        scope: ThinScope,
-        current_percentage: u32,
-        new_percentage: u32,
-        leaned_count: usize,
-        tool_call_leaned_count: usize,
-        chars_saved: usize,
-    ) -> ThinResult {
-        let had_changes = leaned_count > 0 || tool_call_leaned_count > 0;
-        ThinResult {
-            scope,
-            before_percentage: current_percentage,
-            after_percentage: new_percentage,
-            leaned_count,
-            tool_call_leaned_count,
-            chars_saved: if had_changes { chars_saved } else { 0 },
-            had_changes,
-        }
-    }
+    // ========================================================================
+    // JSON Utilities
+    // ========================================================================
 
-    /// Recalculate token usage based on current conversation history
-    /// Recalculate the token count based on current conversation history.
-    pub fn recalculate_tokens(&mut self) {
-        let mut total = 0;
-        for message in &self.conversation_history {
-            total += Self::estimate_tokens(&message.content);
-        }
-        self.used_tokens = total;
-
-        debug!("Recalculated tokens after thinning: {} tokens", total);
-    }
-
-    /// Helper function to find the end of a JSON object
+    /// Find the end position of a JSON object.
     pub fn find_json_end(json_str: &str) -> Option<usize> {
         let mut brace_count = 0;
         let mut in_string = false;
@@ -789,6 +716,35 @@ Format this as a detailed but concise summary that can be used to resume the con
         None
     }
 }
+
+// ============================================================================
+// Helper Types
+// ============================================================================
+
+/// Messages preserved across compaction.
+struct PreservedMessages {
+    system_prompt: Option<Message>,
+    readme: Option<Message>,
+}
+
+impl ThinResult {
+    /// Create a ThinResult indicating no changes were made.
+    fn no_changes(scope: ThinScope, percentage: u32) -> Self {
+        Self {
+            scope,
+            before_percentage: percentage,
+            after_percentage: percentage,
+            leaned_count: 0,
+            tool_call_leaned_count: 0,
+            chars_saved: 0,
+            had_changes: false,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -836,20 +792,20 @@ mod tests {
     #[test]
     fn test_should_thin_thresholds() {
         let mut cw = ContextWindow::new(100);
-        
+
         // Below 50% - should not thin
         cw.used_tokens = 49;
         assert!(!cw.should_thin());
-        
+
         // At 50% - should thin (first time)
         cw.used_tokens = 50;
         assert!(cw.should_thin());
-        
+
         // After thinning at 50%, shouldn't thin again until 60%
         cw.last_thinning_percentage = 50;
         cw.used_tokens = 55;
         assert!(!cw.should_thin());
-        
+
         // At 60% - should thin again
         cw.used_tokens = 60;
         assert!(cw.should_thin());
@@ -859,7 +815,6 @@ mod tests {
     fn test_estimate_tokens_regular_text() {
         let text = "Hello world, this is a test.";
         let tokens = ContextWindow::estimate_tokens(text);
-        // ~28 chars / 4 * 1.1 = ~8 tokens
         assert!(tokens > 0 && tokens < 20);
     }
 
@@ -867,7 +822,6 @@ mod tests {
     fn test_estimate_tokens_code() {
         let code = "fn main() { println!(\"hello\"); }";
         let tokens = ContextWindow::estimate_tokens(code);
-        // Code uses 3 chars per token estimate
         assert!(tokens > 0);
     }
 
