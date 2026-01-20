@@ -565,9 +565,12 @@ impl StreamingMarkdownFormatter {
         // Format based on level (magenta, bold for h1/h2)
         // We wrap the already-formatted content in header color, then reset at the end
         match level {
-            1 => format!("\x1b[1;35m{}\x1b[0m\n", formatted_content),  // Bold magenta
-            2 => format!("\x1b[35m{}\x1b[0m\n", formatted_content),    // Magenta
-            _ => format!("\x1b[35m{}\x1b[0m\n", formatted_content),    // Magenta for h3+
+            1 => format!("\x1b[1;95m{}\x1b[0m\n", formatted_content),  // Bold pink (Dracula)
+            2 => format!("\x1b[35m{}\x1b[0m\n", formatted_content),    // Purple/magenta (Dracula)
+            3 => format!("\x1b[36m{}\x1b[0m\n", formatted_content),    // Cyan (Dracula)
+            4 => format!("\x1b[37m{}\x1b[0m\n", formatted_content),    // White (Dracula)
+            5 => format!("\x1b[2m{}\x1b[0m\n", formatted_content),     // Dim (Dracula)
+            _ => format!("\x1b[2m{}\x1b[0m\n", formatted_content),     // Dim for h6+ (Dracula)
         }
     }
     
