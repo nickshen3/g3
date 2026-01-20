@@ -1,5 +1,5 @@
 # Project Memory
-> Updated: 2026-01-20T09:35:59Z | Size: 17.5k chars
+> Updated: 2026-01-20T10:16:13Z | Size: 18.3k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -314,3 +314,14 @@ State structs for the main streaming loop in `stream_completion_with_tools()`.
 
 - `crates/g3-core/src/lib.rs`
   - `stream_completion_with_tools()` [1879..2712] - 834-line main streaming loop, uses `state: StreamingState` and `iter: IterationState`
+
+### Tool Output Formatting
+Centralized logic for determining how to display tool execution results.
+
+- `crates/g3-core/src/streaming.rs`
+  - `ToolOutputFormat` [100..112] - enum: SelfHandled, Compact(String), Regular
+  - `format_tool_result_summary()` [114..145] - returns ToolOutputFormat based on tool name and success
+  - `is_compact_tool()` [147..162] - checks if tool uses one-line summaries (read_file, write_file, str_replace, etc.)
+  - `is_self_handled_tool()` [164..167] - checks if tool handles own output (todo_read, todo_write)
+  - `format_compact_tool_summary()` [169..185] - dispatches to format_*_summary() based on tool name
+  - `parse_diff_stats()` [187..210] - parses "+N insertions | -M deletions" from str_replace result
