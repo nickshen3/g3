@@ -11,6 +11,7 @@ use tracing::{debug, error};
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
+use crate::display::{LoadedContent, print_loaded_status, print_project_heading, print_workspace_path};
 use crate::g3_status::{G3Status, Status};
 use crate::project_files::extract_readme_heading;
 use crate::simple_output::SimpleOutput;
@@ -100,69 +101,22 @@ pub async fn run_interactive<W: UiWriter>(
             }
         }
 
-        // Display message if AGENTS.md or README was loaded
+           // Display message if AGENTS.md or README was loaded
         if let Some(ref content) = combined_content {
-            // Check what was loaded
-            let has_agents = content.contains("Agent Configuration");
-            let has_readme = content.contains("Project README");
-            let has_include_prompt = content.contains("Included Prompt");
-            let has_memory = content.contains("=== Project Memory");
+            let loaded = LoadedContent::from_combined_content(content);
 
             // Extract project name if README is loaded
-            let project_name = if has_readme {
-                // Extract the first heading or title from the README
-                extract_readme_heading(content)
-            } else {
-                None
-            };
-
-            if let Some(name) = project_name {
-                print!("{}>> {}{}\n", SetForegroundColor(Color::DarkGrey), name, ResetColor);
+            if loaded.has_readme {
+                if let Some(name) = extract_readme_heading(content) {
+                    print_project_heading(&name);
+                }
             }
 
-            // Build status line showing only what was loaded (in load order)
-            let mut loaded_items: Vec<&str> = Vec::new();
-            if has_readme {
-                loaded_items.push("README");
-            }
-            if has_agents {
-                loaded_items.push("AGENTS.md");
-            }
-            if has_include_prompt {
-                loaded_items.push("prompt");
-            }
-            if has_memory {
-                loaded_items.push("Memory");
-            }
-            // Print status line only if something was loaded
-            if !loaded_items.is_empty() {
-                let status_str = loaded_items.iter().map(|s| format!("✓ {}", s)).collect::<Vec<_>>().join("  ");
-                print!(
-                    "{}   {}{}\n",
-                    SetForegroundColor(Color::DarkGrey),
-                    status_str,
-                    ResetColor
-                );
-            }
+            print_loaded_status(&loaded);
         }
 
         // Display workspace path
-        let workspace_display = {
-            let path_str = workspace_path.display().to_string();
-            dirs::home_dir()
-                .and_then(|home| {
-                    path_str
-                        .strip_prefix(&home.display().to_string())
-                        .map(|s| format!("~{}", s))
-                })
-                .unwrap_or(path_str)
-        };
-        print!(
-            "{}-> {}{}\n",
-            SetForegroundColor(Color::DarkGrey),
-            workspace_display,
-            ResetColor
-        );
+        print_workspace_path(workspace_path);
         output.print("");
     }
 

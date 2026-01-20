@@ -12,6 +12,7 @@ mod agent_mode;
 mod autonomous;
 mod cli_args;
 mod coach_feedback;
+mod display;
 mod interactive;
 mod simple_output;
 mod task_execution;

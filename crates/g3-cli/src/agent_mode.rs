@@ -8,6 +8,7 @@ use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
 use crate::project_files::{combine_project_content, read_agents_config, read_include_prompt, read_project_memory, read_project_readme};
+use crate::display::{LoadedContent, print_loaded_status, print_workspace_path};
 use crate::language_prompts::{get_language_prompts_for_workspace, get_agent_language_prompts_for_workspace_with_langs};
 use crate::simple_output::SimpleOutput;
 use crate::embedded_agents::load_agent_prompt;
@@ -103,18 +104,8 @@ pub async fn run_agent_mode(
     if !chat {
         output.print(&format!(">> agent mode | {} ({})", agent_name, source));
     }
-    let workspace_display = {
-        let path_str = workspace_dir.display().to_string();
-        dirs::home_dir()
-            .and_then(|home| {
-                path_str
-                    .strip_prefix(&home.display().to_string())
-                    .map(|s| format!("~{}", s))
-            })
-            .unwrap_or(path_str)
-    };
     // Always print workspace path (it's part of minimal output)
-    print!("{}-> {}{}\n", crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey), workspace_display, crossterm::style::ResetColor);
+    print_workspace_path(&workspace_dir);
 
     // Load config
     let mut config = g3_config::Config::load(config_path)?;
@@ -143,33 +134,18 @@ pub async fn run_agent_mode(
     // Read include prompt early so we can show it in the status line
     let include_prompt = read_include_prompt(include_prompt_path.as_deref());
 
-    // Build status line showing only what was loaded (in load order)
-    let mut loaded_items: Vec<String> = Vec::new();
-    if readme_content_opt.is_some() {
-        loaded_items.push("README".to_string());
-    }
-    if agents_content_opt.is_some() {
-        loaded_items.push("AGENTS.md".to_string());
-    }
-    if let Some(path) = &include_prompt_path {
-        if include_prompt.is_some() {
-            let filename = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "prompt".to_string());
-            loaded_items.push(filename);
-        }
-    }
-    if memory_content_opt.is_some() {
-        loaded_items.push("Memory".to_string());
-    }
-    // Print status line only if something was loaded
-    if !loaded_items.is_empty() {
-        let status_str = loaded_items.iter().map(|s| format!("✓ {}", s)).collect::<Vec<_>>().join("  ");
-        print!(
-            "{}   {}{}\n",
-            crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey),
-            status_str,
-            crossterm::style::ResetColor
-        );
-    }
+    // Build and print status line showing what was loaded
+    let include_filename = include_prompt_path.as_ref()
+        .filter(|_| include_prompt.is_some())
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().to_string());
+    let loaded = LoadedContent::new(
+        readme_content_opt.is_some(),
+        agents_content_opt.is_some(),
+        memory_content_opt.is_some(),
+        include_filename,
+    );
+    print_loaded_status(&loaded);
 
     // Get language-specific prompts (same mechanism as normal mode)
     let language_content = get_language_prompts_for_workspace(&workspace_dir);
