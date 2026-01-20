@@ -262,7 +262,7 @@ pub async fn run_interactive<W: UiWriter>(
 
                     // Check for control commands
                     if input.starts_with('/') {
-                        if handle_command(&input, &mut agent, &output, &mut rl).await? {
+                        if handle_command(&input, &mut agent, &output, &mut rl, show_prompt, show_code).await? {
                             continue;
                         }
                     }
@@ -335,6 +335,8 @@ async fn handle_command<W: UiWriter>(
     agent: &mut Agent<W>,
     output: &SimpleOutput,
     rl: &mut DefaultEditor,
+    show_prompt: bool,
+    show_code: bool,
 ) -> Result<bool> {
     match input {
         "/help" => {
@@ -350,6 +352,7 @@ async fn handle_command<W: UiWriter>(
             output.print("  /dump      - Dump entire context window to file for debugging");
             output.print("  /readme    - Reload README.md and AGENTS.md from disk");
             output.print("  /stats     - Show detailed context and performance statistics");
+            output.print("  /run <file> - Read file and execute as prompt");
             output.print("  /help      - Show this help message");
             output.print("  exit/quit  - Exit the interactive session");
             output.print("");
@@ -432,6 +435,40 @@ async fn handle_command<W: UiWriter>(
                     }
                 } else {
                     output.print("No active session - fragments are session-scoped.");
+                }
+            }
+            Ok(true)
+        }
+        cmd if cmd.starts_with("/run") => {
+            let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+            if parts.len() < 2 || parts[1].trim().is_empty() {
+                output.print("Usage: /run <file-path>");
+                output.print("Reads the file and executes its content as a prompt.");
+            } else {
+                let file_path = parts[1].trim();
+                // Expand tilde
+                let expanded_path = if file_path.starts_with("~/") {
+                    if let Some(home) = dirs::home_dir() {
+                        home.join(&file_path[2..])
+                    } else {
+                        std::path::PathBuf::from(file_path)
+                    }
+                } else {
+                    std::path::PathBuf::from(file_path)
+                };
+                match std::fs::read_to_string(&expanded_path) {
+                    Ok(content) => {
+                        let prompt = content.trim();
+                        if prompt.is_empty() {
+                            output.print("❌ File is empty.");
+                        } else {
+                            output.print(&format!("📄 Running prompt from: {}", file_path));
+                            execute_task_with_retry(agent, prompt, show_prompt, show_code, output).await;
+                        }
+                    }
+                    Err(e) => {
+                        output.print(&format!("❌ Failed to read file '{}': {}", file_path, e));
+                    }
                 }
             }
             Ok(true)
