@@ -93,6 +93,7 @@ pub async fn run() -> Result<()> {
             cli.chat,
             cli.include_prompt.clone(),
             cli.no_auto_memory,
+            cli.acd,
         )
         .await;
     }

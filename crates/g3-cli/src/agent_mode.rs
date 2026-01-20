@@ -27,6 +27,7 @@ pub async fn run_agent_mode(
     chat: bool,
     include_prompt_path: Option<PathBuf>,
     no_auto_memory: bool,
+    acd_enabled: bool,
 ) -> Result<()> {
     use g3_core::find_incomplete_agent_session;
     use g3_core::get_agent_system_prompt;
@@ -218,6 +219,11 @@ pub async fn run_agent_mode(
     // Auto-memory is enabled by default in agent mode (unless --no-auto-memory is set)
     // This prompts the LLM to save discoveries to project memory after each turn
     agent.set_auto_memory(!no_auto_memory);
+    
+    // Enable ACD (Aggressive Context Dehydration) if requested
+    if acd_enabled {
+        agent.set_acd_enabled(true);
+    }
 
     // If resuming a session, restore context and TODO
     let initial_task = if let Some(ref incomplete_session) = resuming_session {
