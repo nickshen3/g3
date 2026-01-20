@@ -196,7 +196,13 @@ pub async fn handle_command<W: UiWriter>(
             }
 
             match std::fs::write(&dump_path, &dump_content) {
-                Ok(_) => output.print(&format!("📄 Context dumped to: {}", dump_path.display())),
+                Ok(_) => {
+                    G3Status::complete_with_path(
+                        "context dumped to",
+                        &dump_path.display().to_string(),
+                        Status::Done,
+                    );
+                }
                 Err(e) => output.print(&format!("❌ Failed to write dump: {}", e)),
             }
             Ok(true)
