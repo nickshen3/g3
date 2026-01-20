@@ -11,6 +11,7 @@ use g3_core::Agent;
 use crate::completion::G3Helper;
 use crate::g3_status::{G3Status, Status};
 use crate::simple_output::SimpleOutput;
+use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
 
 /// Handle a control command. Returns true if the command was handled and the loop should continue.
@@ -142,7 +143,8 @@ pub async fn handle_command<W: UiWriter>(
                 };
                 match std::fs::read_to_string(&expanded_path) {
                     Ok(content) => {
-                        let prompt = content.trim();
+                        let processed = process_template(&content);
+                        let prompt = processed.trim();
                         if prompt.is_empty() {
                             output.print("❌ File is empty.");
                         } else {
