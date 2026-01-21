@@ -1,7 +1,6 @@
 // Suppress warnings from objc crate macros
 #![allow(unexpected_cfgs)]
 
-pub mod macax;
 pub mod platform;
 pub mod types;
 pub mod webdriver;
@@ -11,9 +10,6 @@ pub use webdriver::{
     chrome::ChromeDriver, safari::SafariDriver, WebDriverController, WebElement,
     diagnostics::{run_diagnostics as run_chrome_diagnostics, ChromeDiagnosticReport, DiagnosticStatus},
 };
-
-// Re-export macax types for convenience
-pub use macax::{AXApplication, AXElement, MacAxController};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -28,10 +24,6 @@ pub trait ComputerController: Send + Sync {
         region: Option<Rect>,
         window_id: Option<&str>,
     ) -> Result<()>;
-
-    // Mouse operations
-    fn move_mouse(&self, x: i32, y: i32) -> Result<()>;
-    fn click_at(&self, x: i32, y: i32, app_name: Option<&str>) -> Result<()>;
 }
 
 // Platform-specific constructor

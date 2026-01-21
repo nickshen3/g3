@@ -21,12 +21,4 @@ impl ComputerController for WindowsController {
     ) -> Result<()> {
         anyhow::bail!("Windows screenshot implementation not yet available")
     }
-
-    fn move_mouse(&self, _x: i32, _y: i32) -> Result<()> {
-        anyhow::bail!("Windows mouse control not yet available")
-    }
-
-    fn click_at(&self, _x: i32, _y: i32, _app_name: Option<&str>) -> Result<()> {
-        anyhow::bail!("Windows click control not yet available")
-    }
 }

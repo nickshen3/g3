@@ -1,7 +1,7 @@
 use crate::{
     types::Rect, ComputerController,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use core_foundation::array::CFArray;
 use core_foundation::base::{TCFType, ToVoid};
@@ -204,98 +204,7 @@ impl ComputerController for MacOSController {
         Ok(())
     }
 
-    fn move_mouse(&self, x: i32, y: i32) -> Result<()> {
-        use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
-        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-        use core_graphics::geometry::CGPoint;
-
-        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-            .ok()
-            .context("Failed to create event source")?;
-
-        let event = CGEvent::new_mouse_event(
-            source,
-            CGEventType::MouseMoved,
-            CGPoint::new(x as f64, y as f64),
-            CGMouseButton::Left,
-        )
-        .ok()
-        .context("Failed to create mouse event")?;
-
-        event.post(CGEventTapLocation::HID);
-
-        Ok(())
-    }
-
-    fn click_at(&self, x: i32, y: i32, _app_name: Option<&str>) -> Result<()> {
-        use core_graphics::display::CGDisplay;
-        use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
-        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-        use core_graphics::geometry::CGPoint;
-
-        // IMPORTANT: Coordinates passed here are in NSScreen/CGWindowListCopyWindowInfo space
-        // (Y=0 at BOTTOM, increases UPWARD)
-        // But CGEvent uses a different coordinate system (Y=0 at TOP, increases DOWNWARD)
-        // We need to convert: CGEvent.y = screenHeight - NSScreen.y
-
-        let screen_height = CGDisplay::main().pixels_high() as i32;
-        let cgevent_x = x;
-        let cgevent_y = screen_height - y;
-
-        tracing::debug!(
-            "click_at: NSScreen coords ({}, {}) -> CGEvent coords ({}, {}) [screen_height={}]",
-            x,
-            y,
-            cgevent_x,
-            cgevent_y,
-            screen_height
-        );
-
-        let (global_x, global_y) = (cgevent_x, cgevent_y);
-
-        let point = CGPoint::new(global_x as f64, global_y as f64);
-
-        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-            .ok()
-            .context("Failed to create event source")?;
-
-        // Move mouse to position first
-        let move_event = CGEvent::new_mouse_event(
-            source.clone(),
-            CGEventType::MouseMoved,
-            point,
-            CGMouseButton::Left,
-        )
-        .ok()
-        .context("Failed to create mouse move event")?;
-        move_event.post(CGEventTapLocation::HID);
-
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Mouse down
-        let mouse_down = CGEvent::new_mouse_event(
-            source.clone(),
-            CGEventType::LeftMouseDown,
-            point,
-            CGMouseButton::Left,
-        )
-        .ok()
-        .context("Failed to create mouse down event")?;
-        mouse_down.post(CGEventTapLocation::HID);
-
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        // Mouse up
-        let mouse_up =
-            CGEvent::new_mouse_event(source, CGEventType::LeftMouseUp, point, CGMouseButton::Left)
-                .ok()
-                .context("Failed to create mouse up event")?;
-        mouse_up.post(CGEventTapLocation::HID);
-
-        Ok(())
-    }
 }
-
 
 #[path = "macos_window_matching_test.rs"]
 #[cfg(test)]
