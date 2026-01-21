@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "/dump",
     "/fragments",
     "/help",
+    "/project",
     "/readme",
     "/rehydrate",
     "/resume",
@@ -27,6 +28,7 @@ const COMMANDS: &[&str] = &[
     "/skinnify",
     "/stats",
     "/thinnify",
+    "/unproject",
 ];
 
 /// Helper struct for rustyline that provides tab completion.
