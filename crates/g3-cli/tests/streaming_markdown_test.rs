@@ -610,8 +610,8 @@ Normal text with **bold**, *italic*, and `inline code` all together.
     eprintln!("{}", full_output);
     eprintln!("=== END ===");
     
-    // Check headers are formatted (magenta)
-    assert!(full_output.contains("\x1b[1;35mHeader 1"), "H1 should be bold magenta");
+    // Check headers are formatted (Dracula colors)
+    assert!(full_output.contains("\x1b[1;95mHeader 1"), "H1 should be bold pink");
     assert!(full_output.contains("\x1b[35mHeader 2"), "H2 should be magenta");
     
     // Check bold is green
@@ -703,9 +703,9 @@ Your config already has it set up with consult:
     eprintln!("=== RAW ===");
     eprintln!("{:?}", full_output);
     
-    // Headers should be formatted (magenta), not raw
+    // Headers should be formatted (H3 = cyan in Dracula), not raw
     assert!(!full_output.contains("### Key"), "Should not have raw ### header");
-    assert!(full_output.contains("\x1b[35mKey bindings"), "Header should be magenta");
+    assert!(full_output.contains("\x1b[36mKey bindings"), "H3 header should be cyan");
     
     // Bold should be formatted, not raw
     assert!(!full_output.contains("**C-x p f**"), "Should not have raw ** bold");
@@ -821,9 +821,9 @@ Some **bold** text.
     eprintln!("=== RAW ===");
     eprintln!("{:?}", full_output);
     
-    // Header should be formatted
+    // Header should be formatted (H3 = cyan in Dracula)
     assert!(!full_output.contains("### Header"), "Should not have raw ### header");
-    assert!(full_output.contains("\x1b[35mHeader after table"), "Header should be magenta");
+    assert!(full_output.contains("\x1b[36mHeader after table"), "H3 header should be cyan");
     
     // Bold should be formatted
     assert!(!full_output.contains("**bold**"), "Should not have raw ** bold");
@@ -1789,8 +1789,8 @@ fn test_bold_inside_header() {
     // Should NOT contain raw ** in output
     assert!(!full.contains("**"), "Should not contain raw ** markers, got: {}", full);
     
-    // Should have header formatting (magenta)
-    assert!(full.contains("\x1b[1;35m"), "Should have bold magenta header formatting");
+    // Should have header formatting (H1 = bold pink in Dracula)
+    assert!(full.contains("\x1b[1;95m"), "Should have bold pink header formatting");
     
     // Should have bold formatting (green) for the bold text inside
     assert!(full.contains("\x1b[1;32m"), "Should have green bold formatting for **Bold Header**");
@@ -1842,8 +1842,8 @@ fn test_code_inside_header() {
     let without_ansi = strip_ansi(&full);
     assert!(!without_ansi.contains('`'), "Should not contain raw backticks, got: {}", without_ansi);
     
-    // Should have header formatting (magenta)
-    assert!(full.contains("\x1b[35m"), "Should have magenta header formatting");
+    // Should have header formatting (H3 = cyan in Dracula)
+    assert!(full.contains("\x1b[36m"), "Should have cyan header formatting");
     
     // Should have code formatting (orange) for the inline code
     assert!(full.contains("\x1b[38;2;216;177;114m"), "Should have orange code formatting");
