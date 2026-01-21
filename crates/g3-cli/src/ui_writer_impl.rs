@@ -234,7 +234,7 @@ impl UiWriter for ConsoleUiWriter {
     fn print_g3_status(&self, message: &str, status: &str) {
         use crate::g3_status::Status;
         let _ = message; // unused now - progress already printed the message
-        crate::g3_status::G3Status::status(&Status::from_str(status));
+        crate::g3_status::G3Status::status(&Status::parse(status));
     }
 
     fn print_thin_result(&self, result: &g3_core::ThinResult) {

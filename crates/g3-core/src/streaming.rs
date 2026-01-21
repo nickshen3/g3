@@ -1,8 +1,7 @@
 //! Streaming completion logic for the Agent.
 //!
-//! This module provides state management and helper functions for streaming
-//! LLM responses, including tool call detection, deduplication, and
-//! auto-continue decision logic.
+//! State management and helpers for streaming LLM responses: tool call
+//! detection, deduplication, and auto-continue logic.
 
 use crate::context_window::ContextWindow;
 use crate::streaming_parser::StreamingToolParser;
@@ -11,7 +10,6 @@ use g3_providers::{CompletionRequest, MessageRole};
 use std::time::{Duration, Instant};
 use tracing::{debug, error};
 
-/// Constants for streaming behavior
 pub const MAX_ITERATIONS: usize = 400;
 
 /// State tracked across streaming iterations
@@ -53,18 +51,13 @@ impl StreamingState {
     }
 }
 
-/// Result of formatting a tool's output for display
 pub enum ToolOutputFormat {
-    /// Tool handles its own output (e.g., TODO tools)
     SelfHandled,
-    /// Compact one-line summary for file operations
     Compact(String),
-    /// Regular multi-line output (already displayed via ui_writer)
     Regular,
 }
 
-/// Format a tool result for compact display.
-/// Returns the appropriate format based on tool type and success.
+/// Determine how to format a tool result for display.
 pub fn format_tool_result_summary(
     tool_name: &str,
     tool_result: &str,
@@ -97,7 +90,6 @@ pub fn format_tool_result_summary(
     }
 }
 
-/// Check if a tool is a "compact" tool that shows one-line summaries
 pub fn is_compact_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
@@ -112,7 +104,6 @@ pub fn is_compact_tool(tool_name: &str) -> bool {
     )
 }
 
-/// Check if a tool handles its own output display
 pub fn is_self_handled_tool(tool_name: &str) -> bool {
     tool_name == "todo_read" || tool_name == "todo_write"
 }

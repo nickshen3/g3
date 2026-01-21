@@ -27,7 +27,7 @@ impl SimpleOutput {
     /// Format: "g3: <message> ... [status]"
     /// Uses centralized G3Status formatting.
     pub fn print_g3_status(&self, message: &str, status: &str) {
-        G3Status::complete(message, Status::from_str(status));
+        G3Status::complete(message, Status::parse(status));
     }
 
     /// Print a g3 status message in progress (no status yet)

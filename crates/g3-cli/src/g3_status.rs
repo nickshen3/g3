@@ -1,26 +1,8 @@
 //! Centralized formatting for g3 system status messages.
 //!
-//! This module provides consistent formatting for all "g3:" prefixed status messages,
-//! including progress indicators, completion statuses, and inline updates.
-//!
-//! # Usage
-//!
-//! ```ignore
-//! use crate::g3_status::G3Status;
-//!
-//! // Start a progress message (stays on same line, no newline)
-//! G3Status::progress("compacting session");
-//!
-//! // Complete with status (adds to same line, then newline)
-//! G3Status::done();
-//! // or
-//! G3Status::failed();
-//! // or
-//! G3Status::error("timeout");
-//!
-//! // One-shot status message (progress + status on same line)
-//! G3Status::complete("compacting session", Status::Done);
-//! ```
+//! Provides consistent "g3:" prefixed status messages with progress indicators
+//! and completion statuses. Use `progress()` + `done()`/`failed()` for two-step
+//! output, or `complete()` for one-shot messages.
 
 use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
 use std::io::{self, Write};
@@ -45,8 +27,7 @@ pub enum Status {
 }
 
 impl Status {
-    /// Parse a status string into a Status enum
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "done" => Status::Done,
             "failed" => Status::Failed,
@@ -63,10 +44,7 @@ impl Status {
 pub struct G3Status;
 
 impl G3Status {
-    /// Print a progress message that stays on the same line.
-    /// Format: "g3: <message> ..."
-    /// - "g3:" is bold green
-    /// - No trailing newline (use `done()`, `failed()`, etc. to complete)
+    /// Print "g3: <message> ..." (no newline). Complete with `done()` or `failed()`.
     pub fn progress(message: &str) {
         print!(
             "{}{}g3:{}{} {} ...",
@@ -79,8 +57,7 @@ impl G3Status {
         let _ = io::stdout().flush();
     }
 
-    /// Print a progress message with a newline at the end.
-    /// Use this when you don't plan to add a status on the same line.
+    /// Print "g3: <message> ..." with newline (standalone progress).
     pub fn progress_ln(message: &str) {
         println!(
             "{}{}g3:{}{} {} ...",
@@ -92,7 +69,6 @@ impl G3Status {
         );
     }
 
-    /// Complete a progress message with "[done]" in bold green.
     pub fn done() {
         println!(
             " {}{}[done]{}",
@@ -102,7 +78,6 @@ impl G3Status {
         );
     }
 
-    /// Complete a progress message with "[failed]" in red.
     pub fn failed() {
         println!(
             " {}[failed]{}",
@@ -111,7 +86,6 @@ impl G3Status {
         );
     }
 
-    /// Complete a progress message with "[error: <msg>]" in red.
     pub fn error(msg: &str) {
         println!(
             " {}[error: {}]{}",
@@ -121,7 +95,6 @@ impl G3Status {
         );
     }
 
-    /// Complete a progress message with a custom status.
     pub fn status(status: &Status) {
         match status {
             Status::Done => Self::done(),
@@ -155,15 +128,12 @@ impl G3Status {
         }
     }
 
-    /// Print a complete status message (progress + status) on one line.
-    /// Format: "g3: <message> ... [status]"
+    /// Print "g3: <message> ... [status]" (one-shot).
     pub fn complete(message: &str, status: Status) {
         Self::progress(message);
         Self::status(&status);
     }
 
-    /// Print an info message in dimmed/grey text.
-    /// Format: "... <message>"
     #[allow(dead_code)]
     pub fn info(message: &str) {
         println!(
@@ -174,10 +144,8 @@ impl G3Status {
         );
     }
 
-    /// Print an info message inline (no newline, for appending to user input).
-    /// Uses ANSI escape to move cursor up and to end of previous line.
+    /// Print info inline (moves cursor up, appends to previous line).
     pub fn info_inline(message: &str) {
-        // Move cursor up one line, to end of line, then print
         print!(
             "\x1b[1A\x1b[999C {}... {}{}\n",
             SetForegroundColor(Color::DarkGrey),
@@ -187,8 +155,7 @@ impl G3Status {
         let _ = io::stdout().flush();
     }
 
-    /// Format a status string for inline use (returns the formatted string).
-    /// Useful when building custom messages.
+    /// Format a status for inline use (returns formatted string).
     pub fn format_status(status: &Status) -> String {
         match status {
             Status::Done => format!(
@@ -232,7 +199,6 @@ impl G3Status {
         }
     }
 
-    /// Format the "g3:" prefix for inline use.
     pub fn format_prefix() -> String {
         format!(
             "{}{}g3:{}{}",
@@ -243,8 +209,7 @@ impl G3Status {
         )
     }
 
-    /// Print a resuming session message with session ID highlighted.
-    /// Format: "... resuming <session_id> [done/error]"
+    /// Print "... resuming <session_id> [status]" with cyan session ID.
     pub fn resuming(session_id: &str, status: Status) {
         let status_str = Self::format_status(&status);
         println!(
@@ -256,7 +221,6 @@ impl G3Status {
         );
     }
 
-    /// Print a resuming session message with "(summary)" note.
     pub fn resuming_summary(session_id: &str) {
         let status_str = Self::format_status(&Status::Done);
         println!(
@@ -268,9 +232,7 @@ impl G3Status {
         );
     }
 
-    /// Print a context thinning result.
-    /// Format: "g3: thinning context ... 70% -> 40% ... [done]"
-    /// or: "g3: thinning context (full) ... 70% ... [no changes]"
+    /// Print thinning result: "g3: thinning context ... 70% -> 40% ... [done]"
     pub fn thin_result(result: &g3_core::ThinResult) {
         use g3_core::ThinScope;
         
@@ -295,11 +257,7 @@ impl G3Status {
         }
     }
 
-    /// Print a complete status message with a path highlighted in cyan.
-    /// Format: "g3: <message> <path> [status]"
-    /// - "g3:" is bold green
-    /// - path is cyan
-    /// - status is formatted per Status type
+    /// Print "g3: <message> <path> [status]" with cyan path.
     pub fn complete_with_path(message: &str, path: &str, status: Status) {
         print!(
             "{} {} {}{}{}",
@@ -319,13 +277,13 @@ mod tests {
 
     #[test]
     fn test_status_from_str() {
-        assert_eq!(Status::from_str("done"), Status::Done);
-        assert_eq!(Status::from_str("failed"), Status::Failed);
-        assert_eq!(Status::from_str("resolved"), Status::Resolved);
-        assert_eq!(Status::from_str("insufficient"), Status::Insufficient);
-        assert_eq!(Status::from_str("error: timeout"), Status::Error("timeout".to_string()));
-        assert_eq!(Status::from_str("error timeout"), Status::Error("timeout".to_string()));
-        assert_eq!(Status::from_str("custom"), Status::Custom("custom".to_string()));
+        assert_eq!(Status::parse("done"), Status::Done);
+        assert_eq!(Status::parse("failed"), Status::Failed);
+        assert_eq!(Status::parse("resolved"), Status::Resolved);
+        assert_eq!(Status::parse("insufficient"), Status::Insufficient);
+        assert_eq!(Status::parse("error: timeout"), Status::Error("timeout".to_string()));
+        assert_eq!(Status::parse("error timeout"), Status::Error("timeout".to_string()));
+        assert_eq!(Status::parse("custom"), Status::Custom("custom".to_string()));
     }
 
     #[test]

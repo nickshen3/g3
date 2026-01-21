@@ -1,12 +1,8 @@
 //! Tab completion support for g3 interactive mode.
 //!
 //! Provides:
-//! - Command completion for `/` commands (at start of line)
-//! - File path completion for paths anywhere in the line:
-//!   - `./` - current directory
-//!   - `../` - parent directory  
-//!   - `~/` - home directory
-//!   - `/` (not at start) - root directory
+//! - Command completion for `/` commands at line start
+//! - File path completion for `./`, `../`, `~/`, `/` prefixes
 //! - Session ID completion for `/resume` command
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
@@ -51,8 +47,7 @@ impl G3Helper {
     fn extract_word<'a>(&self, line: &'a str, pos: usize) -> (usize, &'a str) {
         let line_to_cursor = &line[..pos];
         
-        // Look backwards for the start of the word
-        // A word starts after a space (unless quoted or escaped)
+        // Find word start: after space (unless quoted/escaped)
         let mut word_start = 0;
         let mut in_quotes = false;
         let mut quote_char = ' ';
@@ -65,8 +60,6 @@ impl G3Helper {
                     in_quotes = false;
                 }
             } else if prev_was_backslash {
-                // This char is escaped, don't treat it as special
-                // (e.g., backslash-space is part of the word)
             } else {
                 match c {
                     '"' | '\'' => {
@@ -75,7 +68,6 @@ impl G3Helper {
                         word_start = i;
                     }
                     ' ' | '\t' => {
-                        // Space starts a new word (unless escaped)
                         if idx + 1 < chars.len() {
                             word_start = chars[idx + 1].0;
                         } else {
@@ -91,9 +83,7 @@ impl G3Helper {
         (word_start, &line_to_cursor[word_start..])
     }
 
-    /// Check if a word looks like a path prefix
     fn is_path_prefix(&self, word: &str) -> bool {
-        // Strip leading quote if present (for paths like "~/...)
         let word = word.trim_start_matches('"').trim_start_matches('\'');
         
         word.starts_with("./")
@@ -105,14 +95,12 @@ impl G3Helper {
             || word == "~"
     }
     
-    /// Strip quotes from a word for path completion
     fn strip_quotes<'a>(&self, word: &'a str) -> &'a str {
         word.trim_start_matches('"').trim_start_matches('\'')
             .trim_end_matches('"').trim_end_matches('\'')
     }
     
-    /// Unescape backslash-escaped characters in a path
-    /// e.g., "~/My\ Files" -> "~/My Files"
+    /// Unescape backslash-escaped chars: "~/My\ Files" -> "~/My Files"
     fn unescape_path(&self, path: &str) -> String {
         let mut result = String::with_capacity(path.len());
         let mut chars = path.chars().peekable();
@@ -129,8 +117,7 @@ impl G3Helper {
         result
     }
     
-    /// List available session IDs from .g3/sessions/, sorted by newest first.
-    /// If `limit` is Some(n), returns at most n sessions.
+    /// List session IDs from .g3/sessions/, sorted newest-first, with optional limit.
     fn list_sessions(&self, limit: Option<usize>) -> Vec<String> {
         let sessions_dir = PathBuf::from(".g3/sessions");
         if !sessions_dir.is_dir() {
@@ -185,13 +172,10 @@ impl Completer for G3Helper {
         // Extract the current word being typed
         let (word_start, word) = self.extract_word(line, pos);
         
-        // Case 1: Command completion - `/` at the very start of the line
-        // Only complete commands if we're typing the first word and it starts with `/`
+        // Case 1: Command completion at line start
         if word_start == 0 && word.starts_with('/') && !word.contains(' ') {
-            // Check if this looks like a command (no path separators after the first /)
             let after_slash = &word[1..];
             if !after_slash.contains('/') {
-                // This is a command like "/com" not a path like "/etc"
                 let matches: Vec<Pair> = COMMANDS
                     .iter()
                     .filter(|cmd| cmd.starts_with(word))
@@ -204,47 +188,34 @@ impl Completer for G3Helper {
                 if !matches.is_empty() {
                     return Ok((0, matches));
                 }
-                // If no command matches, fall through to path completion
-                // (e.g., "/etc" should complete as a path)
             }
         }
         
-        // Case 2: Path completion for path-like prefixes
-        // We handle quotes ourselves since FilenameCompleter doesn't understand our extraction
+        // Case 2: Path completion for path-like prefixes (handles quotes ourselves)
         if self.is_path_prefix(word) || (word_start > 0 && line_to_cursor[word_start..].starts_with('/')) {
-            // Check if word starts with a quote
             let has_leading_quote = word.starts_with('"') || word.starts_with('\'');
             let quote_char = if has_leading_quote { &word[..1] } else { "" };
-            // Check if word has backslash escapes
             let has_escapes = word.contains('\\');
             
-            // Strip quotes and unescape backslashes to get the actual path
             let path_str = self.strip_quotes(word);
             let path_unescaped = self.unescape_path(path_str);
             let path: &str = &path_unescaped;
             
-            // Complete just the path portion
             let (_rel_start, completions) = self.file_completer.complete(path, path.len(), ctx)?;
             
             if completions.is_empty() {
                 return Ok((pos, vec![]));
             }
             
-            // Adjust completions to account for quotes and word position
             let adjusted: Vec<Pair> = completions
                 .into_iter()
                 .map(|pair| {
-                    // If we had a leading quote, add it back
-                    // Also check if the path has spaces - if so, wrap in quotes
                     let has_spaces = pair.replacement.contains(' ');
                     let replacement = if has_leading_quote {
-                        // Preserve the original quote style
                         format!("{}{}{}", quote_char, pair.replacement, quote_char)
                     } else if has_escapes && has_spaces {
-                        // User was using backslash escapes, continue with that style
                         pair.replacement.replace(' ', "\\ ")
                     } else if has_spaces {
-                        // Add quotes around paths with spaces
                         format!("\"{}\"" , pair.replacement)
                     } else {
                         pair.replacement
@@ -261,14 +232,11 @@ impl Completer for G3Helper {
                 })
                 .collect();
             
-            // Return with word_start so the whole word gets replaced
             return Ok((word_start, adjusted));
         }
         
-        // Case 3: Check if we're after a command that takes a path argument
-        if line_to_cursor.starts_with("/run ") 
-        {
-            // For commands, just use the file completer on the path portion
+        // Case 3: Path argument for /run command
+        if line_to_cursor.starts_with("/run ") {
             let path = self.strip_quotes(word);
             let (_, completions) = self.file_completer.complete(path, path.len(), ctx)?;
             return Ok((word_start, completions));
@@ -277,7 +245,6 @@ impl Completer for G3Helper {
         // Case 4: Session ID completion for /resume command
         if line_to_cursor.starts_with("/resume ") {
             let partial = word;
-            // Get all sessions sorted by newest first, then filter and limit
             let sessions = self.list_sessions(None);
             let matches: Vec<Pair> = sessions
                 .into_iter()
@@ -286,7 +253,7 @@ impl Completer for G3Helper {
                     display: s.clone(),
                     replacement: s,
                 })
-                .take(8)  // Show at most 8 most recent matches
+                .take(8)
                 .collect();
             return Ok((word_start, matches));
         }
@@ -321,7 +288,6 @@ mod tests {
         let history = rustyline::history::DefaultHistory::new();
         let ctx = Context::new(&history);
 
-        // Complete "/com" -> "/compact"
         let (start, matches) = helper.complete("/com", 4, &ctx).unwrap();
         assert_eq!(start, 0);
         assert_eq!(matches.len(), 1);
@@ -334,7 +300,6 @@ mod tests {
         let history = rustyline::history::DefaultHistory::new();
         let ctx = Context::new(&history);
 
-        // Complete "/s" -> "/skinnify", "/stats"
         let (start, matches) = helper.complete("/s", 2, &ctx).unwrap();
         assert_eq!(start, 0);
         assert_eq!(matches.len(), 2);
@@ -414,123 +379,84 @@ mod tests {
 
     #[test]
     fn test_actual_completion_with_quotes() {
-        use rustyline::completion::Completer;
-        use rustyline::Context;
-        
         let helper = G3Helper::new();
         let history = rustyline::history::DefaultHistory::new();
         let ctx = Context::new(&history);
         
-        // Test 1: "~/ - unclosed quote at start of path
-        println!("\n=== Test 1: Unclosed quote \"~/ ===");
         let line = "edit \"~/";
         let pos = line.len();
         match helper.complete(line, pos, &ctx) {
             Ok((start, completions)) => {
-                println!("Line: '{}', pos: {}", line, pos);
-                println!("Start: {}, num_completions: {}", start, completions.len());
-                if !completions.is_empty() {
-                    println!("First few: {:?}", completions.iter().take(3).map(|p| &p.replacement).collect::<Vec<_>>());
-                }
+                assert!(start > 0 || completions.is_empty() || true); // Just verify no panic
             }
-            Err(e) => println!("Error: {:?}", e),
+            Err(_) => {}
         }
         
-        // Test 2: ~/My\ - backslash before cursor
-        println!("\n=== Test 2: Backslash escape ~/My\\ ===");
         let line = "edit ~/My\\ ";
         let pos = line.len();
         match helper.complete(line, pos, &ctx) {
             Ok((start, completions)) => {
-                println!("Line: '{}', pos: {}", line, pos);
-                println!("Start: {}, num_completions: {}", start, completions.len());
-                if !completions.is_empty() {
-                    println!("First few: {:?}", completions.iter().take(3).map(|p| &p.replacement).collect::<Vec<_>>());
-                }
+                let _ = (start, completions); // Just verify no panic
             }
-            Err(e) => println!("Error: {:?}", e),
+            Err(_) => {}
         }
         
-        // Test 3: "~/" - closed quote
-        println!("\n=== Test 3: Closed quote \"/~/\" ===");
         let line = "edit \"~/\"";
         let pos = line.len();
         match helper.complete(line, pos, &ctx) {
             Ok((start, completions)) => {
-                println!("Line: '{}', pos: {}", line, pos);
-                println!("Start: {}, num_completions: {}", start, completions.len());
-                if !completions.is_empty() {
-                    println!("First few: {:?}", completions.iter().take(3).map(|p| &p.replacement).collect::<Vec<_>>());
-                }
+                let _ = (start, completions);
             }
-            Err(e) => println!("Error: {:?}", e),
+            Err(_) => {}
         }
     }
 
     #[test]
     fn test_no_completion_for_bare_quote() {
-        use rustyline::completion::Completer;
-        use rustyline::Context;
-        
         let helper = G3Helper::new();
         let history = rustyline::history::DefaultHistory::new();
         let ctx = Context::new(&history);
         
-        // Just a quote with no path prefix - should NOT trigger completion
         let line = "edit \"";
         let pos = line.len();
         let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
-        println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
-        
-        // Should return no completions since "" is not a path prefix
+        let _ = start;
         assert_eq!(completions.len(), 0, "Bare quote should not trigger path completion");
     }
 
     #[test]
     fn test_no_completion_for_random_text_in_quotes() {
-        use rustyline::completion::Completer;
-        use rustyline::Context;
-        
         let helper = G3Helper::new();
         let history = rustyline::history::DefaultHistory::new();
         let ctx = Context::new(&history);
         
-        // Random text in quotes - should NOT trigger completion
         let line = "edit \"hello world";
         let pos = line.len();
         let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
-        println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
+        let _ = start;
         assert_eq!(completions.len(), 0, "Random quoted text should not trigger path completion");
         
-        // Just "foo - no path prefix
         let line = "edit \"foo";
         let pos = line.len();
         let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
-        println!("Line: '{}', start: {}, completions: {}", line, start, completions.len());
+        let _ = start;
         assert_eq!(completions.len(), 0, "Quoted non-path should not trigger completion");
     }
 
     #[test]
     fn test_resume_completion_lists_sessions() {
-        use rustyline::completion::Completer;
-        use rustyline::Context;
-        
         let helper = G3Helper::new();
         let history = rustyline::history::DefaultHistory::new();
         let ctx = Context::new(&history);
         
-        // Test against real .g3/sessions in current project
-        // This test runs from the project root where .g3/sessions exists
         let line = "/resume ";
         let pos = line.len();
         let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
-        println!("Sessions found: {}", completions.len());
+        let _ = start;
         
-        // If .g3/sessions exists, we should get some completions
         if std::path::Path::new(".g3/sessions").is_dir() {
             assert!(completions.len() > 0, "Should list sessions when .g3/sessions exists");
             
-            // Test filtering - use first few chars of first session
             if let Some(first) = completions.first() {
                 let prefix = &first.replacement[..first.replacement.len().min(5)];
                 let line = format!("/resume {}", prefix);
@@ -541,7 +467,6 @@ mod tests {
             }
         }
         
-        // Test with non-matching prefix - should return empty
         let line = "/resume zzz_nonexistent_prefix_";
         let pos = line.len();
         let (_, completions) = helper.complete(line, pos, &ctx).unwrap();
@@ -551,13 +476,7 @@ mod tests {
     #[test]
     fn test_resume_completion_graceful_no_panic() {
         let helper = G3Helper::new();
-        
-        // Test list_sessions directly - should not panic regardless of whether
-        // .g3/sessions exists or not
         let sessions = helper.list_sessions(None);
-        
-        // This will either return sessions (if .g3/sessions exists) or empty
-        // The important thing is it doesn't panic
-        println!("list_sessions returned {} sessions", sessions.len());
+        let _ = sessions; // Just verify no panic
     }
 }
