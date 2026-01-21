@@ -37,18 +37,6 @@ pub async fn run_agent_mode(
     // Set process title to agent name (shows in ps, Activity Monitor, etc.)
     proctitle::set_title(format!("g3 [{}]", agent_name));
 
-    // Initialize logging
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    let filter = EnvFilter::from_default_env()
-        .add_directive("g3_core=info".parse().unwrap())
-        .add_directive("g3_cli=info".parse().unwrap())
-        .add_directive("llama_cpp=off".parse().unwrap())
-        .add_directive("llama=off".parse().unwrap());
-    let _ = tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(filter)
-        .try_init();
-
     let output = SimpleOutput::new();
 
     // Determine workspace directory (current dir if not specified)
