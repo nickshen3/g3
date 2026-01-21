@@ -1055,6 +1055,11 @@ impl<W: UiWriter> Agent<W> {
         &self.context_window
     }
 
+    /// Get a reference to the UI writer.
+    pub fn ui_writer(&self) -> &W {
+        &self.ui_writer
+    }
+
     /// Add a message directly to the context window.
     /// Used for injecting discovery messages before the first LLM turn.
     pub fn add_message_to_context(&mut self, message: Message) {

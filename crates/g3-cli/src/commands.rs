@@ -360,6 +360,14 @@ pub async fn handle_command<W: UiWriter>(
                     Some(project) => {
                         // Set project content in agent's system message
                         if agent.set_project_content(Some(project.content.clone())) {
+                            // Set project path on UI writer for path shortening
+                            let project_name = project.path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("project")
+                                .to_string();
+                            agent.ui_writer().set_project_path(project.path.clone(), project_name);
+
                             // Print loaded status
                             print!(
                                 "{}Project loaded:{} {}\n",
@@ -388,6 +396,7 @@ pub async fn handle_command<W: UiWriter>(
         "/unproject" => {
             if active_project.is_some() {
                 agent.clear_project_content();
+                agent.ui_writer().clear_project();
                 *active_project = None;
                 output.print("✅ Project unloaded. Context reset to original system message.");
             } else {

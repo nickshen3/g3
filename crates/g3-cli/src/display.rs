@@ -17,6 +17,83 @@ pub fn format_workspace_path(workspace_path: &Path) -> String {
         .unwrap_or(path_str)
 }
 
+/// Shorten a path string for display by:
+/// 1. Replacing project directory prefix with `<project_name>/` (if project is active)
+/// 2. Replacing workspace directory prefix with `./`
+/// 3. Replacing home directory prefix with `~`
+///
+/// This is useful for tool output where paths should be concise.
+/// The project check happens first (most specific), then workspace, then home.
+pub fn shorten_path(path: &str, workspace_path: Option<&std::path::Path>, project: Option<(&std::path::Path, &str)>) -> String {
+    // First, try to make it relative to project (most specific)
+    if let Some((project_path, project_name)) = project {
+        let project_str = project_path.display().to_string();
+        if let Some(relative) = path.strip_prefix(&project_str) {
+            // Handle both "/subpath" and "" (exact match) cases
+            if relative.is_empty() {
+                return format!("{}/", project_name);
+            } else if let Some(stripped) = relative.strip_prefix('/') {
+                return format!("{}/{}", project_name, stripped);
+            }
+        }
+    }
+
+    // First, try to make it relative to workspace
+    if let Some(workspace) = workspace_path {
+        let workspace_str = workspace.display().to_string();
+        if let Some(relative) = path.strip_prefix(&workspace_str) {
+            // Handle both "/subpath" and "" (exact match) cases
+            if relative.is_empty() {
+                return "./".to_string();
+            } else if let Some(stripped) = relative.strip_prefix('/') {
+                return format!("./{}", stripped);
+            }
+        }
+    }
+
+    // Fall back to replacing home directory with ~
+    if let Some(home) = dirs::home_dir() {
+        let home_str = home.display().to_string();
+        if let Some(relative) = path.strip_prefix(&home_str) {
+            return format!("~{}", relative);
+        }
+    }
+
+    path.to_string()
+}
+
+/// Shorten any paths found within a shell command string.
+/// This replaces project paths with `<project_name>/`, workspace paths with `./`, and home paths with `~`.
+pub fn shorten_paths_in_command(command: &str, workspace_path: Option<&std::path::Path>, project: Option<(&std::path::Path, &str)>) -> String {
+    let mut result = command.to_string();
+
+    // First, replace project paths (most specific)
+    if let Some((project_path, project_name)) = project {
+        let project_str = project_path.display().to_string();
+        // Replace project path followed by / with project_name/
+        result = result.replace(&format!("{}/", project_str), &format!("{}/", project_name));
+        // Replace exact project path
+        result = result.replace(&project_str, project_name);
+    }
+
+    // Then, replace workspace paths
+    if let Some(workspace) = workspace_path {
+        let workspace_str = workspace.display().to_string();
+        // Replace workspace path followed by / with ./
+        result = result.replace(&format!("{}/", workspace_str), "./");
+        // Replace exact workspace path at word boundary
+        result = result.replace(&workspace_str, ".");
+    }
+
+    // Then replace home directory paths
+    if let Some(home) = dirs::home_dir() {
+        let home_str = home.display().to_string();
+        result = result.replace(&home_str, "~");
+    }
+
+    result
+}
+
 /// Print the workspace path in a consistent format.
 pub fn print_workspace_path(workspace_path: &Path) {
     let display = format_workspace_path(workspace_path);
@@ -194,5 +271,92 @@ mod tests {
             ..Default::default()
         };
         assert!(with_readme.has_any());
+    }
+
+    #[test]
+    fn test_shorten_path_workspace_relative() {
+        let workspace = PathBuf::from("/Users/test/projects/myapp");
+        let path = "/Users/test/projects/myapp/src/main.rs";
+        let shortened = shorten_path(path, Some(&workspace), None);
+        assert_eq!(shortened, "./src/main.rs");
+    }
+
+    #[test]
+    fn test_shorten_path_workspace_exact() {
+        let workspace = PathBuf::from("/Users/test/projects/myapp");
+        let path = "/Users/test/projects/myapp";
+        let shortened = shorten_path(path, Some(&workspace), None);
+        assert_eq!(shortened, "./");
+    }
+
+    #[test]
+    fn test_shorten_path_home_relative() {
+        // This test depends on having a home directory
+        if let Some(home) = dirs::home_dir() {
+            let path = format!("{}/other/project/file.rs", home.display());
+            let shortened = shorten_path(&path, None, None);
+            assert_eq!(shortened, "~/other/project/file.rs");
+        }
+    }
+
+    #[test]
+    fn test_shorten_path_no_match() {
+        let workspace = PathBuf::from("/Users/test/projects/myapp");
+        let path = "/tmp/other/file.rs";
+        let shortened = shorten_path(path, Some(&workspace), None);
+        assert_eq!(shortened, "/tmp/other/file.rs");
+    }
+
+    #[test]
+    fn test_shorten_path_project_relative() {
+        let workspace = PathBuf::from("/Users/test/projects");
+        let project_path = PathBuf::from("/Users/test/projects/appa_estate");
+        let path = "/Users/test/projects/appa_estate/status.md";
+        let shortened = shorten_path(path, Some(&workspace), Some((&project_path, "appa_estate")));
+        assert_eq!(shortened, "appa_estate/status.md");
+    }
+
+    #[test]
+    fn test_shorten_path_project_takes_priority() {
+        // Project path is under workspace, but project shortening should take priority
+        let workspace = PathBuf::from("/Users/test/projects");
+        let project_path = PathBuf::from("/Users/test/projects/appa_estate");
+        let path = "/Users/test/projects/appa_estate/src/main.rs";
+        let shortened = shorten_path(path, Some(&workspace), Some((&project_path, "appa_estate")));
+        assert_eq!(shortened, "appa_estate/src/main.rs");
+    }
+
+    #[test]
+    fn test_shorten_paths_in_command_workspace() {
+        let workspace = PathBuf::from("/Users/test/projects/myapp");
+        let command = "cat /Users/test/projects/myapp/src/main.rs";
+        let shortened = shorten_paths_in_command(command, Some(&workspace), None);
+        assert_eq!(shortened, "cat ./src/main.rs");
+    }
+
+    #[test]
+    fn test_shorten_paths_in_command_home() {
+        if let Some(home) = dirs::home_dir() {
+            let command = format!("ls {}/Documents", home.display());
+            let shortened = shorten_paths_in_command(&command, None, None);
+            assert_eq!(shortened, "ls ~/Documents");
+        }
+    }
+
+    #[test]
+    fn test_shorten_paths_in_command_multiple() {
+        let workspace = PathBuf::from("/Users/test/projects/myapp");
+        let command = "diff /Users/test/projects/myapp/a.rs /Users/test/projects/myapp/b.rs";
+        let shortened = shorten_paths_in_command(command, Some(&workspace), None);
+        assert_eq!(shortened, "diff ./a.rs ./b.rs");
+    }
+
+    #[test]
+    fn test_shorten_paths_in_command_project() {
+        let workspace = PathBuf::from("/Users/test/projects");
+        let project_path = PathBuf::from("/Users/test/projects/appa_estate");
+        let command = "cat /Users/test/projects/appa_estate/status.md";
+        let shortened = shorten_paths_in_command(command, Some(&workspace), Some((&project_path, "appa_estate")));
+        assert_eq!(shortened, "cat appa_estate/status.md");
     }
 }

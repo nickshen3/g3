@@ -126,6 +126,20 @@ pub trait UiWriter: Send + Sync {
     /// When in agent mode, tool names may be displayed differently (e.g., different color).
     /// Default implementation does nothing.
     fn set_agent_mode(&self, _is_agent_mode: bool) {}
+
+    /// Set the workspace path for shortening displayed paths.
+    /// Paths under this directory will be shown as `./relative/path`.
+    /// Default implementation does nothing.
+    fn set_workspace_path(&self, _path: std::path::PathBuf) {}
+
+    /// Set the active project path and name for shortening displayed paths.
+    /// Paths under this directory will be shown as `<project_name>/relative/path`.
+    /// Default implementation does nothing.
+    fn set_project_path(&self, _path: std::path::PathBuf, _name: String) {}
+
+    /// Clear the active project (when project is unloaded).
+    /// Default implementation does nothing.
+    fn clear_project(&self) {}
 }
 
 /// A no-op implementation for when UI output is not needed

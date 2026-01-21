@@ -1,4 +1,5 @@
 use crate::filter_json::{filter_json_tool_calls, reset_json_tool_state, ToolParsingHint};
+use crate::display::{shorten_path, shorten_paths_in_command};
 use crate::streaming_markdown::StreamingMarkdownFormatter;
 use g3_core::ui_writer::UiWriter;
 use std::io::{self, Write};
@@ -137,6 +138,12 @@ impl ParsingHintState {
 pub struct ConsoleUiWriter {
     current_tool_name: std::sync::Mutex<Option<String>>,
     current_tool_args: std::sync::Mutex<Vec<(String, String)>>,
+    /// Workspace path for shortening displayed paths
+    workspace_path: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// Project path for shortening displayed paths (takes priority over workspace)
+    project_path: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// Project name for display (e.g., "appa_estate")
+    project_name: std::sync::Mutex<Option<String>>,
     current_output_line: std::sync::Mutex<Option<String>>,
     output_line_printed: std::sync::Mutex<bool>,
     /// Track if we're in shell compact mode (for appending timing to output line)
@@ -191,6 +198,9 @@ impl ConsoleUiWriter {
         Self {
             current_tool_name: std::sync::Mutex::new(None),
             current_tool_args: std::sync::Mutex::new(Vec::new()),
+            workspace_path: std::sync::Mutex::new(None),
+            project_path: std::sync::Mutex::new(None),
+            project_name: std::sync::Mutex::new(None),
             current_output_line: std::sync::Mutex::new(None),
             output_line_printed: std::sync::Mutex::new(false),
             is_shell_compact: std::sync::Mutex::new(false),
@@ -198,6 +208,18 @@ impl ConsoleUiWriter {
             last_read_file_path: std::sync::Mutex::new(None),
             hint_state: ParsingHintState::new(),
         }
+    }
+}
+
+impl ConsoleUiWriter {
+    fn get_workspace_path(&self) -> Option<std::path::PathBuf> {
+        self.workspace_path.lock().unwrap().clone()
+    }
+
+    fn get_project_info(&self) -> Option<(std::path::PathBuf, String)> {
+        let path = self.project_path.lock().unwrap().clone()?;
+        let name = self.project_name.lock().unwrap().clone()?;
+        Some((path, name))
     }
 }
 
@@ -308,17 +330,28 @@ impl UiWriter for ConsoleUiWriter {
                 // For multi-line values, only show the first line
                 let first_line = value.lines().next().unwrap_or("");
 
-                // Truncate long values for display
-                let display_value = if first_line.len() > 80 {
+                // Get workspace path for shortening
+                let workspace = self.get_workspace_path();
+                let workspace_ref = workspace.as_deref();
+                
+                // Get project info for shortening
+                let project_info = self.get_project_info();
+                let project_ref = project_info.as_ref().map(|(p, n)| (p.as_path(), n.as_str()));
+
+                // Shorten paths in the value (handles both file paths and shell commands)
+                let shortened = shorten_paths_in_command(first_line, workspace_ref, project_ref);
+
+                // Truncate long values for display (after shortening)
+                let display_value = if shortened.chars().count() > 80 {
                     // Use char_indices to safely truncate at character boundary
-                    let truncate_at = first_line
+                    let truncate_at = shortened
                         .char_indices()
                         .nth(77)
                         .map(|(i, _)| i)
-                        .unwrap_or(first_line.len());
-                    format!("{}...", &first_line[..truncate_at])
+                        .unwrap_or(shortened.len());
+                    format!("{}...", &shortened[..truncate_at])
                 } else {
-                    first_line.to_string()
+                    shortened
                 };
 
                 // Add range information for read_file tool calls
@@ -500,16 +533,21 @@ impl UiWriter for ConsoleUiWriter {
                 String::new()
             }
         } else {
-            // Truncate long paths
-            if file_path.len() > 60 {
-                let truncate_at = file_path
+            // Shorten path (project -> name/, workspace -> ./, home -> ~) then truncate if still long
+            let workspace = self.get_workspace_path();
+            let project_info = self.get_project_info();
+            let project_ref = project_info.as_ref().map(|(p, n)| (p.as_path(), n.as_str()));
+            let shortened = shorten_path(file_path, workspace.as_deref(), project_ref);
+            
+            if shortened.chars().count() > 60 {
+                let truncate_at = shortened
                     .char_indices()
                     .nth(57)
                     .map(|(i, _)| i)
-                    .unwrap_or(file_path.len());
-                format!("{}", &file_path[..truncate_at])
+                    .unwrap_or(shortened.len());
+                format!("{}...", &shortened[..truncate_at])
             } else {
-                file_path.to_string()
+                shortened
             }
         };
 
@@ -805,5 +843,19 @@ impl UiWriter for ConsoleUiWriter {
 
     fn set_agent_mode(&self, is_agent_mode: bool) {
         self.hint_state.is_agent_mode.store(is_agent_mode, Ordering::Relaxed);
+    }
+
+    fn set_workspace_path(&self, path: std::path::PathBuf) {
+        *self.workspace_path.lock().unwrap() = Some(path);
+    }
+
+    fn set_project_path(&self, path: std::path::PathBuf, name: String) {
+        *self.project_path.lock().unwrap() = Some(path);
+        *self.project_name.lock().unwrap() = Some(name);
+    }
+
+    fn clear_project(&self) {
+        *self.project_path.lock().unwrap() = None;
+        *self.project_name.lock().unwrap() = None;
     }
 }

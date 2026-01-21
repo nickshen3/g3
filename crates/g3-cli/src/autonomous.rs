@@ -14,6 +14,7 @@ use crate::coach_feedback;
 use crate::metrics::{format_elapsed_time, generate_turn_histogram, TurnMetrics};
 use crate::simple_output::SimpleOutput;
 use crate::ui_writer_impl::ConsoleUiWriter;
+use g3_core::ui_writer::UiWriter;
 
 /// Run autonomous mode with coach-player feedback loop (console output).
 pub async fn run_autonomous(
@@ -498,6 +499,7 @@ async fn execute_coach_turn(
     crate::filter_json::reset_json_tool_state();
 
     let ui_writer = ConsoleUiWriter::new();
+    ui_writer.set_workspace_path(project.workspace().to_path_buf());
     let mut coach_agent =
         match Agent::new_autonomous_with_readme_and_quiet(coach_config, ui_writer, None, quiet)
             .await

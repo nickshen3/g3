@@ -42,6 +42,7 @@ use interactive::run_interactive;
 use project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory, read_project_readme};
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
+use g3_core::ui_writer::UiWriter;
 use utils::{initialize_logging, load_config_with_cli_overrides, setup_workspace_directory};
 use template::process_template;
 
@@ -167,6 +168,7 @@ async fn run_console_mode(
     }
 
     let ui_writer = ConsoleUiWriter::new();
+    ui_writer.set_workspace_path(workspace_dir.clone());
 
     let mut agent = if cli.autonomous {
         Agent::new_autonomous_with_readme_and_quiet(

@@ -175,6 +175,7 @@ pub async fn run_agent_mode(
     let ui_writer = ConsoleUiWriter::new();
     // Set agent mode on UI writer for visual differentiation (light gray tool names)
     ui_writer.set_agent_mode(true);
+    ui_writer.set_workspace_path(workspace_dir.clone());
     let mut agent =
         Agent::new_with_custom_prompt(config, ui_writer, system_prompt, combined_content.clone()).await?;
 

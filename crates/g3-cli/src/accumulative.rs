@@ -15,6 +15,7 @@ use crate::cli_args::Cli;
 use crate::interactive::run_interactive;
 use crate::simple_output::SimpleOutput;
 use crate::ui_writer_impl::ConsoleUiWriter;
+use g3_core::ui_writer::UiWriter;
 use crate::utils::load_config_with_cli_overrides;
 
 /// Run accumulative autonomous mode - accumulates requirements from user input
@@ -153,6 +154,7 @@ pub async fn run_accumulative_mode(
 
                 // Create agent for this autonomous run
                 let ui_writer = ConsoleUiWriter::new();
+                ui_writer.set_workspace_path(workspace_dir.clone());
                 let agent = Agent::new_autonomous_with_readme_and_quiet(
                     config.clone(),
                     ui_writer,
@@ -284,6 +286,7 @@ async fn handle_command(
 
             // Create agent for interactive mode with requirements context
             let ui_writer = ConsoleUiWriter::new();
+            ui_writer.set_workspace_path(workspace_dir.clone());
             let agent = Agent::new_with_readme_and_quiet(
                 config,
                 ui_writer,
