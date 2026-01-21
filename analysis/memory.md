@@ -1,12 +1,12 @@
-# Project Memory
+# Workspace Memory
 > Updated: 2026-01-20T10:16:13Z | Size: 18.3k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
 - `crates/g3-core/src/tool_definitions.rs` [11000..12000] - remember tool definition in `create_core_tools()`
 - `crates/g3-core/src/tool_dispatch.rs` [48] - dispatch case for "remember"
-- `crates/g3-core/src/prompts.rs` [4200..6500] - Project Memory section in native prompt
-- `crates/g3-cli/src/lib.rs` [1472..1495] - `read_project_memory()` loads memory at startup
+- `crates/g3-core/src/prompts.rs` [4200..6500] - Workspace Memory section in native prompt
+- `crates/g3-cli/src/lib.rs` [1472..1495] - `read_workspace_memory()` loads memory at startup
 
 ### Context Window & Compaction
 - `crates/g3-core/src/context_window.rs` [0..815] - `ContextWindow`, `reset_with_summary()`, `should_compact()`, `thin_context()`
@@ -79,7 +79,7 @@
 
 ### CLI Module Extractions
 - `crates/g3-cli/src/metrics.rs` [0..5416] - `TurnMetrics`, `format_elapsed_time()`, `generate_turn_histogram()`
-- `crates/g3-cli/src/project_files.rs` [0..5577] - `read_agents_config()`, `read_project_readme()`, `read_project_memory()`, `extract_readme_heading()`
+- `crates/g3-cli/src/project_files.rs` [0..5577] - `read_agents_config()`, `read_project_readme()`, `read_workspace_memory()`, `extract_readme_heading()`
 - `crates/g3-cli/src/coach_feedback.rs` [0..4025] - `extract_from_logs()` for coach-player loop feedback extraction
 
 ### Context Compaction
@@ -170,10 +170,10 @@ if s.chars().count() <= max_len { ... }
 ```
 
 
-### Project Memory Location
+### Workspace Memory Location
 - Memory is now stored at `analysis/memory.md` (version controlled, shared across worktrees)
 - `crates/g3-core/src/tools/memory.rs` - `get_memory_path()` returns `analysis/memory.md`
-- `crates/g3-cli/src/project_files.rs` - `read_project_memory()` reads from `analysis/memory.md`
+- `crates/g3-cli/src/project_files.rs` - `read_workspace_memory()` reads from `analysis/memory.md`
 
 ### Compact Tool Output
 - `crates/g3-cli/src/ui_writer_impl.rs` - `print_tool_compact()` handles compact display for file ops and other tools

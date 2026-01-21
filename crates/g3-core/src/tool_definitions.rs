@@ -272,10 +272,10 @@ fn create_core_tools(exclude_research: bool) -> Vec<Tool> {
         });
     }
 
-    // Project memory tool (memory is auto-loaded at startup, only remember is needed)
+    // Workspace memory tool (memory is auto-loaded at startup, only remember is needed)
     tools.push(Tool {
         name: "remember".to_string(),
-        description: "Update the project memory with new discoveries. Call this at the END of your turn (before your summary) if you discovered something worth noting. Provide your notes in markdown format - they will be merged with existing memory.".to_string(),
+        description: "Update the workspace memory with new discoveries. Call this at the END of your turn (before your summary) if you discovered something worth noting. Provide your notes in markdown format - they will be merged with existing memory.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {

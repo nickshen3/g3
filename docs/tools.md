@@ -292,7 +292,7 @@ Perform web-based research on a topic.
 
 ### remember
 
-Save discoveries to project memory.
+Save discoveries to workspace memory.
 
 **Parameters**:
 - `notes` (string, required): Markdown-formatted notes to add to memory

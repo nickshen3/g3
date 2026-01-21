@@ -97,9 +97,9 @@ IMPORTANT: If the user asks you to just respond with text (like \"just say hello
 
 Do not explain what you're going to do - just do it by calling the tools.
 
-# Project Memory
+# Workspace Memory
 
-Project memory is automatically loaded at startup alongside README.md and AGENTS.md. It contains an index of features -> code locations, patterns, and entry points. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file analysis/memory.md`.
+Workspace memory is automatically loaded at startup alongside README.md and AGENTS.md. It contains an index of features -> code locations, patterns, and entry points. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file analysis/memory.md`.
 
 **IMPORTANT**: After completing a task where you discovered code locations, you **MUST** call the `remember` tool to save them..
 
@@ -133,7 +133,7 @@ When to use this pattern and why.
 
 This applies whenever you use search tools like `code_search`, `rg`, `grep`, `find`, or `read_file` to locate code.
 
-Do NOT save duplicates - check the Project Memory section (loaded at startup) to see what's already known.
+Do NOT save duplicates - check the Workspace Memory section (loaded at startup) to see what's already known.
 
 ## Example
 
@@ -228,7 +228,7 @@ Short description for providers without native calling specs:
   - Example: {\"tool\": \"research\", \"args\": {\"query\": \"Best Rust HTTP client libraries for async/await\"}}
   - Use for researching APIs, SDKs, libraries, approaches, bugs, or any topic requiring web research
 
-- **remember**: Save discovered code locations to project memory
+- **remember**: Save discovered code locations to workspace memory
   - Format: {\"tool\": \"remember\", \"args\": {\"notes\": \"markdown notes\"}}
   - Example: {\"tool\": \"remember\", \"args\": {\"notes\": \"### Feature Name\\n- `file.rs` [0..100] - `function_name()`\"}}
   - Use at the END of your turn after discovering code locations via search tools
@@ -332,9 +332,9 @@ Skip TODO tools for simple single-step tasks:
 
 If you can complete it with 1-2 tool calls, skip TODO.
 
-# Project Memory
+# Workspace Memory
 
-Project memory (if available) is automatically loaded at startup. It contains feature locations and patterns discovered in previous sessions. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file analysis/memory.md`.
+Workspace memory (if available) is automatically loaded at startup. It contains feature locations and patterns discovered in previous sessions. If you need to re-read memory from disk (e.g., after another agent updates it), use `read_file analysis/memory.md`.
 
 **ALWAYS** call `remember` at the END of your turn when you discovered:
 - A feature's location (file + char range + function/struct names)
@@ -343,7 +343,7 @@ Project memory (if available) is automatically loaded at startup. It contains fe
 
 This applies whenever you use search tools like `code_search`, `rg`, `grep`, `find`, or `read_file` to locate code.
 
-Do NOT save duplicates - check the Project Memory section (loaded at startup) to see what's already known.
+Do NOT save duplicates - check the Workspace Memory section (loaded at startup) to see what's already known.
 
 # Response Guidelines
 

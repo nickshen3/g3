@@ -1,6 +1,6 @@
 //! Project file reading utilities.
 //!
-//! Reads AGENTS.md, README.md, and project memory files from the workspace.
+//! Reads AGENTS.md, README.md, and workspace memory files from the workspace.
 
 use std::path::Path;
 use tracing::error;
@@ -66,9 +66,9 @@ pub fn read_project_readme(workspace_dir: &Path) -> Option<String> {
     None
 }
 
-/// Read project memory from analysis/memory.md in the workspace directory.
+/// Read workspace memory from analysis/memory.md in the workspace directory.
 /// Returns formatted content with emoji prefix and size info, or None if not found.
-pub fn read_project_memory(workspace_dir: &Path) -> Option<String> {
+pub fn read_workspace_memory(workspace_dir: &Path) -> Option<String> {
     let memory_path = workspace_dir.join("analysis").join("memory.md");
 
     if !memory_path.exists() {
@@ -79,7 +79,7 @@ pub fn read_project_memory(workspace_dir: &Path) -> Option<String> {
         Ok(content) => {
             let size = format_size(content.len());
             Some(format!(
-                "=== Project Memory (read from analysis/memory.md, {}) ===\n{}\n=== End Project Memory ===",
+                "=== Workspace Memory (read from analysis/memory.md, {}) ===\n{}\n=== End Workspace Memory ===",
                 size,
                 content
             ))

@@ -7,7 +7,7 @@ use tracing::debug;
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
-use crate::project_files::{combine_project_content, read_agents_config, read_include_prompt, read_project_memory, read_project_readme};
+use crate::project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory, read_project_readme};
 use crate::display::{LoadedContent, print_loaded_status, print_workspace_path};
 use crate::language_prompts::{get_language_prompts_for_workspace, get_agent_language_prompts_for_workspace_with_langs};
 use crate::simple_output::SimpleOutput;
@@ -130,7 +130,7 @@ pub async fn run_agent_mode(
     // Load AGENTS.md, README, and memory - same as normal mode
     let agents_content_opt = read_agents_config(&workspace_dir);
     let readme_content_opt = read_project_readme(&workspace_dir);
-    let memory_content_opt = read_project_memory(&workspace_dir);
+    let memory_content_opt = read_workspace_memory(&workspace_dir);
 
     // Read include prompt early so we can show it in the status line
     let include_prompt = read_include_prompt(include_prompt_path.as_deref());
@@ -194,7 +194,7 @@ pub async fn run_agent_mode(
     agent.set_agent_mode(agent_name);
 
     // Auto-memory is enabled by default in agent mode (unless --no-auto-memory is set)
-    // This prompts the LLM to save discoveries to project memory after each turn
+    // This prompts the LLM to save discoveries to workspace memory after each turn
     agent.set_auto_memory(!no_auto_memory);
     
     // Enable ACD (Aggressive Context Dehydration) if requested

@@ -1,4 +1,4 @@
-//! Project memory tool: remember.
+//! Workspace memory tool: remember.
 //!
 //! These tools provide a persistent "working memory" for the project,
 //! storing feature locations, patterns, and entry points discovered
@@ -91,12 +91,12 @@ fn merge_memory(existing: &str, new_notes: &str) -> String {
     format!("{}\n\n{}", existing_body.trim(), new_trimmed)
 }
 
-/// Remove the header line (# Project Memory and > Updated: ...) from content.
+/// Remove the header line (# Workspace Memory and > Updated: ...) from content.
 fn remove_header(content: &str) -> String {
     let mut lines: Vec<&str> = content.lines().collect();
 
-    // Remove "# Project Memory" if first line
-    if !lines.is_empty() && lines[0].starts_with("# Project Memory") {
+    // Remove "# Workspace Memory" if first line
+    if !lines.is_empty() && lines[0].starts_with("# Workspace Memory") {
         lines.remove(0);
     }
 
@@ -117,7 +117,7 @@ fn remove_header(content: &str) -> String {
 fn update_header(content: &str, timestamp: &str, size: &str) -> String {
     let body = remove_header(content);
     format!(
-        "# Project Memory\n> Updated: {} | Size: {}\n\n{}",
+        "# Workspace Memory\n> Updated: {} | Size: {}\n\n{}",
         timestamp,
         size,
         body.trim()
@@ -145,20 +145,20 @@ mod tests {
 
     #[test]
     fn test_merge_memory_append() {
-        let existing = "# Project Memory\n> Updated: 2025-01-10 | Size: 1k\n\n### Feature A\n- `a.rs` [0..50]";
+        let existing = "# Workspace Memory\n> Updated: 2025-01-10 | Size: 1k\n\n### Feature A\n- `a.rs` [0..50]";
         let new_notes = "### Feature B\n- `b.rs` [0..100]";
         let result = merge_memory(existing, new_notes);
 
         assert!(result.contains("### Feature A"));
         assert!(result.contains("### Feature B"));
-        assert!(!result.contains("# Project Memory")); // Header removed for re-adding
+        assert!(!result.contains("# Workspace Memory")); // Header removed for re-adding
     }
 
     #[test]
     fn test_remove_header() {
-        let content = "# Project Memory\n> Updated: 2025-01-10 | Size: 1k\n\n### Feature\n- details";
+        let content = "# Workspace Memory\n> Updated: 2025-01-10 | Size: 1k\n\n### Feature\n- details";
         let result = remove_header(content);
-        assert!(!result.contains("# Project Memory"));
+        assert!(!result.contains("# Workspace Memory"));
         assert!(!result.contains("> Updated:"));
         assert!(result.contains("### Feature"));
     }
@@ -168,7 +168,7 @@ mod tests {
         let content = "### Feature\n- details";
         let result = update_header(content, "2025-01-10T12:00:00Z", "500 chars");
 
-        assert!(result.starts_with("# Project Memory"));
+        assert!(result.starts_with("# Workspace Memory"));
         assert!(result.contains("> Updated: 2025-01-10T12:00:00Z | Size: 500 chars"));
         assert!(result.contains("### Feature"));
     }

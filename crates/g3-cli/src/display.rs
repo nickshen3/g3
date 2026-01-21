@@ -54,7 +54,7 @@ impl LoadedContent {
         Self {
             has_readme: content.contains("Project README"),
             has_agents: content.contains("Agent Configuration"),
-            has_memory: content.contains("=== Project Memory"),
+            has_memory: content.contains("=== Workspace Memory"),
             include_prompt_filename: if content.contains("Included Prompt") {
                 Some("prompt".to_string()) // Default name when we can't determine the actual filename
             } else {
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_loaded_content_from_combined() {
-        let content = "Project README\nAgent Configuration\n=== Project Memory";
+        let content = "Project README\nAgent Configuration\n=== Workspace Memory";
         let loaded = LoadedContent::from_combined_content(content);
         assert!(loaded.has_readme);
         assert!(loaded.has_agents);

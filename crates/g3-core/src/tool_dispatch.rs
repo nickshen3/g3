@@ -44,7 +44,7 @@ pub async fn dispatch_tool<W: UiWriter>(
         // Research tool
         "research" => research::execute_research(tool_call, ctx).await,
 
-        // Project memory tools
+        // Workspace memory tools
         "remember" => memory::execute_remember(tool_call, ctx).await,
 
         // ACD (Aggressive Context Dehydration) tools

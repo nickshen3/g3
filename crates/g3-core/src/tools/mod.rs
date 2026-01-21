@@ -8,7 +8,7 @@
 //! - `webdriver` - Browser automation via WebDriver
 //! - `misc` - Other tools (screenshots, code search, etc.)
 //! - `research` - Web research via scout agent
-//! - `memory` - Project memory (read_memory, remember)
+//! - `memory` - Workspace memory (remember)
 //! - `acd` - Aggressive Context Dehydration (rehydrate)
 
 pub mod executor;

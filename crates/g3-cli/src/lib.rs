@@ -38,7 +38,7 @@ use accumulative::run_accumulative_mode;
 use agent_mode::run_agent_mode;
 use autonomous::run_autonomous;
 use interactive::run_interactive;
-use project_files::{combine_project_content, read_agents_config, read_include_prompt, read_project_memory, read_project_readme};
+use project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory, read_project_readme};
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
 use utils::{initialize_logging, load_config_with_cli_overrides, setup_workspace_directory};
@@ -108,7 +108,7 @@ pub async fn run() -> Result<()> {
     // Load project context files
     let agents_content = read_agents_config(&workspace_dir);
     let readme_content = read_project_readme(&workspace_dir);
-    let memory_content = read_project_memory(&workspace_dir);
+    let memory_content = read_workspace_memory(&workspace_dir);
     let language_content = language_prompts::get_language_prompts_for_workspace(&workspace_dir);
     let include_prompt = read_include_prompt(cli.include_prompt.as_deref());
 
