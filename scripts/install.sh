@@ -14,14 +14,12 @@ cargo build --release
 echo "Installing to $INSTALL_DIR..."
 cp target/release/g3 "$INSTALL_DIR/"
 cp target/release/studio "$INSTALL_DIR/g3-studio"
-cp target/release/libVisionBridge.dylib "$INSTALL_DIR/"
 
 # Re-sign binaries after copying (required on macOS to avoid security policy rejection)
 if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "Re-signing binaries for macOS..."
     codesign --force --sign - "$INSTALL_DIR/g3"
     codesign --force --sign - "$INSTALL_DIR/g3-studio"
-    codesign --force --sign - "$INSTALL_DIR/libVisionBridge.dylib"
 fi
 
 # Create symlink to override Android Studio's 'studio' command
@@ -35,7 +33,6 @@ echo "Done! Installed:"
 echo "  $INSTALL_DIR/g3"
 echo "  $INSTALL_DIR/g3-studio"
 echo "  $INSTALL_DIR/studio -> g3-studio"
-echo "  $INSTALL_DIR/libVisionBridge.dylib"
 
 # Check if ~/.local/bin is in PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
