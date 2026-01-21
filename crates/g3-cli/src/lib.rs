@@ -22,6 +22,7 @@ mod utils;
 mod g3_status;
 mod template;
 mod completion;
+mod project;
 
 use anyhow::Result;
 use std::path::PathBuf;

@@ -4,6 +4,8 @@
 
 use anyhow::Result;
 use rustyline::Editor;
+use std::path::PathBuf;
+use crossterm::style::{Color, SetForegroundColor, ResetColor};
 
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
@@ -11,6 +13,7 @@ use g3_core::Agent;
 use crate::completion::G3Helper;
 use crate::g3_status::{G3Status, Status};
 use crate::simple_output::SimpleOutput;
+use crate::project::Project;
 use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
 
@@ -18,7 +21,9 @@ use crate::task_execution::execute_task_with_retry;
 pub async fn handle_command<W: UiWriter>(
     input: &str,
     agent: &mut Agent<W>,
+    workspace_dir: &std::path::Path,
     output: &SimpleOutput,
+    active_project: &mut Option<Project>,
     rl: &mut Editor<G3Helper, rustyline::history::DefaultHistory>,
     show_prompt: bool,
     show_code: bool,
@@ -34,6 +39,8 @@ pub async fn handle_command<W: UiWriter>(
             output.print("  /fragments - List dehydrated context fragments (ACD)");
             output.print("  /rehydrate - Restore a dehydrated fragment by ID");
             output.print("  /resume    - List and switch to a previous session");
+            output.print("  /project <path> - Load a project from the given absolute path");
+            output.print("  /unproject - Unload the current project and reset context");
             output.print("  /dump      - Dump entire context window to file for debugging");
             output.print("  /readme    - Reload README.md and AGENTS.md from disk");
             output.print("  /stats     - Show detailed context and performance statistics");
@@ -314,6 +321,77 @@ pub async fn handle_command<W: UiWriter>(
                     }
                 }
                 Err(e) => output.print(&format!("❌ Error listing sessions: {}", e)),
+            }
+            Ok(true)
+        }
+        cmd if cmd.starts_with("/project") => {
+            let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+            if parts.len() < 2 || parts[1].trim().is_empty() {
+                output.print("Usage: /project <absolute-path>");
+                output.print("Loads project files (brief.md, contacts.yaml, status.md) from the given path.");
+            } else {
+                let project_path_str = parts[1].trim();
+                
+                // Expand tilde if present
+                let project_path = if project_path_str.starts_with("~/") {
+                    if let Some(home) = dirs::home_dir() {
+                        home.join(&project_path_str[2..])
+                    } else {
+                        PathBuf::from(project_path_str)
+                    }
+                } else {
+                    PathBuf::from(project_path_str)
+                };
+
+                // Validate path is absolute
+                if !project_path.is_absolute() {
+                    output.print("❌ Project path must be absolute (e.g., /Users/name/projects/myproject)");
+                    return Ok(true);
+                }
+
+                // Validate path exists
+                if !project_path.exists() {
+                    output.print(&format!("❌ Project path does not exist: {}", project_path.display()));
+                    return Ok(true);
+                }
+
+                // Load the project
+                match Project::load(&project_path, workspace_dir) {
+                    Some(project) => {
+                        // Set project content in agent's system message
+                        if agent.set_project_content(Some(project.content.clone())) {
+                            // Print loaded status
+                            print!(
+                                "{}Project loaded:{} {}\n",
+                                SetForegroundColor(Color::Green),
+                                ResetColor,
+                                project.format_loaded_status()
+                            );
+                            
+                            // Store active project
+                            *active_project = Some(project);
+                            
+                            // Auto-submit the project status prompt
+                            let prompt = "what is the current state of the project? and what is your suggested next best step?";
+                            execute_task_with_retry(agent, prompt, show_prompt, show_code, output).await;
+                        } else {
+                            output.print("❌ Failed to set project content in agent context.");
+                        }
+                    }
+                    None => {
+                        output.print("❌ No project files found (brief.md, contacts.yaml, status.md).");
+                    }
+                }
+            }
+            Ok(true)
+        }
+        "/unproject" => {
+            if active_project.is_some() {
+                agent.clear_project_content();
+                *active_project = None;
+                output.print("✅ Project unloaded. Context reset to original system message.");
+            } else {
+                output.print("No project is currently loaded.");
             }
             Ok(true)
         }

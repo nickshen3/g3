@@ -238,6 +238,67 @@ impl<W: UiWriter> Agent<W> {
         })
     }
 
+    /// Create a new agent for testing with README content.
+    /// This allows tests to verify context window structure with combined content.
+    pub async fn new_for_test_with_readme(
+        config: Config,
+        ui_writer: W,
+        providers: ProviderRegistry,
+        readme_content: Option<String>,
+    ) -> Result<Self> {
+        use crate::context_window::ContextWindow;
+        use crate::prompts::get_system_prompt_for_native;
+        use g3_providers::{Message, MessageRole};
+
+        let context_length = config.agent.max_context_length.unwrap_or(200_000);
+        let mut context_window = ContextWindow::new(context_length);
+
+        // Add system prompt
+        let system_prompt = get_system_prompt_for_native();
+        let system_message = Message::new(MessageRole::System, system_prompt);
+        context_window.add_message(system_message);
+
+        // Add README content if provided
+        if let Some(readme) = readme_content {
+            let readme_message = Message::new(MessageRole::System, readme);
+            context_window.add_message(readme_message);
+        }
+
+        Ok(Self {
+            providers,
+            context_window,
+            auto_compact: false,
+            pending_90_compaction: false,
+            thinning_events: Vec::new(),
+            compaction_events: Vec::new(),
+            first_token_times: Vec::new(),
+            config,
+            session_id: None,
+            tool_call_metrics: Vec::new(),
+            ui_writer,
+            todo_content: std::sync::Arc::new(tokio::sync::RwLock::new(String::new())),
+            is_autonomous: false,
+            quiet: true,
+            computer_controller: None,
+            webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            tool_call_count: 0,
+            tool_calls_this_turn: Vec::new(),
+            requirements_sha: None,
+            working_dir: None,
+            background_process_manager: std::sync::Arc::new(
+                background_process::BackgroundProcessManager::new(
+                    paths::get_background_processes_dir(),
+                ),
+            ),
+            pending_images: Vec::new(),
+            is_agent_mode: false,
+            agent_name: None,
+            auto_memory: false,
+            acd_enabled: false,
+        })
+    }
+
     async fn new_with_mode(
         config: Config,
         ui_writer: W,
@@ -1283,6 +1344,52 @@ impl<W: UiWriter> Agent<W> {
         } else {
             Ok(false)
         }
+    }
+
+    /// Set or clear project content in the system message.
+    /// Project content is appended to the second system message (README/AGENTS content)
+    /// so it survives compaction and dehydration.
+    ///
+    /// Pass `Some(content)` to set project content, `None` to clear it.
+    /// Returns true if the operation succeeded.
+    pub fn set_project_content(&mut self, content: Option<String>) -> bool {
+        // The second message (index 1) should be the README/AGENTS system message
+        if self.context_window.conversation_history.len() < 2 {
+            return false;
+        }
+
+        let second_msg = &mut self.context_window.conversation_history[1];
+        if !matches!(second_msg.role, MessageRole::System) {
+            return false;
+        }
+
+        // Remove any existing project content first
+        if let Some(start_idx) = second_msg.content.find("\n\n=== PROJECT INSTRUCTIONS ===") {
+            second_msg.content.truncate(start_idx);
+        } else if let Some(start_idx) = second_msg.content.find("\n\n=== ACTIVE PROJECT:") {
+            second_msg.content.truncate(start_idx);
+        }
+
+        // Add new project content if provided
+        if let Some(project_content) = content {
+            second_msg.content.push_str("\n\n");
+            second_msg.content.push_str(&project_content);
+        }
+
+        true
+    }
+
+    /// Clear project content from the system message.
+    /// This is equivalent to calling `set_project_content(None)`.
+    pub fn clear_project_content(&mut self) -> bool {
+        self.set_project_content(None)
+    }
+
+    /// Check if there is currently project content loaded.
+    pub fn has_project_content(&self) -> bool {
+        self.context_window.conversation_history.get(1)
+            .map(|m| m.content.contains("=== ACTIVE PROJECT:"))
+            .unwrap_or(false)
     }
 
     /// Get detailed context statistics

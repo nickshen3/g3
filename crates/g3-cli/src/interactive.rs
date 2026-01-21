@@ -14,6 +14,7 @@ use g3_core::Agent;
 use crate::commands::handle_command;
 use crate::display::{LoadedContent, print_loaded_status, print_project_heading, print_workspace_path};
 use crate::g3_status::{G3Status, Status};
+use crate::project::Project;
 use crate::project_files::extract_readme_heading;
 use crate::simple_output::SimpleOutput;
 use crate::task_execution::execute_task_with_retry;
@@ -142,6 +143,9 @@ pub async fn run_interactive<W: UiWriter>(
     let mut multiline_buffer = String::new();
     let mut in_multiline = false;
 
+    // Track active project
+    let mut active_project: Option<Project> = None;
+
     loop {
         // Display context window progress bar before each prompt
         display_context_progress(&agent, &output);
@@ -222,7 +226,7 @@ pub async fn run_interactive<W: UiWriter>(
 
                     // Check for control commands
                     if input.starts_with('/') {
-                        if handle_command(&input, &mut agent, &output, &mut rl, show_prompt, show_code).await? {
+                        if handle_command(&input, &mut agent, workspace_path, &output, &mut active_project, &mut rl, show_prompt, show_code).await? {
                             continue;
                         }
                     }
