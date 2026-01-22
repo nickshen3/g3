@@ -23,14 +23,14 @@ use crate::utils::display_context_progress;
 /// Build the interactive prompt string.
 ///
 /// Format:
-/// Note: ANSI escape codes are wrapped in \x01...\x02 markers for rustyline
-/// to correctly calculate visible prompt length (required for tab completion).
+/// Returns a tuple of (prefix_to_print, actual_prompt) where prefix_to_print
+/// contains ANSI colors and should be printed before readline, and actual_prompt is plain text.
 /// - Multiline mode: `"... > "`
 /// - No project: `"agent_name> "` (defaults to "g3")
 /// - With project: `"agent_name | project_name> "` where `| project_name>` is blue
-pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project: &Option<Project>) -> String {
+pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project: &Option<Project>) -> (String, String) {
     if in_multiline {
-        "... > ".to_string()
+        (String::new(), "... > ".to_string())
     } else {
         let base_name = agent_name.unwrap_or("g3");
         if let Some(project) = active_project {
@@ -38,18 +38,17 @@ pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("project");
-            // Wrap ANSI codes in \x01...\x02 for rustyline to ignore them in length calculation
-            let blue = format!("\x01{}\x02", SetForegroundColor(Color::Blue));
-            let reset = format!("\x01{}\x02", ResetColor);
-            format!(
+            // Return colored prefix to print, and plain prompt for readline
+            let prefix = format!(
                 "{} {}| {}>{} ",
                 base_name,
-                blue,
+                SetForegroundColor(Color::Blue),
                 project_name,
-                reset
-            )
+                ResetColor
+            );
+            (prefix, String::new())
         } else {
-            format!("{}> ", base_name)
+            (String::new(), format!("{}> ", base_name))
         }
     }
 }
@@ -184,8 +183,16 @@ pub async fn run_interactive<W: UiWriter>(
         // Display context window progress bar before each prompt
         display_context_progress(&agent, &output);
 
-        // Build prompt (shows project name in blue when active)
-        let prompt = build_prompt(in_multiline, agent_name, &active_project);
+        // Build prompt - returns (colored_prefix, plain_prompt)
+        // We print the colored prefix first, then use plain prompt for readline
+        // This avoids ANSI codes breaking rustyline's line length calculation
+        let (prefix, prompt) = build_prompt(in_multiline, agent_name, &active_project);
+        
+        if !prefix.is_empty() {
+            use std::io::Write;
+            print!("{}", prefix);
+            let _ = std::io::stdout().flush();
+        }
 
         let readline = rl.readline(&prompt);
         match readline {
@@ -336,62 +343,69 @@ mod tests {
 
     #[test]
     fn test_build_prompt_default() {
-        let prompt = build_prompt(false, None, &None);
+        let (prefix, prompt) = build_prompt(false, None, &None);
+        assert!(prefix.is_empty());
         assert_eq!(prompt, "g3> ");
     }
 
     #[test]
     fn test_build_prompt_with_agent_name() {
-        let prompt = build_prompt(false, Some("butler"), &None);
+        let (prefix, prompt) = build_prompt(false, Some("butler"), &None);
+        assert!(prefix.is_empty());
         assert_eq!(prompt, "butler> ");
     }
 
     #[test]
     fn test_build_prompt_multiline() {
-        let prompt = build_prompt(true, None, &None);
+        let (prefix, prompt) = build_prompt(true, None, &None);
+        assert!(prefix.is_empty());
         assert_eq!(prompt, "... > ");
 
         // Multiline takes precedence over agent name
-        let prompt = build_prompt(true, Some("butler"), &None);
+        let (prefix, prompt) = build_prompt(true, Some("butler"), &None);
+        assert!(prefix.is_empty());
         assert_eq!(prompt, "... > ");
 
         // Multiline takes precedence over project
         let project = Some(create_test_project("myapp"));
-        let prompt = build_prompt(true, None, &project);
+        let (prefix, prompt) = build_prompt(true, None, &project);
+        assert!(prefix.is_empty());
         assert_eq!(prompt, "... > ");
     }
 
     #[test]
     fn test_build_prompt_with_project() {
         let project = Some(create_test_project("myapp"));
-        let prompt = build_prompt(false, None, &project);
-        // Should contain the project name in the prompt
-        assert!(prompt.contains("g3"));
-        assert!(prompt.contains("myapp"));
-        assert!(prompt.contains("|"));
+        let (prefix, prompt) = build_prompt(false, None, &project);
+        // Project name should be in the colored prefix, prompt should be empty
+        assert!(prefix.contains("g3"));
+        assert!(prefix.contains("myapp"));
+        assert!(prefix.contains("|"));
+        assert!(prompt.is_empty());
     }
 
     #[test]
     fn test_build_prompt_with_agent_and_project() {
         let project = Some(create_test_project("myapp"));
-        let prompt = build_prompt(false, Some("carmack"), &project);
-        // Should contain both agent name and project name
-        assert!(prompt.contains("carmack"));
-        assert!(prompt.contains("myapp"));
-        assert!(prompt.contains("|"));
+        let (prefix, prompt) = build_prompt(false, Some("carmack"), &project);
+        // Should contain both agent name and project name in prefix
+        assert!(prefix.contains("carmack"));
+        assert!(prefix.contains("myapp"));
+        assert!(prefix.contains("|"));
+        assert!(prompt.is_empty());
     }
 
     #[test]
     fn test_build_prompt_unproject_resets() {
         // Simulate /project loading
         let project = Some(create_test_project("myapp"));
-        let prompt_with_project = build_prompt(false, None, &project);
-        assert!(prompt_with_project.contains("myapp"));
+        let (prefix_with_project, _) = build_prompt(false, None, &project);
+        assert!(prefix_with_project.contains("myapp"));
 
         // Simulate /unproject (sets active_project to None)
-        let prompt_after_unproject = build_prompt(false, None, &None);
+        let (prefix_after_unproject, prompt_after_unproject) = build_prompt(false, None, &None);
+        assert!(prefix_after_unproject.is_empty());
         assert_eq!(prompt_after_unproject, "g3> ");
-        assert!(!prompt_after_unproject.contains("myapp"));
     }
 
     #[test]
@@ -402,8 +416,9 @@ mod tests {
             content: "test".to_string(),
             loaded_files: vec![],
         });
-        let prompt = build_prompt(false, None, &project);
-        assert!(prompt.contains("awesome-app"));
+        let (prefix, prompt) = build_prompt(false, None, &project);
+        assert!(prefix.contains("awesome-app"));
+        assert!(prompt.is_empty());
     }
 }
 
