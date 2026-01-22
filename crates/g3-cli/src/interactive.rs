@@ -25,7 +25,7 @@ use crate::utils::display_context_progress;
 /// Format:
 /// - Multiline mode: `"... > "`
 /// - No project: `"agent_name> "` (defaults to "g3")
-/// - With project: `"agent_name |[project_name]> "` where `|[project_name]>` is blue
+/// - With project: `"agent_name | project_name> "` where `| project_name>` is blue
 pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project: &Option<Project>) -> String {
     if in_multiline {
         "... > ".to_string()
@@ -37,7 +37,7 @@ pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project
                 .and_then(|n| n.to_str())
                 .unwrap_or("project");
             format!(
-                "{} {}|[{}]>{} ",
+                "{} {}| {}>{} ",
                 base_name,
                 SetForegroundColor(Color::Blue),
                 project_name,
