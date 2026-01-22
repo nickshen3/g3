@@ -1,6 +1,7 @@
 //! Tab completion support for g3 interactive mode.
 //!
 //! Provides:
+//! - Prompt highlighting (colorizes project name in blue)
 //! - Command completion for `/` commands at line start
 //! - File path completion for `./`, `../`, `~/`, `/` prefixes
 //! - Session ID completion for `/resume` command
@@ -274,7 +275,27 @@ impl Hinter for G3Helper {
     }
 }
 
-impl Highlighter for G3Helper {}
+impl Highlighter for G3Helper {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        _default: bool,
+    ) -> std::borrow::Cow<'b, str> {
+        // If prompt contains " | ", colorize from "|" to ">" in blue
+        if let Some(pipe_pos) = prompt.find(" | ") {
+            if let Some(gt_pos) = prompt.rfind('>') {
+                let before = &prompt[..pipe_pos + 1]; // "butler "
+                let colored_part = &prompt[pipe_pos + 1..gt_pos + 1]; // "| project>"
+                let after = &prompt[gt_pos + 1..]; // " "
+                return std::borrow::Cow::Owned(format!(
+                    "{}\x1b[34m{}\x1b[0m{}",
+                    before, colored_part, after
+                ));
+            }
+        }
+        std::borrow::Cow::Borrowed(prompt)
+    }
+}
 
 impl Validator for G3Helper {}
 
