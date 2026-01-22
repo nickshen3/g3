@@ -355,9 +355,9 @@ pub async fn execute_read_image<W: UiWriter>(
                             if resized_size < original_size {
                                 (resized, true)
                             } else {
-                                // Resize didn't help, use original but warn if it's huge
+                                // Resize didn't help, use original bytes with original media type
                                 debug!("Resize didn't reduce size, using original");
-                                (bytes, original_dimensions.map(|(w, h)| w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION).unwrap_or(false))
+                                (bytes, false)
                             }
                         }
                         Err(e) => {
