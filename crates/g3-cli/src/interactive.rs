@@ -38,15 +38,15 @@ pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("project");
-            // Return colored prefix (without "> "), and "> " as the readline prompt
+            // Return colored prefix to print, and plain prompt for readline
             let prefix = format!(
-                "{} {}| {}{}",
+                "{} {}| {}>{} ",
                 base_name,
                 SetForegroundColor(Color::Blue),
                 project_name,
                 ResetColor
             );
-            (prefix, "> ".to_string())
+            (prefix, String::new())
         } else {
             (String::new(), format!("{}> ", base_name))
         }
@@ -377,11 +377,11 @@ mod tests {
     fn test_build_prompt_with_project() {
         let project = Some(create_test_project("myapp"));
         let (prefix, prompt) = build_prompt(false, None, &project);
-        // Project name should be in the colored prefix, prompt should be "> "
+        // Project name should be in the colored prefix, prompt should be empty
         assert!(prefix.contains("g3"));
         assert!(prefix.contains("myapp"));
         assert!(prefix.contains("|"));
-        assert_eq!(prompt, "> ");
+        assert!(prompt.is_empty());
     }
 
     #[test]
@@ -392,7 +392,7 @@ mod tests {
         assert!(prefix.contains("carmack"));
         assert!(prefix.contains("myapp"));
         assert!(prefix.contains("|"));
-        assert_eq!(prompt, "> ");
+        assert!(prompt.is_empty());
     }
 
     #[test]
@@ -418,7 +418,7 @@ mod tests {
         });
         let (prefix, prompt) = build_prompt(false, None, &project);
         assert!(prefix.contains("awesome-app"));
-        assert_eq!(prompt, "> ");
+        assert!(prompt.is_empty());
     }
 }
 
