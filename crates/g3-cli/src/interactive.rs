@@ -23,6 +23,8 @@ use crate::utils::display_context_progress;
 /// Build the interactive prompt string.
 ///
 /// Format:
+/// Note: ANSI escape codes are wrapped in \x01...\x02 markers for rustyline
+/// to correctly calculate visible prompt length (required for tab completion).
 /// - Multiline mode: `"... > "`
 /// - No project: `"agent_name> "` (defaults to "g3")
 /// - With project: `"agent_name | project_name> "` where `| project_name>` is blue
@@ -36,12 +38,15 @@ pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("project");
+            // Wrap ANSI codes in \x01...\x02 for rustyline to ignore them in length calculation
+            let blue = format!("\x01{}\x02", SetForegroundColor(Color::Blue));
+            let reset = format!("\x01{}\x02", ResetColor);
             format!(
                 "{} {}| {}>{} ",
                 base_name,
-                SetForegroundColor(Color::Blue),
+                blue,
                 project_name,
-                ResetColor
+                reset
             )
         } else {
             format!("{}> ", base_name)
