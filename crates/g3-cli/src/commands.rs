@@ -5,7 +5,6 @@
 use anyhow::Result;
 use rustyline::Editor;
 use std::path::PathBuf;
-use crossterm::style::{Color, SetForegroundColor, ResetColor};
 
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
@@ -369,12 +368,9 @@ pub async fn handle_command<W: UiWriter>(
                             agent.ui_writer().set_project_path(project.path.clone(), project_name);
 
                             // Print loaded status
-                            print!(
-                                "{}Project loaded:{} {}\n",
-                                SetForegroundColor(Color::Green),
-                                ResetColor,
-                                project.format_loaded_status()
-                            );
+                            let project_name = project.path.file_name()
+                                .and_then(|n| n.to_str()).unwrap_or("project");
+                            G3Status::loading_project(project_name, &project.format_loaded_status());
                             
                             // Store active project
                             *active_project = Some(project);

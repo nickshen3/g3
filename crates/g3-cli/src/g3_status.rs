@@ -269,6 +269,21 @@ impl G3Status {
         );
         Self::status(&status);
     }
+
+    /// Print project loading status: "g3: loading <project-name> .. ✓ file1  ✓ file2 .. [done]"
+    ///
+    /// Used by the /project command to show what project files were loaded.
+    pub fn loading_project(project_name: &str, loaded_files_status: &str) {
+        print!(
+            "{} loading {}{}{} .. {} ..",
+            Self::format_prefix(),
+            SetForegroundColor(Color::Cyan),
+            project_name,
+            ResetColor,
+            loaded_files_status
+        );
+        Self::done();
+    }
 }
 
 #[cfg(test)]
