@@ -20,6 +20,35 @@ use crate::simple_output::SimpleOutput;
 use crate::task_execution::execute_task_with_retry;
 use crate::utils::display_context_progress;
 
+/// Build the interactive prompt string.
+///
+/// Format:
+/// - Multiline mode: `"... > "`
+/// - No project: `"agent_name> "` (defaults to "g3")
+/// - With project: `"agent_name |[project_name]> "` where `|[project_name]>` is blue
+pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project: &Option<Project>) -> String {
+    if in_multiline {
+        "... > ".to_string()
+    } else {
+        let base_name = agent_name.unwrap_or("g3");
+        if let Some(project) = active_project {
+            let project_name = project.path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("project");
+            format!(
+                "{} {}|[{}]>{} ",
+                base_name,
+                SetForegroundColor(Color::Blue),
+                project_name,
+                ResetColor
+            )
+        } else {
+            format!("{}> ", base_name)
+        }
+    }
+}
+
 /// Run interactive mode with console output.
 /// If `agent_name` is Some, we're in agent+chat mode: skip session resume/verbose welcome,
 /// and use the agent name as the prompt (e.g., "butler>").
@@ -150,14 +179,8 @@ pub async fn run_interactive<W: UiWriter>(
         // Display context window progress bar before each prompt
         display_context_progress(&agent, &output);
 
-        // Adjust prompt based on whether we're in multi-line mode
-        let prompt = if in_multiline {
-            "... > ".to_string()
-        } else if let Some(name) = agent_name {
-            format!("{}> ", name)
-        } else {
-            "g3> ".to_string()
-        };
+        // Build prompt (shows project name in blue when active)
+        let prompt = build_prompt(in_multiline, agent_name, &active_project);
 
         let readline = rl.readline(&prompt);
         match readline {
@@ -292,3 +315,90 @@ pub async fn run_interactive<W: UiWriter>(
     output.print("👋 Goodbye!");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn create_test_project(name: &str) -> Project {
+        Project {
+            path: PathBuf::from(format!("/test/projects/{}", name)),
+            content: "test content".to_string(),
+            loaded_files: vec!["brief.md".to_string()],
+        }
+    }
+
+    #[test]
+    fn test_build_prompt_default() {
+        let prompt = build_prompt(false, None, &None);
+        assert_eq!(prompt, "g3> ");
+    }
+
+    #[test]
+    fn test_build_prompt_with_agent_name() {
+        let prompt = build_prompt(false, Some("butler"), &None);
+        assert_eq!(prompt, "butler> ");
+    }
+
+    #[test]
+    fn test_build_prompt_multiline() {
+        let prompt = build_prompt(true, None, &None);
+        assert_eq!(prompt, "... > ");
+
+        // Multiline takes precedence over agent name
+        let prompt = build_prompt(true, Some("butler"), &None);
+        assert_eq!(prompt, "... > ");
+
+        // Multiline takes precedence over project
+        let project = Some(create_test_project("myapp"));
+        let prompt = build_prompt(true, None, &project);
+        assert_eq!(prompt, "... > ");
+    }
+
+    #[test]
+    fn test_build_prompt_with_project() {
+        let project = Some(create_test_project("myapp"));
+        let prompt = build_prompt(false, None, &project);
+        // Should contain the project name in the prompt
+        assert!(prompt.contains("g3"));
+        assert!(prompt.contains("myapp"));
+        assert!(prompt.contains("|"));
+    }
+
+    #[test]
+    fn test_build_prompt_with_agent_and_project() {
+        let project = Some(create_test_project("myapp"));
+        let prompt = build_prompt(false, Some("carmack"), &project);
+        // Should contain both agent name and project name
+        assert!(prompt.contains("carmack"));
+        assert!(prompt.contains("myapp"));
+        assert!(prompt.contains("|"));
+    }
+
+    #[test]
+    fn test_build_prompt_unproject_resets() {
+        // Simulate /project loading
+        let project = Some(create_test_project("myapp"));
+        let prompt_with_project = build_prompt(false, None, &project);
+        assert!(prompt_with_project.contains("myapp"));
+
+        // Simulate /unproject (sets active_project to None)
+        let prompt_after_unproject = build_prompt(false, None, &None);
+        assert_eq!(prompt_after_unproject, "g3> ");
+        assert!(!prompt_after_unproject.contains("myapp"));
+    }
+
+    #[test]
+    fn test_build_prompt_project_name_from_path() {
+        // Test that project name is extracted from path
+        let project = Some(Project {
+            path: PathBuf::from("/Users/dev/projects/awesome-app"),
+            content: "test".to_string(),
+            loaded_files: vec![],
+        });
+        let prompt = build_prompt(false, None, &project);
+        assert!(prompt.contains("awesome-app"));
+    }
+}
+
