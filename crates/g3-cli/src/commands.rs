@@ -216,21 +216,27 @@ pub async fn handle_command<W: UiWriter>(
             Ok(true)
         }
         "/clear" => {
-            output.print("🧹 Clearing session...");
+            use crate::g3_status::G3Status;
+            G3Status::progress("clearing session");
             agent.clear_session();
-            output.print("✅ Session cleared. Starting fresh.");
+            G3Status::done();
+            output.print("Starting fresh.");
             Ok(true)
         }
         "/readme" => {
-            output.print("📚 Reloading README.md and AGENTS.md...");
+            use crate::g3_status::G3Status;
+            G3Status::progress("reloading README");
             match agent.reload_readme() {
                 Ok(true) => {
-                    output.print("✅ README content reloaded successfully")
+                    G3Status::done();
                 }
                 Ok(false) => {
-                    output.print("⚠️ No README was loaded at startup, cannot reload")
+                    G3Status::failed();
+                    output.print("No README was loaded at startup, cannot reload");
                 }
-                Err(e) => output.print(&format!("❌ Error reloading README: {}", e)),
+                Err(e) => {
+                    G3Status::error(&e.to_string());
+                }
             }
             Ok(true)
         }
@@ -391,10 +397,13 @@ pub async fn handle_command<W: UiWriter>(
         }
         "/unproject" => {
             if active_project.is_some() {
+                use crate::g3_status::G3Status;
+                G3Status::progress("unloading project");
                 agent.clear_project_content();
                 agent.ui_writer().clear_project();
                 *active_project = None;
-                output.print("✅ Project unloaded. Context reset to original system message.");
+                G3Status::done();
+                output.print("Context reset to original system message.");
             } else {
                 output.print("No project is currently loaded.");
             }

@@ -183,7 +183,9 @@ pub async fn run_accumulative_mode(
                 match autonomous_result {
                     Ok(Some(_returned_agent)) => {
                         output.print("");
-                        output.print("✅ Autonomous run completed");
+                        use crate::g3_status::G3Status;
+                        G3Status::progress("autonomous run");
+                        G3Status::done();
                     }
                     Ok(None) => {
                         output.print("   (session continuation not saved due to cancellation)");
