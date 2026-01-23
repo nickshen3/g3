@@ -298,6 +298,11 @@ Format this as a detailed but concise summary that can be used to resume the con
             format!("Previous conversation summary:\n\n{}", summary),
         ));
 
+        // Add the last assistant message if present (preserves continuity)
+        if let Some(assistant_msg) = preserved.last_assistant_message {
+            self.add_message(assistant_msg);
+        }
+
         // Add the latest user message if provided
         if let Some(user_msg) = latest_user_message {
             self.add_message(Message::new(MessageRole::User, user_msg));
@@ -326,9 +331,18 @@ Format this as a detailed but concise summary that can be used to resume the con
             }
         });
 
+        // Find the last assistant message in the conversation
+        let last_assistant_message = self
+            .conversation_history
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, MessageRole::Assistant))
+            .cloned();
+
         PreservedMessages {
             system_prompt,
             readme,
+            last_assistant_message,
         }
     }
 
@@ -725,6 +739,7 @@ Format this as a detailed but concise summary that can be used to resume the con
 struct PreservedMessages {
     system_prompt: Option<Message>,
     readme: Option<Message>,
+    last_assistant_message: Option<Message>,
 }
 
 impl ThinResult {
