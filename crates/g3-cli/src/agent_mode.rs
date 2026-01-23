@@ -273,7 +273,10 @@ pub async fn run_agent_mode(
     // Don't print completion message for scout agent - it needs the last line
     // to be the report file path for the research tool to read
     if agent_name != "scout" {
-        output.print("\n✅ Agent mode completed");
+        use crate::g3_status::G3Status;
+        println!(); // newline before status
+        G3Status::progress(&format!("{} session", agent_name));
+        G3Status::done();
     }
     Ok(())
 }
