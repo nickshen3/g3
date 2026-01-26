@@ -17,6 +17,7 @@ PRIMARY PHILOSOPHY
 - Prefer tests that validate behavior through stable surfaces.
 - Favor fewer, higher-signal checks over exhaustive enumeration.
 - Make refactoring easier: tests must not encode internal structure.
+- Use Mocks or Fakes to simulate and isolate behavior for testing code that relies on external systems.
 
 If a test would break because code was reorganized but behavior stayed the same,
 that test is a failure.
@@ -56,6 +57,7 @@ If `analysis/deps/` exists, analyze all artifacts present there to understand de
 1) INTEGRATION HARNESS
 - Identify how the system is actually invoked (existing entrypoints, scripts, commands).
 - Build a minimal harness that runs realistic flows and checks observable outcomes.
+- Create (refactoring as needed) lightweight mocks or fakes that stub out systems (especially where RPCs are called)
 - Keep test fixtures small and representative.
 
 2) GOLDEN PATHS
