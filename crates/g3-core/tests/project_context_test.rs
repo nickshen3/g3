@@ -1,13 +1,14 @@
 //! Integration tests for project context loading and ordering.
 //!
 //! Tests that the context window has the correct structure when projects are loaded.
+//! Also tests that project content survives compaction.
 
 use g3_core::{
     ui_writer::NullUiWriter,
     Agent,
 };
 use g3_config::Config;
-use g3_providers::{mock::MockProvider, ProviderRegistry, MockResponse};
+use g3_providers::{mock::MockProvider, ProviderRegistry, MockResponse, MessageRole};
 
 /// Helper to create a test agent with mock provider
 async fn create_test_agent(readme_content: Option<String>) -> Agent<NullUiWriter> {
@@ -321,4 +322,103 @@ async fn test_full_context_order() {
     // Verify NO closing marker for ACTIVE PROJECT
     assert!(!combined.contains("=== END ACTIVE PROJECT ==="),
         "Should NOT have END ACTIVE PROJECT marker");
+}
+
+// =============================================================================
+// Compaction Tests - Project Content Survival
+// =============================================================================
+
+/// Helper to create an agent with mock provider and custom README content
+async fn create_agent_with_mock_and_readme(
+    provider: MockProvider,
+    readme_content: Option<String>,
+) -> Agent<NullUiWriter> {
+    let config = Config::default();
+    let mut registry = ProviderRegistry::new();
+    registry.register(provider);
+    
+    Agent::new_for_test_with_readme(config, NullUiWriter, registry, readme_content)
+        .await
+        .expect("Failed to create test agent")
+}
+
+/// Test: Project content survives compaction
+///
+/// CHARACTERIZATION: This test verifies that project content (loaded via /project command)
+/// is preserved through compaction because it's appended to the README message,
+/// which is explicitly preserved during compaction.
+///
+/// What this test protects:
+/// - Project content appended to README message survives compaction
+/// - The README message (containing project content) is preserved as message[1]
+///
+/// What this test intentionally does NOT assert:
+/// - The exact format of the summary (that's LLM-dependent)
+/// - Internal compaction implementation details
+#[tokio::test]
+async fn test_project_content_survives_compaction() {
+    // Create provider with responses for:
+    // 1. Initial conversation
+    // 2. Compaction summary
+    let provider = MockProvider::new()
+        .with_response(MockResponse::text("I understand. Let me help with the project."))
+        .with_response(MockResponse::text("SUMMARY: Discussed project requirements."));
+    
+    // Create README with Agent Configuration marker (required for preservation)
+    let readme = "📂 Working Directory: /test/workspace\n\n\
+        🤖 Agent Configuration (from AGENTS.md):\nTest agent config\n\n\
+        📚 Project README (from README.md):\n# Test Project\nA test project.".to_string();
+    
+    let mut agent = create_agent_with_mock_and_readme(provider, Some(readme)).await;
+    
+    // Set project content (simulates /project command)
+    let project_content = "=== PROJECT INSTRUCTIONS ===\n\
+        Global project rules\n\
+        === END PROJECT INSTRUCTIONS ===\n\n\
+        === ACTIVE PROJECT: /projects/myproject ===\n\
+        ## Brief\nThis is the project brief.\n\n\
+        ## Status\nIn progress".to_string();
+    
+    let success = agent.set_project_content(Some(project_content.clone()));
+    assert!(success, "set_project_content should succeed");
+    
+    // Verify project content is present before compaction
+    let context_before = agent.get_context_window();
+    let readme_msg_before = &context_before.conversation_history[1].content;
+    assert!(readme_msg_before.contains("=== ACTIVE PROJECT: /projects/myproject ==="),
+        "Project content should be present before compaction");
+    
+    // Execute a task to build up conversation history
+    agent.execute_task("Help me with this project", None, false).await.unwrap();
+    
+    // Trigger compaction
+    let result = agent.force_compact().await;
+    assert!(result.is_ok(), "Compaction should succeed: {:?}", result.err());
+    
+    // Verify project content survives compaction
+    let context_after = agent.get_context_window();
+    
+    // The README message should still be at index 1
+    assert!(context_after.conversation_history.len() >= 2,
+        "Should have at least 2 messages after compaction");
+    
+    let readme_msg_after = &context_after.conversation_history[1].content;
+    
+    // Project content should be preserved
+    assert!(readme_msg_after.contains("=== ACTIVE PROJECT: /projects/myproject ==="),
+        "ACTIVE PROJECT marker should survive compaction. Got: {}...",
+        readme_msg_after.chars().take(200).collect::<String>());
+    
+    assert!(readme_msg_after.contains("=== PROJECT INSTRUCTIONS ==="),
+        "PROJECT INSTRUCTIONS should survive compaction");
+    
+    assert!(readme_msg_after.contains("## Brief"),
+        "Brief section should survive compaction");
+    
+    assert!(readme_msg_after.contains("## Status"),
+        "Status section should survive compaction");
+    
+    // Verify the README message is still a System message
+    assert!(matches!(context_after.conversation_history[1].role, MessageRole::System),
+        "README message should still be System role after compaction");
 }
