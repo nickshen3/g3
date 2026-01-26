@@ -17,6 +17,7 @@ use crate::g3_status::{G3Status, Status};
 use crate::project::Project;
 use crate::project_files::extract_readme_heading;
 use crate::simple_output::SimpleOutput;
+use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
 use crate::utils::display_context_progress;
 
@@ -209,10 +210,11 @@ pub async fn run_interactive<W: UiWriter>(
                         break;
                     }
 
-                    // Process the multiline input
+                    // Process the multiline input (with template expansion)
+                    let processed_input = process_template(&input);
                     execute_task_with_retry(
                         &mut agent,
-                        &input,
+                        &processed_input,
                         show_prompt,
                         show_code,
                         &output,
@@ -248,10 +250,11 @@ pub async fn run_interactive<W: UiWriter>(
                         }
                     }
 
-                    // Process the single line input
+                    // Process the single line input (with template expansion)
+                    let processed_input = process_template(&input);
                     execute_task_with_retry(
                         &mut agent,
-                        &input,
+                        &processed_input,
                         show_prompt,
                         show_code,
                         &output,

@@ -17,6 +17,7 @@ use crate::simple_output::SimpleOutput;
 use crate::ui_writer_impl::ConsoleUiWriter;
 use g3_core::ui_writer::UiWriter;
 use crate::utils::load_config_with_cli_overrides;
+use crate::template::process_template;
 
 /// Run accumulative autonomous mode - accumulates requirements from user input
 /// and runs autonomous mode after each input.
@@ -75,7 +76,8 @@ pub async fn run_accumulative_mode(
         let readline = rl.readline("requirement> ");
         match readline {
             Ok(line) => {
-                let input = line.trim().to_string();
+                // Apply template expansion (e.g., {{today}} -> 2026-01-26 (Monday))
+                let input = process_template(line.trim());
 
                 if input.is_empty() {
                     continue;
