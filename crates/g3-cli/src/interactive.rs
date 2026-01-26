@@ -44,6 +44,28 @@ pub fn build_prompt(in_multiline: bool, agent_name: Option<&str>, active_project
     }
 }
 
+/// Execute user input with template processing and auto-memory reminder.
+///
+/// This is the common path for both single-line and multiline input.
+async fn execute_user_input<W: UiWriter>(
+    agent: &mut Agent<W>,
+    input: &str,
+    show_prompt: bool,
+    show_code: bool,
+    output: &SimpleOutput,
+    skip_auto_memory: bool,
+) {
+    let processed_input = process_template(input);
+    execute_task_with_retry(agent, &processed_input, show_prompt, show_code, output).await;
+
+    // Send auto-memory reminder if enabled and tools were called
+    if !skip_auto_memory {
+        if let Err(e) = agent.send_auto_memory_reminder().await {
+            debug!("Auto-memory reminder failed: {}", e);
+        }
+    }
+}
+
 /// Run interactive mode with console output.
 /// If `agent_name` is Some, we're in agent+chat mode: skip session resume/verbose welcome,
 /// and use the agent name as the prompt (e.g., "butler>").
@@ -210,24 +232,9 @@ pub async fn run_interactive<W: UiWriter>(
                         break;
                     }
 
-                    // Process the multiline input (with template expansion)
-                    let processed_input = process_template(&input);
-                    execute_task_with_retry(
-                        &mut agent,
-                        &processed_input,
-                        show_prompt,
-                        show_code,
-                        &output,
-                    )
-                    .await;
-
-                    // Send auto-memory reminder if enabled and tools were called
-                    // Skip per-turn reminders when from_agent_mode - we'll send once on exit
-                    if !from_agent_mode {
-                      if let Err(e) = agent.send_auto_memory_reminder().await {
-                        debug!("Auto-memory reminder failed: {}", e);
-                      }
-                    }
+                    execute_user_input(
+                        &mut agent, &input, show_prompt, show_code, &output, from_agent_mode
+                    ).await;
                 } else {
                     // Single line input
                     let input = line.trim().to_string();
@@ -250,24 +257,9 @@ pub async fn run_interactive<W: UiWriter>(
                         }
                     }
 
-                    // Process the single line input (with template expansion)
-                    let processed_input = process_template(&input);
-                    execute_task_with_retry(
-                        &mut agent,
-                        &processed_input,
-                        show_prompt,
-                        show_code,
-                        &output,
-                    )
-                    .await;
-
-                    // Send auto-memory reminder if enabled and tools were called
-                    // Skip per-turn reminders when from_agent_mode - we'll send once on exit
-                    if !from_agent_mode {
-                      if let Err(e) = agent.send_auto_memory_reminder().await {
-                        debug!("Auto-memory reminder failed: {}", e);
-                      }
-                    }
+                    execute_user_input(
+                        &mut agent, &input, show_prompt, show_code, &output, from_agent_mode
+                    ).await;
                 }
             }
             Err(ReadlineError::Interrupted) => {
