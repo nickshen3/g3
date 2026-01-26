@@ -120,6 +120,7 @@ mod tests {
     use crate::acd::Fragment;
     use crate::ui_writer::NullUiWriter;
     use crate::background_process::BackgroundProcessManager;
+    use serial_test::serial;
     use crate::webdriver_session::WebDriverSession;
     use g3_providers::{Message, MessageRole};
     use std::sync::Arc;
@@ -243,10 +244,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_rehydrate_success() {
-        // Create a temporary fragment
-        let test_session_id = format!("test_rehydrate_{}", std::process::id());
-        
+        // Use a unique session ID with UUID to avoid conflicts with parallel tests
+        let test_session_id = format!("test_rehydrate_{}", uuid::Uuid::new_v4());
         let messages = vec![
             Message::new(MessageRole::User, "Test user message".to_string()),
             Message::new(MessageRole::Assistant, "Test assistant response".to_string()),
@@ -268,7 +269,10 @@ mod tests {
         assert_eq!(loaded_fragment.message_count, 2);
         
         // Cleanup
-        let _ = std::fs::remove_file(&file_path);
-        let _ = std::fs::remove_dir(file_path.parent().unwrap());
+        if let Some(parent) = file_path.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+            // Also try to remove the session directory
+            let _ = std::fs::remove_dir_all(parent.parent().unwrap_or(parent));
+        }
     }
 }

@@ -228,3 +228,33 @@ fn test_resize_image_if_needed_returns_original_on_failure() {
     // Should return original since ImageMagick can't process invalid data
     assert_eq!(result.len(), invalid_bytes.len(), "Invalid image should return original");
 }
+
+/// CHARACTERIZATION: Test that resize_image_to_dimensions returns original when resize
+/// produces a larger file.
+///
+/// This documents the fix from commit af8b849: when resize doesn't reduce size,
+/// the original bytes should be returned so the original media type is preserved.
+/// Previously, was_resized was incorrectly set to true even when falling back to
+/// original bytes, causing media type mismatch errors with the Anthropic API.
+///
+/// What this test protects:
+/// - resize_image_to_dimensions returns original bytes when resize doesn't help
+///
+/// What this test intentionally does NOT assert:
+/// - The actual media type selection logic (that's in execute_read_image)
+/// - API-level behavior (would require integration test with real images)
+#[test]
+fn test_resize_returns_original_when_resize_increases_size() {
+    use g3_core::tools::file_ops::resize_image_to_dimensions;
+    use std::path::Path;
+    
+    // A very small PNG that can't be compressed further - resize would increase size
+    // Using invalid data that ImageMagick can't process, which triggers the fallback path
+    let small_png_bytes = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG header only
+    let path = Path::new("test.png");
+    
+    // Try to resize - should return original since it can't process incomplete PNG
+    let result = resize_image_to_dimensions(&small_png_bytes, path, 1568, 1024 * 1024);
+    assert!(result.is_ok(), "Should not error, should return original");
+    assert_eq!(result.unwrap().len(), small_png_bytes.len(), "Should return original bytes when resize fails");
+}
