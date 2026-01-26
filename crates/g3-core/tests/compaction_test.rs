@@ -51,12 +51,12 @@ fn message_contains(history: &[Message], role: MessageRole, substring: &str) -> 
 ///
 /// This is the main feature test. After compaction:
 /// 1. System prompt is preserved
-/// 2. Summary is added
-/// 3. Last assistant message should be preserved (NEW)
+/// 2. Summary is added as a USER message
+/// 3. Last assistant message is preserved as ASSISTANT message
 /// 4. Latest user message is preserved
 ///
 /// The order should be:
-/// [System] -> [Summary] -> [Last Assistant] -> [Latest User]
+/// [System] -> [Summary as User] -> [Last Assistant] -> [Latest User]
 #[tokio::test]
 async fn test_compaction_preserves_last_assistant_message() {
     // Create a provider that will:
@@ -129,14 +129,13 @@ async fn test_compaction_preserves_last_assistant_message() {
         );
     }
 
-    // 1. Should have a summary message
+    // 1. Should have a summary message as USER role
     assert!(
-        message_contains(history_after, MessageRole::System, "Summary:"),
-        "Should have summary message after compaction"
+        message_contains(history_after, MessageRole::User, "Summary:"),
+        "Should have summary message as User role after compaction"
     );
 
-    // 2. Should preserve the last assistant message content
-    // This is the key assertion - the last assistant message should be preserved
+    // 2. Should preserve the last assistant message as ASSISTANT role
     assert!(
         message_contains(history_after, MessageRole::Assistant, "implementation plan"),
         "Should preserve last assistant message with 'implementation plan' after compaction.\n\
@@ -216,7 +215,7 @@ async fn test_compaction_preserves_tool_call_only_message() {
     let result = agent.force_compact().await;
     assert!(result.is_ok(), "Compaction should succeed");
 
-    // The assistant message should be preserved (even if it's tool-call-only)
+    // The assistant message should be preserved as a separate Assistant message
     let history_after = &agent.get_context_window().conversation_history;
     let has_assistant = history_after
         .iter()
@@ -270,7 +269,7 @@ async fn test_compaction_preserves_only_last_assistant() {
         );
     }
 
-    // Should have THIRD_RESPONSE (the last one)
+    // Should have THIRD_RESPONSE (the last one) as an Assistant message
     assert!(
         message_contains(history_after, MessageRole::Assistant, "THIRD_RESPONSE"),
         "Should preserve the LAST assistant message (THIRD_RESPONSE)"
@@ -334,7 +333,7 @@ async fn test_compaction_no_trailing_user_message() {
 /// Test: Message order after compaction is correct
 ///
 /// The order should be:
-/// [System Prompt] -> [README if present] -> [Summary] -> [Last Assistant] -> [Latest User if present]
+/// [System Prompt] -> [README if present] -> [Summary as User] -> [Last Assistant] -> [Latest User]
 #[tokio::test]
 async fn test_compaction_message_order() {
     let provider = MockProvider::new()
@@ -367,6 +366,13 @@ async fn test_compaction_message_order() {
         .position(|m| m.content.contains("SUMMARY_CONTENT"))
         .expect("Should have summary");
     
+    // Summary should be a User message
+    assert!(
+        matches!(history[summary_idx].role, MessageRole::User),
+        "Summary should be a User message, got {:?}",
+        history[summary_idx].role
+    );
+    
     let assistant_idx = history
         .iter()
         .position(|m| matches!(m.role, MessageRole::Assistant) && m.content.contains("ASSISTANT_TO_PRESERVE"))
@@ -384,13 +390,178 @@ async fn test_compaction_message_order() {
         assistant_idx
     );
 
-    // If there's a user message, it should come after assistant message
+    // If there's a latest user message, it should come after assistant message
     if let Some(user_idx) = user_idx {
         assert!(
             assistant_idx < user_idx,
-            "Assistant message (idx {}) should come before user message (idx {})",
+            "Assistant message (idx {}) should come before latest user message (idx {})",
             assistant_idx,
             user_idx
         );
     }
+    
+    // The last message should be the latest user message
+    let last_msg = history.last().expect("Should have messages");
+    assert!(
+        matches!(last_msg.role, MessageRole::User),
+        "Last message should be User (the latest user message), got {:?}",
+        last_msg.role
+    );
+}
+
+/// Test: Second compaction doesn't bloat system messages
+///
+/// After multiple compactions, we should always have the same clean structure:
+/// [System Prompt] -> [Summary as User] -> [Last Assistant] -> [Latest User]
+///
+/// The summary should be replaced, not accumulated.
+#[tokio::test]
+async fn test_second_compaction_no_bloat() {
+    let provider = MockProvider::new()
+        // First conversation
+        .with_response(MockResponse::text("FIRST_ASSISTANT: I'll help with task 1."))
+        .with_response(MockResponse::text("SECOND_ASSISTANT: Done with task 1."))
+        // First compaction summary
+        .with_response(MockResponse::text("FIRST_SUMMARY: Completed task 1."))
+        // Second conversation (after first compaction)
+        .with_response(MockResponse::text("THIRD_ASSISTANT: Starting task 2."))
+        .with_response(MockResponse::text("FOURTH_ASSISTANT: Done with task 2."))
+        // Second compaction summary
+        .with_response(MockResponse::text("SECOND_SUMMARY: Completed tasks 1 and 2."));
+
+    let (mut agent, _temp_dir) = create_agent_with_mock(provider).await;
+
+    // === First conversation ===
+    agent.execute_task("Start task 1", None, false).await.unwrap();
+    agent.execute_task("Finish task 1", None, false).await.unwrap();
+
+    // Count system messages before first compaction
+    let system_count_before_first = agent
+        .get_context_window()
+        .conversation_history
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::System))
+        .count();
+    eprintln!("System messages before first compaction: {}", system_count_before_first);
+
+    // === First compaction ===
+    agent.force_compact().await.unwrap();
+
+    let history_after_first = &agent.get_context_window().conversation_history;
+    let system_count_after_first = history_after_first
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::System))
+        .count();
+    
+    eprintln!("\n=== After FIRST compaction ===");
+    for (i, msg) in history_after_first.iter().enumerate() {
+        eprintln!(
+            "  {}: {:?} - {}",
+            i,
+            msg.role,
+            msg.content.chars().take(60).collect::<String>()
+        );
+    }
+    eprintln!("System messages after first compaction: {}", system_count_after_first);
+
+    // Verify first compaction structure
+    assert!(
+        message_contains(history_after_first, MessageRole::User, "FIRST_SUMMARY"),
+        "Should have first summary as User message"
+    );
+    assert!(
+        message_contains(history_after_first, MessageRole::Assistant, "SECOND_ASSISTANT"),
+        "Should have last assistant from first conversation"
+    );
+
+    // === Second conversation (after first compaction) ===
+    agent.execute_task("Start task 2", None, false).await.unwrap();
+    agent.execute_task("Finish task 2", None, false).await.unwrap();
+
+    // === Second compaction ===
+    agent.force_compact().await.unwrap();
+
+    let history_after_second = &agent.get_context_window().conversation_history;
+    let system_count_after_second = history_after_second
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::System))
+        .count();
+
+    eprintln!("\n=== After SECOND compaction ===");
+    for (i, msg) in history_after_second.iter().enumerate() {
+        eprintln!(
+            "  {}: {:?} - {}",
+            i,
+            msg.role,
+            msg.content.chars().take(60).collect::<String>()
+        );
+    }
+    eprintln!("System messages after second compaction: {}", system_count_after_second);
+
+    // === KEY ASSERTIONS ===
+    
+    // 1. System message count should NOT increase after second compaction
+    assert_eq!(
+        system_count_after_first, system_count_after_second,
+        "System message count should stay the same after second compaction (no bloat). First: {}, Second: {}",
+        system_count_after_first, system_count_after_second
+    );
+
+    // 2. Should have the NEW summary (SECOND_SUMMARY), not the old one
+    assert!(
+        message_contains(history_after_second, MessageRole::User, "SECOND_SUMMARY"),
+        "Should have second summary as User message"
+    );
+
+    // 3. Should NOT have the old summary anymore
+    assert!(
+        !message_contains(history_after_second, MessageRole::User, "FIRST_SUMMARY"),
+        "Should NOT have first summary anymore - it should be replaced"
+    );
+
+    // 4. Should have the last assistant from second conversation
+    assert!(
+        message_contains(history_after_second, MessageRole::Assistant, "FOURTH_ASSISTANT"),
+        "Should have last assistant from second conversation"
+    );
+
+    // 5. Should NOT have old assistant messages
+    assert!(
+        !message_contains(history_after_second, MessageRole::Assistant, "SECOND_ASSISTANT"),
+        "Should NOT have assistant from first conversation"
+    );
+
+    // 6. Verify the clean structure: System... -> User (summary) -> Assistant -> User
+    let non_system_messages: Vec<_> = history_after_second
+        .iter()
+        .filter(|m| !matches!(m.role, MessageRole::System))
+        .collect();
+    
+    assert!(
+        non_system_messages.len() >= 3,
+        "Should have at least 3 non-system messages (summary, assistant, user)"
+    );
+    
+    // First non-system should be User (summary)
+    assert!(
+        matches!(non_system_messages[0].role, MessageRole::User),
+        "First non-system message should be User (summary), got {:?}",
+        non_system_messages[0].role
+    );
+    
+    // Second non-system should be Assistant
+    assert!(
+        matches!(non_system_messages[1].role, MessageRole::Assistant),
+        "Second non-system message should be Assistant, got {:?}",
+        non_system_messages[1].role
+    );
+    
+    // Third non-system should be User (latest)
+    assert!(
+        matches!(non_system_messages[2].role, MessageRole::User),
+        "Third non-system message should be User (latest), got {:?}",
+        non_system_messages[2].role
+    );
+
+    eprintln!("\n✅ Second compaction maintains clean structure without bloat!");
 }

@@ -292,9 +292,11 @@ Format this as a detailed but concise summary that can be used to resume the con
             self.add_message(Message::new(MessageRole::System, stub_content));
         }
 
-        // Add the summary
+        // Add the summary as a USER message (not System) to maintain proper alternation.
+        // This allows: [Summary as User] -> [Last Assistant] -> [Latest User]
+        // which is valid User/Assistant alternation.
         self.add_message(Message::new(
-            MessageRole::System,
+            MessageRole::User,
             format!("Previous conversation summary:\n\n{}", summary),
         ));
 

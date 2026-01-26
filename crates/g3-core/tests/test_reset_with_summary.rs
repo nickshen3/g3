@@ -41,9 +41,9 @@ fn test_reset_with_summary_preserves_system_prompt() {
         &first_message.content[..first_message.content.len().min(100)]
     );
 
-    // Verify the summary was added as a separate system message
+    // Verify the summary was added as a User message (for proper alternation)
     let has_summary = context.conversation_history.iter().any(|m| {
-        matches!(m.role, MessageRole::System) && m.content.contains("Previous conversation summary")
+        matches!(m.role, MessageRole::User) && m.content.contains("Previous conversation summary")
     });
     assert!(has_summary, "Should have a summary message");
 
