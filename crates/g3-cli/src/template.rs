@@ -39,7 +39,7 @@ pub fn process_template(content: &str) -> String {
 /// Resolve a template variable to its value.
 fn resolve_variable(name: &str) -> Option<String> {
     match name {
-        "today" => Some(Local::now().format("%Y-%m-%d").to_string()),
+        "today" => Some(Local::now().format("%Y-%m-%d (%A)").to_string()),
         _ => None,
     }
 }
@@ -57,11 +57,13 @@ mod tests {
         assert!(!result.contains("{{today}}"));
         assert!(result.starts_with("Today is "));
         
-        // Verify date format (YYYY-MM-DD)
+        // Verify date format (YYYY-MM-DD (DayName))
         let date_part = &result["Today is ".len()..];
-        assert_eq!(date_part.len(), 10);
-        assert_eq!(&date_part[4..5], "-");
-        assert_eq!(&date_part[7..8], "-");
+        // Should be at least "YYYY-MM-DD (X)" = 13+ chars
+        assert!(date_part.len() >= 13, "Date should be at least 13 chars, got: {}", date_part);
+        assert_eq!(&date_part[4..5], "-", "Should have dash at position 4");
+        assert_eq!(&date_part[7..8], "-", "Should have dash at position 7");
+        assert!(date_part.contains("(") && date_part.contains(")"), "Should contain day name in parens");
     }
 
     #[test]
