@@ -663,6 +663,7 @@ impl<W: UiWriter> Agent<W> {
                         match &embedded_config.model_type.to_lowercase()[..] {
                             "codellama" => 16384, // CodeLlama supports 16k context
                             "llama" => 4096,      // Base Llama models
+                            "glm4" => 32768,      // GLM-4 supports 32k context
                             "mistral" => 8192,    // Mistral models
                             "qwen" => 32768,      // Qwen2.5 supports 32k context
                             _ => 4096,            // Conservative default
