@@ -270,18 +270,27 @@ impl Completer for G3Helper {
         if line_to_cursor.starts_with("/run ") {
             let path = self.strip_quotes(word);
             let (_, completions) = self.file_completer.complete(path, path.len(), ctx)?;
-            return Ok((word_start, completions));
+            // Cyan color for command argument completions
+            let cyan_completions: Vec<Pair> = completions
+                .into_iter()
+                .map(|p| Pair {
+                    display: format!("\x1b[36m{}\x1b[0m", p.display),
+                    replacement: p.replacement,
+                })
+                .collect();
+            return Ok((word_start, cyan_completions));
         }
         
         // Case 4: Session ID completion for /resume command
         if line_to_cursor.starts_with("/resume ") {
             let partial = word;
             let sessions = self.list_sessions(None);
+            // Cyan color for command argument completions
             let matches: Vec<Pair> = sessions
                 .into_iter()
                 .filter(|s| s.starts_with(partial))
                 .map(|s| Pair {
-                    display: s.clone(),
+                    display: format!("\x1b[36m{}\x1b[0m", s),
                     replacement: s,
                 })
                 .take(8)
@@ -293,12 +302,13 @@ impl Completer for G3Helper {
         if line_to_cursor.starts_with("/project ") {
             let partial = word;
             let projects = self.list_projects(partial);
+            // Cyan color for command argument completions
             let matches: Vec<Pair> = projects
                 .into_iter()
                 .map(|name| {
                     let full_path = format!("~/projects/{}", name);
                     Pair {
-                        display: name,
+                        display: format!("\x1b[36m{}\x1b[0m", name),
                         replacement: full_path,
                     }
                 })
