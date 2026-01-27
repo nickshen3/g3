@@ -120,6 +120,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: content.len() as u32 / 4,
                 total_tokens: 100 + content.len() as u32 / 4,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }
@@ -139,6 +141,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: total_content.len() as u32 / 4,
                 total_tokens: 100 + total_content.len() as u32 / 4,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }
@@ -155,6 +159,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: 50,
                 total_tokens: 150,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }
@@ -172,6 +178,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: 50 + text.len() as u32 / 4,
                 total_tokens: 150 + text.len() as u32 / 4,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }
@@ -192,6 +200,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: 100,
                 total_tokens: 200,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }
@@ -215,6 +225,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: full_content.len() as u32 / 4,
                 total_tokens: 100 + full_content.len() as u32 / 4,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }
@@ -230,6 +242,8 @@ impl MockResponse {
                 prompt_tokens: 100,
                 completion_tokens: content.len() as u32 / 4,
                 total_tokens: 100 + content.len() as u32 / 4,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         }
     }

@@ -464,6 +464,10 @@ impl AnthropicProvider {
                                                         completion_tokens: usage.output_tokens,
                                                         total_tokens: usage.input_tokens
                                                             + usage.output_tokens,
+                                                        cache_creation_tokens: usage
+                                                            .cache_creation_input_tokens,
+                                                        cache_read_tokens: usage
+                                                            .cache_read_input_tokens,
                                                     });
                                                     debug!(
                                                         "Captured usage from message_start: {:?}",
@@ -739,6 +743,8 @@ impl LLMProvider for AnthropicProvider {
             completion_tokens: anthropic_response.usage.output_tokens,
             total_tokens: anthropic_response.usage.input_tokens
                 + anthropic_response.usage.output_tokens,
+            cache_creation_tokens: anthropic_response.usage.cache_creation_input_tokens,
+            cache_read_tokens: anthropic_response.usage.cache_read_input_tokens,
         };
 
         debug!(
@@ -945,6 +951,12 @@ struct AnthropicResponse {
 struct AnthropicUsage {
     input_tokens: u32,
     output_tokens: u32,
+    /// Tokens written to cache when creating a new cache entry
+    #[serde(default)]
+    cache_creation_input_tokens: u32,
+    /// Tokens retrieved from cache (cache hit)
+    #[serde(default)]
+    cache_read_input_tokens: u32,
 }
 
 // Streaming response structures

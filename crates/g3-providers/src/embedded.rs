@@ -531,6 +531,8 @@ impl LLMProvider for EmbeddedProvider {
                 prompt_tokens,
                 completion_tokens,
                 total_tokens: prompt_tokens + completion_tokens,
+                cache_creation_tokens: 0, // Embedded models don't support prompt caching
+                cache_read_tokens: 0,
             },
             model: self.model_name.clone(),
         })

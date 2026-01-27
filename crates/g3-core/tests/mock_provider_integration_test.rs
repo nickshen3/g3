@@ -674,6 +674,8 @@ async fn test_multiple_tools_in_single_response_all_executed() {
                 prompt_tokens: 100,
                 completion_tokens: 100,
                 total_tokens: 200,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         ))
         .with_default_response(MockResponse::text("Both commands executed."));
@@ -774,6 +776,8 @@ async fn test_llm_repeats_text_before_each_tool_call() {
                 prompt_tokens: 100,
                 completion_tokens: 50,
                 total_tokens: 150,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         ))
         // Second response: SAME preamble + tool call 2
@@ -789,6 +793,8 @@ async fn test_llm_repeats_text_before_each_tool_call() {
                 prompt_tokens: 150,
                 completion_tokens: 50,
                 total_tokens: 200,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
             },
         ))
         // Third response: final acknowledgment

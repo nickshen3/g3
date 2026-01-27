@@ -57,6 +57,8 @@ fn finished_chunk() -> CompletionChunk {
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
         }),
     }
 }
@@ -697,6 +699,8 @@ async fn test_agent_json_fallback_executes() {
                 prompt_tokens: 100,
                 completion_tokens: 50,
                 total_tokens: 150,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
             },
         ))
         .with_default_response(MockResponse::text("Done."));
@@ -800,6 +804,8 @@ async fn test_tool_result_with_json_not_parsed() {
                 prompt_tokens: 100,
                 completion_tokens: 50,
                 total_tokens: 150,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
             },
         ))
         // Second response: LLM acknowledges the file content

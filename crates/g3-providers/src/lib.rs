@@ -196,6 +196,12 @@ pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    /// Tokens written to cache (Anthropic: cache_creation_input_tokens)
+    #[serde(default)]
+    pub cache_creation_tokens: u32,
+    /// Tokens read from cache (Anthropic: cache_read_input_tokens, OpenAI: cached_tokens)
+    #[serde(default)]
+    pub cache_read_tokens: u32,
 }
 
 pub type CompletionStream = tokio_stream::wrappers::ReceiverStream<Result<CompletionChunk>>;

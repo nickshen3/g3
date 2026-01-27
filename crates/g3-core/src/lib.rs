@@ -74,6 +74,22 @@ pub struct ToolCall {
     pub args: serde_json::Value, // Should be a JSON object with tool-specific arguments
 }
 
+/// Cumulative cache statistics for prompt caching efficacy tracking.
+/// Tracks both Anthropic-style (cache_creation + cache_read) and OpenAI-style (cached_tokens) caching.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CacheStats {
+    /// Total tokens written to cache across all API calls
+    pub total_cache_creation_tokens: u64,
+    /// Total tokens read from cache across all API calls
+    pub total_cache_read_tokens: u64,
+    /// Total input tokens (for calculating cache hit rate)
+    pub total_input_tokens: u64,
+    /// Number of API calls that had cache hits
+    pub cache_hit_calls: u32,
+    /// Total number of API calls
+    pub total_calls: u32,
+}
+
 // Re-export WebDriverSession from its own module
 pub use webdriver_session::WebDriverSession;
 
@@ -103,6 +119,8 @@ pub struct Agent<W: UiWriter> {
     auto_compact: bool,               // whether to auto-compact at 90% before tool calls
     compaction_events: Vec<usize>,    // chars saved per compaction event
     first_token_times: Vec<Duration>, // time to first token for each completion
+    /// Cumulative cache statistics across all API calls
+    cache_stats: CacheStats,
     config: Config,
     session_id: Option<String>,
     tool_call_metrics: Vec<(String, Duration, bool)>, // (tool_name, duration, success)
@@ -211,6 +229,7 @@ impl<W: UiWriter> Agent<W> {
             thinning_events: Vec::new(),
             compaction_events: Vec::new(),
             first_token_times: Vec::new(),
+            cache_stats: CacheStats::default(),
             config,
             session_id: None,
             tool_call_metrics: Vec::new(),
@@ -272,6 +291,7 @@ impl<W: UiWriter> Agent<W> {
             thinning_events: Vec::new(),
             compaction_events: Vec::new(),
             first_token_times: Vec::new(),
+            cache_stats: CacheStats::default(),
             config,
             session_id: None,
             tool_call_metrics: Vec::new(),
@@ -387,6 +407,7 @@ impl<W: UiWriter> Agent<W> {
             thinning_events: Vec::new(),
             compaction_events: Vec::new(),
             first_token_times: Vec::new(),
+            cache_stats: CacheStats::default(),
             config,
             session_id: None,
             tool_call_metrics: Vec::new(),
@@ -986,6 +1007,8 @@ impl<W: UiWriter> Agent<W> {
             prompt_tokens: 100,                                   // Estimate
             completion_tokens: response_content.len() as u32 / 4, // Rough estimate
             total_tokens: 100 + (response_content.len() as u32 / 4),
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
         };
 
         // Update context window with estimated token usage
@@ -1408,6 +1431,7 @@ impl<W: UiWriter> Agent<W> {
             first_token_times: &self.first_token_times,
             tool_call_metrics: &self.tool_call_metrics,
             provider_info: self.get_provider_info().ok(),
+            cache_stats: &self.cache_stats,
         };
 
         snapshot.format()
@@ -2111,6 +2135,17 @@ Skip if nothing new. Be brief."#;
                         if let Some(ref usage) = chunk.usage {
                             iter.accumulated_usage = Some(usage.clone());
                             state.turn_accumulated_usage = Some(usage.clone());
+                            
+                            // Update cumulative cache statistics
+                            self.cache_stats.total_calls += 1;
+                            self.cache_stats.total_input_tokens += usage.prompt_tokens as u64;
+                            self.cache_stats.total_cache_creation_tokens +=
+                                usage.cache_creation_tokens as u64;
+                            self.cache_stats.total_cache_read_tokens +=
+                                usage.cache_read_tokens as u64;
+                            if usage.cache_read_tokens > 0 {
+                                self.cache_stats.cache_hit_calls += 1;
+                            }
                             debug!(
                                 "Received usage data - prompt: {}, completion: {}, total: {}",
                                 usage.prompt_tokens, usage.completion_tokens, usage.total_tokens

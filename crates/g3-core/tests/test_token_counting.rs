@@ -38,6 +38,8 @@ fn test_update_usage_only_affects_cumulative() {
         prompt_tokens: 100,
         completion_tokens: 50,
         total_tokens: 150,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
     };
     window.update_usage_from_response(&usage);
 
@@ -52,6 +54,8 @@ fn test_update_usage_only_affects_cumulative() {
         prompt_tokens: 200,
         completion_tokens: 75,
         total_tokens: 275,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
     };
     window.update_usage_from_response(&usage2);
 
@@ -156,6 +160,8 @@ fn test_cumulative_vs_used_independence() {
         prompt_tokens: 500,
         completion_tokens: 200,
         total_tokens: 700,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
     };
     window.update_usage_from_response(&usage);
 

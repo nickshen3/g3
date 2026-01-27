@@ -1,5 +1,5 @@
 # Workspace Memory
-> Updated: 2026-01-20T10:16:13Z | Size: 18.3k chars
+> Updated: 2026-01-27T00:12:18Z | Size: 19.5k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -325,3 +325,25 @@ Centralized logic for determining how to display tool execution results.
   - `is_self_handled_tool()` [164..167] - checks if tool handles own output (todo_read, todo_write)
   - `format_compact_tool_summary()` [169..185] - dispatches to format_*_summary() based on tool name
   - `parse_diff_stats()` [187..210] - parses "+N insertions | -M deletions" from str_replace result
+
+### Prompt Cache Statistics Tracking
+Tracks prompt/prefix caching efficacy across Anthropic and OpenAI providers.
+
+- `crates/g3-providers/src/lib.rs`
+  - `Usage` [195..210] - added `cache_creation_tokens` and `cache_read_tokens` fields with `#[serde(default)]`
+
+- `crates/g3-providers/src/anthropic.rs`
+  - `AnthropicUsage` [944..956] - parses `cache_creation_input_tokens` and `cache_read_input_tokens`
+
+- `crates/g3-providers/src/openai.rs`
+  - `OpenAIUsage` [494..510] - parses `prompt_tokens_details.cached_tokens`
+  - `OpenAIPromptTokensDetails` [504..510] - nested struct for prompt token details
+
+- `crates/g3-core/src/lib.rs`
+  - `CacheStats` [75..90] - cumulative cache statistics struct with `total_cache_creation_tokens`, `total_cache_read_tokens`, `total_input_tokens`, `cache_hit_calls`, `total_calls`
+  - `Agent.cache_stats` [106] - field tracking cumulative cache stats
+  - Cache stats updated in `stream_completion_with_tools()` [2140..2150] when usage data received
+
+- `crates/g3-core/src/stats.rs`
+  - `AgentStatsSnapshot.cache_stats` [20] - reference to cache stats for formatting
+  - `format_cache_stats()` [189..230] - formats cache statistics section with hit rate and efficiency metrics

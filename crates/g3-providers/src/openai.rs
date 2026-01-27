@@ -220,6 +220,12 @@ impl OpenAIProvider {
                                             prompt_tokens: usage.prompt_tokens,
                                             completion_tokens: usage.completion_tokens,
                                             total_tokens: usage.total_tokens,
+                                            cache_creation_tokens: 0, // OpenAI doesn't report cache creation
+                                            cache_read_tokens: usage
+                                                .prompt_tokens_details
+                                                .as_ref()
+                                                .map(|d| d.cached_tokens)
+                                                .unwrap_or(0),
                                         });
                                     }
                                 }
@@ -306,6 +312,13 @@ impl LLMProvider for OpenAIProvider {
             prompt_tokens: openai_response.usage.prompt_tokens,
             completion_tokens: openai_response.usage.completion_tokens,
             total_tokens: openai_response.usage.total_tokens,
+            cache_creation_tokens: 0, // OpenAI doesn't report cache creation
+            cache_read_tokens: openai_response
+                .usage
+                .prompt_tokens_details
+                .as_ref()
+                .map(|d| d.cached_tokens)
+                .unwrap_or(0),
         };
 
         debug!(
@@ -495,6 +508,16 @@ struct OpenAIUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
     total_tokens: u32,
+    /// Detailed breakdown of prompt tokens including cache info
+    #[serde(default)]
+    prompt_tokens_details: Option<OpenAIPromptTokensDetails>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct OpenAIPromptTokensDetails {
+    /// Tokens retrieved from cache (cache hit)
+    #[serde(default)]
+    cached_tokens: u32,
 }
 
 // Streaming response structures

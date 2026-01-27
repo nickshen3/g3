@@ -763,6 +763,8 @@ impl LLMProvider for DatabricksProvider {
             prompt_tokens: databricks_response.usage.prompt_tokens,
             completion_tokens: databricks_response.usage.completion_tokens,
             total_tokens: databricks_response.usage.total_tokens,
+            cache_creation_tokens: 0, // Databricks doesn't support prompt caching
+            cache_read_tokens: 0,
         };
 
         debug!(

@@ -60,6 +60,8 @@ fn default_usage() -> Usage {
         prompt_tokens: 0,
         completion_tokens: 0,
         total_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
     }
 }
 
@@ -169,6 +171,8 @@ impl LLMProvider for MockStreamingProvider {
                             prompt_tokens: 100,
                             completion_tokens: 50,
                             total_tokens: 150,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
                         }),
                         stop_reason: Some("end_turn".to_string()),
                         tool_call_streaming: None,
@@ -201,6 +205,8 @@ impl LLMProvider for MockStreamingProvider {
                             prompt_tokens: 50,
                             completion_tokens: 10,
                             total_tokens: 60,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
                         }),
                         stop_reason: Some("end_turn".to_string()),
                         tool_call_streaming: None,
@@ -407,6 +413,8 @@ async fn test_finished_signal_terminates_stream() {
                     prompt_tokens: 0,
                     completion_tokens: 0,
                     total_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
                 },
                 model: "simple".to_string(),
             })
@@ -439,6 +447,8 @@ async fn test_finished_signal_terminates_stream() {
                             prompt_tokens: 10,
                             completion_tokens: 10,
                             total_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
                         }),
                         stop_reason: Some("end_turn".to_string()),
                         tool_call_streaming: None,
