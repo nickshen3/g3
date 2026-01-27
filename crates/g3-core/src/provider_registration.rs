@@ -78,7 +78,8 @@ fn register_embedded_providers(
 ) -> Result<()> {
     for (name, embedded_config) in &config.providers.embedded {
         if should_register(providers_to_register, "embedded", name) {
-            let embedded_provider = g3_providers::EmbeddedProvider::new(
+            let embedded_provider = g3_providers::EmbeddedProvider::new_with_name(
+                format!("embedded.{}", name),
                 embedded_config.model_path.clone(),
                 embedded_config.model_type.clone(),
                 embedded_config.context_length,

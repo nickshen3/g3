@@ -54,7 +54,7 @@ mod prompts;
 use anyhow::Result;
 use g3_config::Config;
 use g3_providers::{CacheControl, CompletionRequest, Message, MessageRole, ProviderRegistry};
-use prompts::{get_system_prompt_for_native, SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE};
+use prompts::{get_system_prompt_for_native, get_system_prompt_for_non_native};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -354,7 +354,7 @@ impl<W: UiWriter> Agent<W> {
                 get_system_prompt_for_native()
             } else {
                 // For non-native providers (embedded models), use JSON format instructions
-                SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE.to_string()
+                get_system_prompt_for_non_native()
             }
         };
 
@@ -426,12 +426,13 @@ impl<W: UiWriter> Agent<W> {
         }
 
         // Check for system prompt markers that are present in both standard and agent mode
-        // Agent mode replaces the identity line but keeps all other instructions
+        // Check for system prompt markers that are present in both native and non-native prompts
+        // Both prompts contain "You have access to tools" as a common marker
         let has_tool_instructions = first_message
             .content
-            .contains("IMPORTANT: You must call tools to achieve goals");
+            .contains("You have access to tools");
         if !has_tool_instructions {
-            panic!("FATAL: First system message does not contain the system prompt. This likely means the README was added before the system prompt.");
+            panic!("FATAL: First system message does not contain the system prompt marker 'You have access to tools'. This likely means the README was added before the system prompt.");
         }
     }
 

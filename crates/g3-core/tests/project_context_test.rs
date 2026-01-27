@@ -40,7 +40,7 @@ async fn test_context_window_initial_structure() {
     
     // First message should be system prompt
     let system_msg = &context.conversation_history[0];
-    assert!(system_msg.content.contains("IMPORTANT: You must call tools to achieve goals"),
+    assert!(system_msg.content.contains("You have access to tools"),
         "First message should be system prompt with tool instructions");
     
     // Second message should be README content
@@ -285,7 +285,7 @@ async fn test_full_context_order() {
     
     // Message 0: System prompt
     let system = &context.conversation_history[0].content;
-    assert!(system.contains("IMPORTANT: You must call tools"),
+    assert!(system.contains("You have access to tools"),
         "Message 0 should be system prompt");
     
     // Message 1: Combined content with project appended

@@ -1,5 +1,5 @@
 # Workspace Memory
-> Updated: 2026-01-27T00:12:18Z | Size: 19.5k chars
+> Updated: 2026-01-27T02:55:20Z | Size: 21.9k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -347,3 +347,57 @@ Tracks prompt/prefix caching efficacy across Anthropic and OpenAI providers.
 - `crates/g3-core/src/stats.rs`
   - `AgentStatsSnapshot.cache_stats` [20] - reference to cache stats for formatting
   - `format_cache_stats()` [189..230] - formats cache statistics section with hit rate and efficiency metrics
+
+### Embedded Provider (Local LLM via llama.cpp)
+Local model inference using llama-cpp-rs bindings with Metal acceleration on macOS.
+
+- `crates/g3-providers/src/embedded.rs`
+  - `EmbeddedProvider` [22..85] - struct with session, model_name, max_tokens, temperature, context_length
+  - `new()` [26..85] - constructor, handles tilde expansion, auto-downloads Qwen if missing
+  - `format_messages()` [87..175] - converts Message[] to prompt string, supports Qwen/Mistral/Llama templates
+  - `get_stop_sequences()` [280..340] - returns model-specific stop tokens
+  - `generate_completion()` [177..278] - non-streaming inference with timeout
+  - `stream()` [560..780] - streaming inference via spawn_blocking + mpsc channel
+
+**Known Issues (as of 2025-01):**
+- Provider name hardcoded as `"embedded"` instead of `"embedded.{name}"` format
+- Missing GLM-4 chat template (uses `[gMASK]<sop><|role|>` NOT ChatML)
+- Missing `has_native_tool_calling()` override (defaults to false)
+- No streaming usage tracking (unlike Anthropic)
+- No tool streaming hints (`make_tool_streaming_hint()` not used)
+
+### Chat Template Formats (Embedded Provider)
+| Model | Format | Start Token | End Token |
+|-------|--------|-------------|----------|
+| Qwen | ChatML | `<\|im_start\|>role\n` | `<\|im_end\|>` |
+| GLM-4 | ChatGLM4 | `[gMASK]<sop><\|role\|>\n` | `<\|endoftext\|>` |
+| Mistral | Instruct | `<s>[INST]` | `[/INST]` |
+| Llama | Llama2 | `<<SYS>>` | `<</SYS>>` |
+
+### GLM-4 Model Downloads
+Recommended GGUF models for Mac M4 Max with 128GB unified memory.
+
+**Download commands:**
+```bash
+# GLM-4 9B Q8_0 (~10GB) - Very capable, fast
+python3 -m huggingface_hub.commands.huggingface_cli download bartowski/THUDM_GLM-4-9B-0414-GGUF \
+  --include "THUDM_GLM-4-9B-0414-Q8_0.gguf" --local-dir ~/.g3/models/
+
+# GLM-4 32B Q6_K_L (~27GB) - TOP TIER for coding/reasoning
+python3 -m huggingface_hub.commands.huggingface_cli download bartowski/THUDM_GLM-4-32B-0414-GGUF \
+  --include "THUDM_GLM-4-32B-0414-Q6_K_L.gguf" --local-dir ~/.g3/models/
+
+# Qwen3 4B Q4_K_M (~2.3GB) - Small but rivals 72B performance
+python3 -m huggingface_hub.commands.huggingface_cli download Qwen/Qwen3-4B-GGUF \
+  --include "qwen3-4b-q4_k_m.gguf" --local-dir ~/.g3/models/
+```
+
+**Config example:**
+```toml
+[providers.embedded.glm4]
+model_path = "~/.g3/models/THUDM_GLM-4-32B-0414-Q6_K_L.gguf"
+model_type = "glm4"
+context_length = 32768
+max_tokens = 4096
+gpu_layers = 99
+```
