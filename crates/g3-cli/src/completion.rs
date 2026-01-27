@@ -5,6 +5,7 @@
 //! - Command completion for `/` commands at line start
 //! - File path completion for `./`, `../`, `~/`, `/` prefixes
 //! - Session ID completion for `/resume` command
+//! - Project name completion for `/project` command (from ~/projects/)
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
@@ -153,6 +154,33 @@ impl G3Helper {
         
         sessions
     }
+    
+    /// List project directories from ~/projects/, sorted alphabetically.
+    fn list_projects(&self, prefix: &str) -> Vec<String> {
+        let projects_dir = match dirs::home_dir() {
+            Some(home) => home.join("projects"),
+            None => return Vec::new(),
+        };
+        
+        if !projects_dir.is_dir() {
+            return Vec::new();
+        }
+        
+        let mut projects: Vec<String> = std::fs::read_dir(&projects_dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| entry.path().is_dir())
+                    .filter_map(|entry| Some(entry.file_name().to_string_lossy().to_string()))
+                    .filter(|name| name.starts_with(prefix))
+                    .collect()
+            })
+            .unwrap_or_default();
+        
+        projects.sort();
+        projects
+    }
 }
 
 impl Default for G3Helper {
@@ -257,6 +285,23 @@ impl Completer for G3Helper {
                     replacement: s,
                 })
                 .take(8)
+                .collect();
+            return Ok((word_start, matches));
+        }
+
+        // Case 5: Project name completion for /project command
+        if line_to_cursor.starts_with("/project ") {
+            let partial = word;
+            let projects = self.list_projects(partial);
+            let matches: Vec<Pair> = projects
+                .into_iter()
+                .map(|name| {
+                    let full_path = format!("~/projects/{}", name);
+                    Pair {
+                        display: name,
+                        replacement: full_path,
+                    }
+                })
                 .collect();
             return Ok((word_start, matches));
         }
@@ -501,5 +546,37 @@ mod tests {
         let helper = G3Helper::new();
         let sessions = helper.list_sessions(None);
         let _ = sessions; // Just verify no panic
+    }
+    
+    #[test]
+    fn test_project_completion_lists_projects() {
+        let helper = G3Helper::new();
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        
+        let line = "/project ";
+        let pos = line.len();
+        let (start, completions) = helper.complete(line, pos, &ctx).unwrap();
+        let _ = start;
+        
+        // If ~/projects exists and has directories, we should get completions
+        if let Some(home) = dirs::home_dir() {
+            let projects_dir = home.join("projects");
+            if projects_dir.is_dir() {
+                // Verify completions have the right format (display is name, replacement is ~/projects/name)
+                for completion in &completions {
+                    assert!(completion.replacement.starts_with("~/projects/"), 
+                        "Replacement should start with ~/projects/, got: {}", completion.replacement);
+                    assert!(!completion.display.contains('/'),
+                        "Display should be just the project name, got: {}", completion.display);
+                }
+            }
+        }
+        
+        // Test with a prefix that won't match anything
+        let line = "/project zzz_nonexistent_prefix_";
+        let pos = line.len();
+        let (_, completions) = helper.complete(line, pos, &ctx).unwrap();
+        assert_eq!(completions.len(), 0, "Non-matching prefix should return empty");
     }
 }
