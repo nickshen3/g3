@@ -14,9 +14,45 @@ use llama_cpp_2::{
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error};
+
+/// Global llama.cpp backend - can only be initialized once per process
+static LLAMA_BACKEND: OnceLock<Arc<LlamaBackend>> = OnceLock::new();
+
+/// Get or initialize the global llama.cpp backend
+fn get_or_init_backend() -> Result<Arc<LlamaBackend>> {
+    // Check if already initialized
+    if let Some(backend) = LLAMA_BACKEND.get() {
+        return Ok(Arc::clone(backend));
+    }
+    
+    // Suppress llama.cpp's verbose logging to stderr before initialization
+    unsafe {
+        unsafe extern "C" fn void_log(
+            _level: std::ffi::c_int,
+            _text: *const std::os::raw::c_char,
+            _user_data: *mut std::os::raw::c_void,
+        ) {
+            // Intentionally empty - suppress all llama.cpp logging
+        }
+        // Call the underlying C function directly
+        extern "C" { fn llama_log_set(log_callback: Option<unsafe extern "C" fn(std::ffi::c_int, *const std::os::raw::c_char, *mut std::os::raw::c_void)>, user_data: *mut std::os::raw::c_void); }
+        llama_log_set(Some(void_log), std::ptr::null_mut());
+    }
+    
+    // Try to initialize
+    debug!("Initializing llama.cpp backend...");
+    let backend = LlamaBackend::init()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize llama.cpp backend: {:?}", e))?;
+    
+    // Store it (ignore if another thread beat us to it)
+    let _ = LLAMA_BACKEND.set(Arc::new(backend));
+    let backend = LLAMA_BACKEND.get().expect("backend was just set");
+    Ok(Arc::clone(backend))
+}
 
 /// Embedded LLM provider using llama.cpp with Metal acceleration on macOS.
 /// 
@@ -103,9 +139,8 @@ impl EmbeddedProvider {
             anyhow::bail!("Model file not found: {}", model_path_buf.display());
         }
 
-        // Initialize the llama.cpp backend
-        let backend = LlamaBackend::init()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize llama.cpp backend: {:?}", e))?;
+        // Get or initialize the global llama.cpp backend
+        let backend = get_or_init_backend()?;
 
         // Set up model parameters
         let n_gpu_layers = gpu_layers.unwrap_or(99);
@@ -130,7 +165,7 @@ impl EmbeddedProvider {
         Ok(Self {
             name,
             model: Arc::new(model),
-            backend: Arc::new(backend),
+            backend,
             model_type: model_type.to_lowercase(),
             model_name: format!("embedded-{}", model_type),
             max_tokens,

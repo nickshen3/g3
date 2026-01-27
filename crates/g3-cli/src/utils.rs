@@ -139,9 +139,10 @@ pub fn load_config_with_cli_overrides(cli: &Cli) -> Result<Config> {
     // Validate provider if specified
     if let Some(ref provider) = cli.provider {
         let valid_providers = ["anthropic", "databricks", "embedded", "openai"];
-        if !valid_providers.contains(&provider.as_str()) {
+        let provider_type = provider.split('.').next().unwrap_or(provider);
+        if !valid_providers.contains(&provider_type) {
             return Err(anyhow::anyhow!(
-                "Invalid provider '{}'. Valid options: {:?}",
+                "Invalid provider '{}'. Provider type must be one of: {:?}",
                 provider,
                 valid_providers
             ));
