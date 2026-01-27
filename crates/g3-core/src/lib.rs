@@ -157,6 +157,55 @@ impl<W: UiWriter> Agent<W> {
     // CONSTRUCTION METHODS
     // =========================================================================
 
+    /// Internal helper to construct an Agent with all fields.
+    /// This is the single canonical constructor - all public constructors delegate here.
+    /// This eliminates code duplication and ensures all Agent instances are built consistently.
+    fn build_agent(
+        config: Config,
+        ui_writer: W,
+        providers: ProviderRegistry,
+        context_window: ContextWindow,
+        auto_compact: bool,
+        is_autonomous: bool,
+        quiet: bool,
+        computer_controller: Option<Box<dyn g3_computer_control::ComputerController>>,
+    ) -> Self {
+        Self {
+            providers,
+            context_window,
+            auto_compact,
+            pending_90_compaction: false,
+            thinning_events: Vec::new(),
+            compaction_events: Vec::new(),
+            first_token_times: Vec::new(),
+            cache_stats: CacheStats::default(),
+            config,
+            session_id: None,
+            tool_call_metrics: Vec::new(),
+            ui_writer,
+            todo_content: std::sync::Arc::new(tokio::sync::RwLock::new(String::new())),
+            is_autonomous,
+            quiet,
+            computer_controller,
+            webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            tool_call_count: 0,
+            tool_calls_this_turn: Vec::new(),
+            requirements_sha: None,
+            working_dir: None,
+            background_process_manager: std::sync::Arc::new(
+                background_process::BackgroundProcessManager::new(
+                    paths::get_background_processes_dir(),
+                ),
+            ),
+            pending_images: Vec::new(),
+            is_agent_mode: false,
+            agent_name: None,
+            auto_memory: false,
+            acd_enabled: false,
+        }
+    }
+
     pub async fn new(config: Config, ui_writer: W) -> Result<Self> {
         Self::new_with_mode(config, ui_writer, false, false).await
     }
@@ -212,57 +261,12 @@ impl<W: UiWriter> Agent<W> {
         ui_writer: W,
         providers: ProviderRegistry,
     ) -> Result<Self> {
-        use crate::context_window::ContextWindow;
-        use crate::prompts::get_system_prompt_for_native;
-        use g3_providers::{Message, MessageRole};
-
-        // Use a reasonable default context length for tests
-        let context_length = config.agent.max_context_length.unwrap_or(200_000);
-        let mut context_window = ContextWindow::new(context_length);
-
-        // Add system prompt
-        let system_prompt = get_system_prompt_for_native();
-        let system_message = Message::new(MessageRole::System, system_prompt);
-        context_window.add_message(system_message);
-
-        Ok(Self {
-            providers,
-            context_window,
-            auto_compact: false,
-            pending_90_compaction: false,
-            thinning_events: Vec::new(),
-            compaction_events: Vec::new(),
-            first_token_times: Vec::new(),
-            cache_stats: CacheStats::default(),
-            config,
-            session_id: None,
-            tool_call_metrics: Vec::new(),
-            ui_writer,
-            todo_content: std::sync::Arc::new(tokio::sync::RwLock::new(String::new())),
-            is_autonomous: false,
-            quiet: true,
-            computer_controller: None,
-            webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            tool_call_count: 0,
-            tool_calls_this_turn: Vec::new(),
-            requirements_sha: None,
-            working_dir: None,
-            background_process_manager: std::sync::Arc::new(
-                background_process::BackgroundProcessManager::new(
-                    paths::get_background_processes_dir(),
-                ),
-            ),
-            pending_images: Vec::new(),
-            is_agent_mode: false,
-            agent_name: None,
-            auto_memory: false,
-            acd_enabled: false,
-        })
+        Self::new_for_test_with_readme(config, ui_writer, providers, None).await
     }
 
     /// Create a new agent for testing with README content.
     /// This allows tests to verify context window structure with combined content.
+    #[doc(hidden)]
     pub async fn new_for_test_with_readme(
         config: Config,
         ui_writer: W,
@@ -287,40 +291,17 @@ impl<W: UiWriter> Agent<W> {
             context_window.add_message(readme_message);
         }
 
-        Ok(Self {
+        // For tests: auto_compact=false, is_autonomous=false, quiet=true, no computer_controller
+        Ok(Self::build_agent(
+            config,
+            ui_writer,
             providers,
             context_window,
-            auto_compact: false,
-            pending_90_compaction: false,
-            thinning_events: Vec::new(),
-            compaction_events: Vec::new(),
-            first_token_times: Vec::new(),
-            cache_stats: CacheStats::default(),
-            config,
-            session_id: None,
-            tool_call_metrics: Vec::new(),
-            ui_writer,
-            todo_content: std::sync::Arc::new(tokio::sync::RwLock::new(String::new())),
-            is_autonomous: false,
-            quiet: true,
-            computer_controller: None,
-            webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            tool_call_count: 0,
-            tool_calls_this_turn: Vec::new(),
-            requirements_sha: None,
-            working_dir: None,
-            background_process_manager: std::sync::Arc::new(
-                background_process::BackgroundProcessManager::new(
-                    paths::get_background_processes_dir(),
-                ),
-            ),
-            pending_images: Vec::new(),
-            is_agent_mode: false,
-            agent_name: None,
-            auto_memory: false,
-            acd_enabled: false,
-        })
+            false, // auto_compact
+            false, // is_autonomous
+            true,  // quiet
+            None,  // computer_controller
+        ))
     }
 
     async fn new_with_mode(
@@ -403,41 +384,17 @@ impl<W: UiWriter> Agent<W> {
             None
         };
 
-        Ok(Self {
+        let auto_compact = config.agent.auto_compact;
+        Ok(Self::build_agent(
+            config,
+            ui_writer,
             providers,
             context_window,
-            auto_compact: config.agent.auto_compact,
-            pending_90_compaction: false,
-            thinning_events: Vec::new(),
-            compaction_events: Vec::new(),
-            first_token_times: Vec::new(),
-            cache_stats: CacheStats::default(),
-            config,
-            session_id: None,
-            tool_call_metrics: Vec::new(),
-            ui_writer,
-            // TODO content starts empty - session-scoped TODOs are loaded via todo_read
-            todo_content: std::sync::Arc::new(tokio::sync::RwLock::new(String::new())),
+            auto_compact,
             is_autonomous,
             quiet,
             computer_controller,
-            webdriver_session: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            webdriver_process: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            tool_call_count: 0,
-            tool_calls_this_turn: Vec::new(),
-            requirements_sha: None,
-            working_dir: None,
-            background_process_manager: std::sync::Arc::new(
-                background_process::BackgroundProcessManager::new(
-                    paths::get_background_processes_dir(),
-                ),
-            ),
-            pending_images: Vec::new(),
-            is_agent_mode: false,
-            agent_name: None,
-            auto_memory: false,
-            acd_enabled: false,
-        })
+        ))
     }
 
     // =========================================================================
