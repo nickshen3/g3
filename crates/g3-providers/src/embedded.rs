@@ -42,8 +42,6 @@ pub struct EmbeddedProvider {
     temperature: f32,
     /// Context window size
     context_length: u32,
-    /// Number of GPU layers
-    gpu_layers: u32,
     /// Number of threads
     threads: Option<u32>,
 }
@@ -138,7 +136,6 @@ impl EmbeddedProvider {
             max_tokens,
             temperature: temperature.unwrap_or(0.1),
             context_length: context_size,
-            gpu_layers: n_gpu_layers,
             threads,
         })
     }
@@ -339,21 +336,6 @@ impl EmbeddedProvider {
                 "<</SYS>>",        // System format
             ]
         }
-    }
-
-    /// Clean stop sequences from generated text.
-    fn clean_stop_sequences(&self, text: &str) -> String {
-        let mut cleaned = text.to_string();
-        let stop_sequences = self.get_stop_sequences();
-
-        for stop_seq in &stop_sequences {
-            if let Some(pos) = cleaned.find(stop_seq) {
-                cleaned.truncate(pos);
-                break; // Only remove the first occurrence to avoid over-truncation
-            }
-        }
-
-        cleaned.trim().to_string()
     }
 
     /// Get the effective max tokens for generation

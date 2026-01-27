@@ -275,10 +275,6 @@ This ensures the TODO list is tracked against the specific version of requiremen
 // ============================================================================
 
 /// System prompt for providers with native tool calling (Anthropic, OpenAI, etc.)
-/// Note: This is kept for backwards compatibility but the function is preferred
-pub const SYSTEM_PROMPT_FOR_NATIVE_TOOL_USE: &str = "";
-
-/// Generate system prompt for native tool calling providers
 pub fn get_system_prompt_for_native() -> String {
     format!(
         "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
@@ -292,10 +288,6 @@ pub fn get_system_prompt_for_native() -> String {
 }
 
 /// System prompt for providers without native tool calling (embedded models)
-/// Note: This is kept for backwards compatibility but the function is preferred
-pub const SYSTEM_PROMPT_FOR_NON_NATIVE_TOOL_USE: &str = "";
-
-/// Generate system prompt for non-native tool calling providers (embedded models)
 pub fn get_system_prompt_for_non_native() -> String {
     format!(
         "{}\n\n{}\n\n{}\n\n{}{}\n\n{}\n\n{}\n\n{}",
