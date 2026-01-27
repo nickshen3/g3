@@ -154,6 +154,7 @@ impl GitWorktree {
     }
 
     /// List all worktrees
+    #[allow(dead_code)]
     pub fn list(&self) -> Result<Vec<String>> {
         let output = Command::new("git")
             .current_dir(&self.repo_root)
