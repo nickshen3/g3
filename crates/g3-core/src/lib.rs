@@ -153,6 +153,10 @@ pub struct Agent<W: UiWriter> {
 }
 
 impl<W: UiWriter> Agent<W> {
+    // =========================================================================
+    // CONSTRUCTION METHODS
+    // =========================================================================
+
     pub async fn new(config: Config, ui_writer: W) -> Result<Self> {
         Self::new_with_mode(config, ui_writer, false, false).await
     }
@@ -435,6 +439,10 @@ impl<W: UiWriter> Agent<W> {
             acd_enabled: false,
         })
     }
+
+    // =========================================================================
+    // CONFIGURATION & PROVIDER RESOLUTION
+    // =========================================================================
 
     /// Validate that the system prompt is the first message in the conversation history.
     /// This is a critical invariant that must be maintained for proper agent operation.
@@ -772,6 +780,10 @@ impl<W: UiWriter> Agent<W> {
         self.session_id.as_deref()
     }
 
+    // =========================================================================
+    // TASK EXECUTION
+    // =========================================================================
+
     pub async fn execute_task(
         &mut self,
         description: &str,
@@ -1050,6 +1062,10 @@ impl<W: UiWriter> Agent<W> {
         Ok(task_result)
     }
 
+    // =========================================================================
+    // SESSION MANAGEMENT
+    // =========================================================================
+
     /// Generate a session ID based on the initial prompt
     fn generate_session_id(&self, description: &str) -> String {
         session::generate_session_id(description, self.agent_name.as_deref())
@@ -1123,6 +1139,10 @@ impl<W: UiWriter> Agent<W> {
             }
         }
     }
+
+    // =========================================================================
+    // CONTEXT WINDOW OPERATIONS
+    // =========================================================================
 
     /// Manually trigger context compaction regardless of context window size
     /// Returns Ok(true) if compaction was successful, Ok(false) if it failed
@@ -1535,6 +1555,10 @@ impl<W: UiWriter> Agent<W> {
             if enabled { "enabled" } else { "disabled" }
         );
     }
+
+    // =========================================================================
+    // STREAMING & LLM INTERACTION
+    // =========================================================================
 
     /// Build the final response and prepare for return.
     ///
@@ -2794,6 +2818,10 @@ Skip if nothing new. Be brief."#;
             &state.turn_accumulated_usage,
         ))
     }
+
+    // =========================================================================
+    // TOOL EXECUTION
+    // =========================================================================
 
     pub async fn execute_tool(&mut self, tool_call: &ToolCall) -> Result<String> {
         // Tool tracking is handled by execute_tool_in_dir
