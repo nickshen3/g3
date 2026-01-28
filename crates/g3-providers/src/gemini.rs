@@ -639,7 +639,9 @@ impl LLMProvider for GeminiProvider {
     fn context_window_size(&self) -> Option<u32> {
         // Context window sizes by model
         // https://ai.google.dev/gemini-api/docs/models
-        let size = if self.model.contains("1.5-pro") || self.model.contains("1.5-flash") {
+        let size = if self.model.contains("gemini-3") {
+            1_000_000  // Gemini 3 models (assumed 1M, update when confirmed)
+        } else if self.model.contains("1.5-pro") || self.model.contains("1.5-flash") {
             2_000_000  // Gemini 1.5 models have 2M context
         } else if self.model.contains("2.5-pro") || self.model.contains("2.5-flash") {
             1_000_000  // Gemini 2.5 models have 1M context
