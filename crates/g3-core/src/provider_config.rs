@@ -72,7 +72,7 @@ pub fn resolve_max_tokens(config: &Config, provider_name: &str) -> u32 {
         "anthropic" => 32000,   // Anthropic provider defaults to 32768, we use 32000
         "databricks" => 32000,  // Databricks is passthru to Anthropic, match its defaults
         "openai" => 32000,      // OpenAI models support large outputs
-        "embedded" => 2048,     // Embedded provider defaults to 2048
+        "embedded" => 8192,     // Embedded provider: let provider's effective_max_tokens() handle it
         _ => 16000,             // Generic fallback
     };
     let base = get_max_tokens(config, provider_name).unwrap_or(provider_default);
