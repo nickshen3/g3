@@ -700,6 +700,10 @@ impl LLMProvider for EmbeddedProvider {
     fn temperature(&self) -> f32 {
         self.temperature
     }
+
+    fn context_window_size(&self) -> Option<u32> {
+        Some(self.context_length)
+    }
 }
 
 #[cfg(test)]

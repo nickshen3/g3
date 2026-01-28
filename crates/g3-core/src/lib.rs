@@ -651,24 +651,19 @@ impl<W: UiWriter> Agent<W> {
         let model_name = provider.model();
 
         // Parse provider name to get type and config name
-        let (provider_type, config_name) = provider_config::parse_provider_ref(provider_name);
+        let (provider_type, _config_name) = provider_config::parse_provider_ref(provider_name);
 
         // Use provider-specific context length if available
         let context_length = match provider_type {
             "embedded" | "embedded." => {
-                // For embedded models, use the configured context_length or model-specific defaults
-                if let Some(embedded_config) = config.providers.embedded.get(config_name) {
-                    embedded_config.context_length.unwrap_or_else(|| {
-                        // Model-specific defaults for embedded models
-                        match &embedded_config.model_type.to_lowercase()[..] {
-                            "codellama" => 16384, // CodeLlama supports 16k context
-                            "llama" => 4096,      // Base Llama models
-                            "glm4" => 32768,      // GLM-4 supports 32k context
-                            "mistral" => 8192,    // Mistral models
-                            "qwen" => 32768,      // Qwen2.5 supports 32k context
-                            _ => 4096,            // Conservative default
-                        }
-                    })
+                // For embedded models, query the provider directly for its context window
+                // The provider auto-detects this from the GGUF file
+                if let Some(ctx_size) = provider.context_window_size() {
+                    debug!(
+                        "Using context window size {} from embedded provider",
+                        ctx_size
+                    );
+                    ctx_size
                 } else {
                     config.agent.fallback_default_max_tokens as u32
                 }

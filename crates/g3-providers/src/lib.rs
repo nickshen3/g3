@@ -39,6 +39,12 @@ pub trait LLMProvider: Send + Sync {
 
     /// Get the configured temperature for this provider
     fn temperature(&self) -> f32;
+
+    /// Get the context window size for this provider
+    /// Returns None if the provider doesn't have a fixed context window
+    fn context_window_size(&self) -> Option<u32> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
