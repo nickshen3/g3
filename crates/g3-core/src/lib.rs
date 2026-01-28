@@ -708,6 +708,18 @@ impl<W: UiWriter> Agent<W> {
                     16384 // Conservative default for other Databricks models
                 }
             }
+            "gemini" => {
+                // Gemini models - use provider's context_window_size()
+                if let Some(ctx_size) = provider.context_window_size() {
+                    debug!(
+                        "Using context window size {} from Gemini provider",
+                        ctx_size
+                    );
+                    ctx_size
+                } else {
+                    1_000_000 // Default for Gemini models
+                }
+            }
             _ => config.agent.fallback_default_max_tokens as u32,
         };
 

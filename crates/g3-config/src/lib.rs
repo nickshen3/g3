@@ -46,6 +46,10 @@ pub struct ProvidersConfig {
     #[serde(default)]
     pub embedded: HashMap<String, EmbeddedConfig>,
 
+    /// Named Gemini provider configs
+    #[serde(default)]
+    pub gemini: HashMap<String, GeminiConfig>,
+
     /// Multiple named OpenAI-compatible providers (e.g., openrouter, groq, etc.)
     #[serde(default)]
     pub openai_compatible: HashMap<String, OpenAIConfig>,
@@ -90,6 +94,14 @@ pub struct EmbeddedConfig {
     pub temperature: Option<f32>,
     pub gpu_layers: Option<u32>,
     pub threads: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeminiConfig {
+    pub api_key: String,
+    pub model: String,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,6 +242,7 @@ impl Default for Config {
                 openai: HashMap::new(),
                 databricks: databricks_configs,
                 embedded: HashMap::new(),
+                gemini: HashMap::new(),
                 openai_compatible: HashMap::new(),
             },
             agent: AgentConfig {
@@ -445,11 +458,20 @@ impl Config {
                     );
                 }
             }
+            "gemini" => {
+                if !self.providers.gemini.contains_key(config_name) {
+                    anyhow::bail!(
+                        "Provider config 'gemini.{}' not found. Available: {:?}",
+                        config_name,
+                        self.providers.gemini.keys().collect::<Vec<_>>()
+                    );
+                }
+            }
             _ => {
                 // Check openai_compatible providers
                 if !self.providers.openai_compatible.contains_key(provider_type) {
                     anyhow::bail!(
-                        "Unknown provider type '{}'. Valid types: anthropic, openai, databricks, embedded, or openai_compatible names",
+                        "Unknown provider type '{}'. Valid types: anthropic, openai, databricks, embedded, gemini, or openai_compatible names",
                         provider_type
                     );
                 }
@@ -550,6 +572,18 @@ impl Config {
                         ));
                     }
                 }
+                "gemini" => {
+                    if let Some(ref mut gemini_config) =
+                        config.providers.gemini.get_mut(&config_name)
+                    {
+                        gemini_config.model = model;
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Provider config 'gemini.{}' not found.",
+                            config_name
+                        ));
+                    }
+                }
                 _ => {
                     // Check openai_compatible
                     if let Some(ref mut compat_config) =
@@ -635,6 +669,11 @@ impl Config {
         self.providers.embedded.get(name)
     }
 
+    /// Get Gemini config by name
+    pub fn get_gemini_config(&self, name: &str) -> Option<&GeminiConfig> {
+        self.providers.gemini.get(name)
+    }
+
     /// Get the current default provider's config
     pub fn get_default_provider_config(&self) -> Result<ProviderConfigRef<'_>> {
         let (provider_type, config_name) =
@@ -665,6 +704,12 @@ impl Config {
                 .get(&config_name)
                 .map(ProviderConfigRef::Embedded)
                 .ok_or_else(|| anyhow::anyhow!("Embedded config '{}' not found", config_name)),
+            "gemini" => self
+                .providers
+                .gemini
+                .get(&config_name)
+                .map(ProviderConfigRef::Gemini)
+                .ok_or_else(|| anyhow::anyhow!("Gemini config '{}' not found", config_name)),
             _ => self
                 .providers
                 .openai_compatible
@@ -684,6 +729,7 @@ pub enum ProviderConfigRef<'a> {
     OpenAI(&'a OpenAIConfig),
     Databricks(&'a DatabricksConfig),
     Embedded(&'a EmbeddedConfig),
+    Gemini(&'a GeminiConfig),
     OpenAICompatible(&'a OpenAIConfig),
 }
 

@@ -57,6 +57,7 @@ pub async fn register_providers(
     register_openai_providers(config, providers_to_register, &mut registry)?;
     register_openai_compatible_providers(config, providers_to_register, &mut registry)?;
     register_anthropic_providers(config, providers_to_register, &mut registry)?;
+    register_gemini_providers(config, providers_to_register, &mut registry)?;
     register_databricks_providers(config, providers_to_register, &mut registry).await?;
 
     // Set default provider
@@ -157,6 +158,27 @@ fn register_anthropic_providers(
                 anthropic_config.thinking_budget_tokens,
             )?;
             registry.register(anthropic_provider);
+        }
+    }
+    Ok(())
+}
+
+/// Register Gemini providers from configuration.
+fn register_gemini_providers(
+    config: &Config,
+    providers_to_register: &[String],
+    registry: &mut ProviderRegistry,
+) -> Result<()> {
+    for (name, gemini_config) in &config.providers.gemini {
+        if should_register(providers_to_register, "gemini", name) {
+            let gemini_provider = g3_providers::GeminiProvider::new_with_name(
+                format!("gemini.{}", name),
+                gemini_config.api_key.clone(),
+                Some(gemini_config.model.clone()),
+                gemini_config.max_tokens,
+                gemini_config.temperature,
+            )?;
+            registry.register(gemini_provider);
         }
     }
     Ok(())
