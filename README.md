@@ -115,6 +115,44 @@ These commands give you fine-grained control over context management, allowing y
 - Provider-specific optimizations and feature support
 - Local model support for offline operation
 
+### Embedded Models (Local LLMs)
+
+g3 supports local models via llama.cpp with Metal acceleration on macOS. Here's a performance comparison for **agentic tasks** (multi-step tool-calling workflows):
+
+**Test case**: Comic book repacking - extract CBR/CBZ archives, reorder files preserving page and issue order, repack into single archive. Requires correct sequencing, file handling, and no race conditions.
+
+#### Cloud Models (Baseline)
+| Model | Agentic Score | Notes |
+|-------|---------------|-------|
+| **Claude Opus 4.5** | ⭐⭐⭐⭐⭐ | Flawless execution |
+| Claude Sonnet 4.5 | ⭐⭐⭐⭐ | Good, occasional issues |
+| Claude 4 family | ⭐⭐⭐ | Gets there eventually, needs manual checking |
+
+#### Local Models
+| Model | Size | Speed | Agentic Score | Notes |
+|-------|------|-------|---------------|-------|
+| **Qwen3-32B** (Dense) | 18 GB | Slow | ⭐⭐⭐ | Good reasoning, spotty execution |
+| Qwen3-14B | 8.4 GB | Medium | ⭐⭐ | Understands tasks but makes implementation errors |
+| GLM-4 9B | 5.7 GB | Fast | ⭐⭐ | Quick responses, may struggle with complex tasks |
+| Qwen3-4B | 2.3 GB | Very Fast | ❌ | Generates malformed tool calls - not for agentic use |
+| ~~Qwen3-30B-A3B~~ (MoE) | 17 GB | Very Fast | ❌ | **Avoid** - loops infinitely on tool calls |
+
+**Key findings**:
+- **Dense models** (Qwen3-32B, Qwen3-14B) handle agentic loops correctly
+- **MoE models** (Qwen3-30B-A3B) are fast but don't know when to stop tool-calling
+- **Metal GPU** works well with dense models on Apple Silicon
+- Even the best local models (32B) lag significantly behind Claude Opus 4.5 on complex tasks
+- Local models are best for simpler agentic tasks or when offline/privacy is required
+
+Configuration example:
+```toml
+[providers.embedded.qwen3-big]
+model_path = "~/.g3/models/Qwen_Qwen3-32B-Q4_K_M.gguf"
+model_type = "qwen"
+context_length = 40960
+gpu_layers = 99  # Full GPU offload on Apple Silicon
+```
+
 ### Task Automation
 - Single-shot task execution for quick operations
 - Iterative task mode for complex, multi-step workflows
