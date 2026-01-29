@@ -214,22 +214,22 @@ impl<W: UiWriter> Agent<W> {
         Self::new_with_mode(config, ui_writer, true, false).await
     }
 
-    pub async fn new_with_readme_and_quiet(
+    pub async fn new_with_project_context_and_quiet(
         config: Config,
         ui_writer: W,
-        readme_content: Option<String>,
+        project_context: Option<String>,
         quiet: bool,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, false, readme_content, quiet, None).await
+        Self::new_with_mode_and_project_context(config, ui_writer, false, project_context, quiet, None).await
     }
 
-    pub async fn new_autonomous_with_readme_and_quiet(
+    pub async fn new_autonomous_with_project_context_and_quiet(
         config: Config,
         ui_writer: W,
-        readme_content: Option<String>,
+        project_context: Option<String>,
         quiet: bool,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, true, readme_content, quiet, None).await
+        Self::new_with_mode_and_project_context(config, ui_writer, true, project_context, quiet, None).await
     }
 
     /// Create a new agent with a custom system prompt (for agent mode)
@@ -238,13 +238,13 @@ impl<W: UiWriter> Agent<W> {
         config: Config,
         ui_writer: W,
         custom_system_prompt: String,
-        readme_content: Option<String>,
+        project_context: Option<String>,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(
+        Self::new_with_mode_and_project_context(
             config,
             ui_writer,
             false,
-            readme_content,
+            project_context,
             false,
             Some(custom_system_prompt),
         )
@@ -261,17 +261,17 @@ impl<W: UiWriter> Agent<W> {
         ui_writer: W,
         providers: ProviderRegistry,
     ) -> Result<Self> {
-        Self::new_for_test_with_readme(config, ui_writer, providers, None).await
+        Self::new_for_test_with_project_context(config, ui_writer, providers, None).await
     }
 
-    /// Create a new agent for testing with README content.
+    /// Create a new agent for testing with project context.
     /// This allows tests to verify context window structure with combined content.
     #[doc(hidden)]
-    pub async fn new_for_test_with_readme(
+    pub async fn new_for_test_with_project_context(
         config: Config,
         ui_writer: W,
         providers: ProviderRegistry,
-        readme_content: Option<String>,
+        project_context: Option<String>,
     ) -> Result<Self> {
         use crate::context_window::ContextWindow;
         use crate::prompts::get_system_prompt_for_native;
@@ -285,10 +285,10 @@ impl<W: UiWriter> Agent<W> {
         let system_message = Message::new(MessageRole::System, system_prompt);
         context_window.add_message(system_message);
 
-        // Add README content if provided
-        if let Some(readme) = readme_content {
-            let readme_message = Message::new(MessageRole::System, readme);
-            context_window.add_message(readme_message);
+        // Add project context if provided
+        if let Some(context) = project_context {
+            let context_message = Message::new(MessageRole::System, context);
+            context_window.add_message(context_message);
         }
 
         // For tests: auto_compact=false, is_autonomous=false, quiet=true, no computer_controller
@@ -310,14 +310,14 @@ impl<W: UiWriter> Agent<W> {
         is_autonomous: bool,
         quiet: bool,
     ) -> Result<Self> {
-        Self::new_with_mode_and_readme(config, ui_writer, is_autonomous, None, quiet, None).await
+        Self::new_with_mode_and_project_context(config, ui_writer, is_autonomous, None, quiet, None).await
     }
 
-    async fn new_with_mode_and_readme(
+    async fn new_with_mode_and_project_context(
         config: Config,
         ui_writer: W,
         is_autonomous: bool,
-        readme_content: Option<String>,
+        project_context: Option<String>,
         quiet: bool,
         custom_system_prompt: Option<String>,
     ) -> Result<Self> {
@@ -361,10 +361,10 @@ impl<W: UiWriter> Agent<W> {
         let system_message = Message::new(MessageRole::System, system_prompt);
         context_window.add_message(system_message);
 
-        // If README content is provided, add it as a second system message (after the main system prompt)
-        if let Some(readme) = readme_content {
-            let readme_message = Message::new(MessageRole::System, readme);
-            context_window.add_message(readme_message);
+        // If project context is provided, add it as a second system message (after the main system prompt)
+        if let Some(context) = project_context {
+            let context_message = Message::new(MessageRole::System, context);
+            context_window.add_message(context_message);
         }
 
         // NOTE: TODO lists are now session-scoped and stored in .g3/sessions/<session_id>/todo.g3.md

@@ -283,8 +283,8 @@ Format this as a detailed but concise summary that can be used to resume the con
         if let Some(system_prompt) = preserved.system_prompt {
             self.add_message(system_prompt);
         }
-        if let Some(readme) = preserved.readme {
-            self.add_message(readme);
+        if let Some(project_context) = preserved.project_context {
+            self.add_message(project_context);
         }
 
         // Add ACD stub if provided (before summary so LLM knows about dehydrated context)
@@ -322,10 +322,10 @@ Format this as a detailed but concise summary that can be used to resume the con
     fn extract_preserved_messages(&self) -> PreservedMessages {
         let system_prompt = self.conversation_history.first().cloned();
 
-        let readme = self.conversation_history.get(1).and_then(|msg| {
+        // Look for project context (AGENTS.md, memory, etc.) in the second message
+        let project_context = self.conversation_history.get(1).and_then(|msg| {
             if matches!(msg.role, MessageRole::System)
-                && (msg.content.contains("Project README")
-                    || msg.content.contains("Agent Configuration"))
+                && msg.content.contains("Agent Configuration")
             {
                 Some(msg.clone())
             } else {
@@ -343,7 +343,7 @@ Format this as a detailed but concise summary that can be used to resume the con
 
         PreservedMessages {
             system_prompt,
-            readme,
+            project_context,
             last_assistant_message,
         }
     }
@@ -740,7 +740,7 @@ Format this as a detailed but concise summary that can be used to resume the con
 /// Messages preserved across compaction.
 struct PreservedMessages {
     system_prompt: Option<Message>,
-    readme: Option<Message>,
+    project_context: Option<Message>,
     last_assistant_message: Option<Message>,
 }
 

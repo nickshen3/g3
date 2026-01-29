@@ -15,7 +15,7 @@ use tempfile::TempDir;
 async fn create_test_agent(temp_dir: &TempDir) -> Agent<NullUiWriter> {
     std::env::set_current_dir(temp_dir.path()).unwrap();
     let config = Config::default();
-    Agent::new_with_readme_and_quiet(config, NullUiWriter, None, true)
+    Agent::new_with_project_context_and_quiet(config, NullUiWriter, None, true)
         .await
         .unwrap()
 }
@@ -24,7 +24,7 @@ async fn create_test_agent(temp_dir: &TempDir) -> Agent<NullUiWriter> {
 async fn create_agent_mode_agent(temp_dir: &TempDir, agent_name: &str) -> Agent<NullUiWriter> {
     std::env::set_current_dir(temp_dir.path()).unwrap();
     let config = Config::default();
-    let mut agent = Agent::new_with_readme_and_quiet(config, NullUiWriter, None, true)
+    let mut agent = Agent::new_with_project_context_and_quiet(config, NullUiWriter, None, true)
         .await
         .unwrap();
     agent.set_agent_mode(agent_name);

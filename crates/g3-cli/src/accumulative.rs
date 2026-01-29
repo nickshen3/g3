@@ -157,7 +157,7 @@ pub async fn run_accumulative_mode(
                 // Create agent for this autonomous run
                 let ui_writer = ConsoleUiWriter::new();
                 ui_writer.set_workspace_path(workspace_dir.clone());
-                let agent = Agent::new_autonomous_with_readme_and_quiet(
+                let agent = Agent::new_autonomous_with_project_context_and_quiet(
                     config.clone(),
                     ui_writer,
                     combined_content.clone(),
@@ -291,7 +291,7 @@ async fn handle_command(
             // Create agent for interactive mode with requirements context
             let ui_writer = ConsoleUiWriter::new();
             ui_writer.set_workspace_path(workspace_dir.clone());
-            let agent = Agent::new_with_readme_and_quiet(
+            let agent = Agent::new_with_project_context_and_quiet(
                 config,
                 ui_writer,
                 chat_combined_content.clone(),

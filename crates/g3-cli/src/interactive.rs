@@ -15,7 +15,7 @@ use crate::commands::handle_command;
 use crate::display::{LoadedContent, print_loaded_status, print_project_heading, print_workspace_path};
 use crate::g3_status::{G3Status, Status};
 use crate::project::Project;
-use crate::project_files::extract_readme_heading;
+use crate::project_files::extract_project_heading;
 use crate::simple_output::SimpleOutput;
 use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
@@ -153,11 +153,9 @@ pub async fn run_interactive<W: UiWriter>(
         if let Some(ref content) = combined_content {
             let loaded = LoadedContent::from_combined_content(content);
 
-            // Extract project name if README is loaded
-            if loaded.has_readme {
-                if let Some(name) = extract_readme_heading(content) {
-                    print_project_heading(&name);
-                }
+            // Extract project name from AGENTS.md or memory
+            if let Some(name) = extract_project_heading(content) {
+                print_project_heading(&name);
             }
 
             print_loaded_status(&loaded);

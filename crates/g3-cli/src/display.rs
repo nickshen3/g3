@@ -109,7 +109,6 @@ pub fn print_workspace_path(workspace_path: &Path) {
 /// Information about what project files were loaded.
 #[derive(Default)]
 pub struct LoadedContent {
-    pub has_readme: bool,
     pub has_agents: bool,
     pub has_memory: bool,
     pub include_prompt_filename: Option<String>,
@@ -117,9 +116,8 @@ pub struct LoadedContent {
 
 impl LoadedContent {
     /// Create from explicit boolean flags.
-    pub fn new(has_readme: bool, has_agents: bool, has_memory: bool, include_prompt_filename: Option<String>) -> Self {
+    pub fn new(has_agents: bool, has_memory: bool, include_prompt_filename: Option<String>) -> Self {
         Self {
-            has_readme,
             has_agents,
             has_memory,
             include_prompt_filename,
@@ -129,7 +127,6 @@ impl LoadedContent {
     /// Create from combined content string by detecting markers.
     pub fn from_combined_content(content: &str) -> Self {
         Self {
-            has_readme: content.contains("Project README"),
             has_agents: content.contains("Agent Configuration"),
             has_memory: content.contains("=== Workspace Memory"),
             include_prompt_filename: if content.contains("Included Prompt") {
@@ -151,15 +148,12 @@ impl LoadedContent {
 
     /// Check if any content was loaded.
     pub fn has_any(&self) -> bool {
-        self.has_readme || self.has_agents || self.has_memory || self.include_prompt_filename.is_some()
+        self.has_agents || self.has_memory || self.include_prompt_filename.is_some()
     }
 
     /// Build a list of loaded item names in load order.
     pub fn to_loaded_items(&self) -> Vec<String> {
         let mut items = Vec::new();
-        if self.has_readme {
-            items.push("README".to_string());
-        }
         if self.has_agents {
             items.push("AGENTS.md".to_string());
         }
@@ -232,9 +226,8 @@ mod tests {
 
     #[test]
     fn test_loaded_content_from_combined() {
-        let content = "Project README\nAgent Configuration\n=== Workspace Memory";
+        let content = "Agent Configuration\n=== Workspace Memory";
         let loaded = LoadedContent::from_combined_content(content);
-        assert!(loaded.has_readme);
         assert!(loaded.has_agents);
         assert!(loaded.has_memory);
         assert!(loaded.include_prompt_filename.is_none());
@@ -242,23 +235,22 @@ mod tests {
 
     #[test]
     fn test_loaded_content_with_include_prompt() {
-        let content = "Project README\nIncluded Prompt";
+        let content = "Agent Configuration\nIncluded Prompt";
         let loaded = LoadedContent::from_combined_content(content)
             .with_include_prompt_filename(Some("custom.md".to_string()));
-        assert!(loaded.has_readme);
+        assert!(loaded.has_agents);
         assert_eq!(loaded.include_prompt_filename, Some("custom.md".to_string()));
     }
 
     #[test]
     fn test_loaded_content_to_items_order() {
         let loaded = LoadedContent {
-            has_readme: true,
             has_agents: true,
             has_memory: true,
             include_prompt_filename: Some("prompt.md".to_string()),
         };
         let items = loaded.to_loaded_items();
-        assert_eq!(items, vec!["README", "AGENTS.md", "prompt.md", "Memory"]);
+        assert_eq!(items, vec!["AGENTS.md", "prompt.md", "Memory"]);
     }
 
     #[test]
@@ -266,11 +258,11 @@ mod tests {
         let empty = LoadedContent::default();
         assert!(!empty.has_any());
 
-        let with_readme = LoadedContent {
-            has_readme: true,
+        let with_agents = LoadedContent {
+            has_agents: true,
             ..Default::default()
         };
-        assert!(with_readme.has_any());
+        assert!(with_agents.has_any());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Project file reading utilities.
 //!
-//! Reads AGENTS.md, README.md, and workspace memory files from the workspace.
+//! Reads AGENTS.md and workspace memory files from the workspace.
 
 use std::path::Path;
 use tracing::error;
@@ -24,41 +24,6 @@ pub fn read_agents_config(workspace_dir: &Path) -> Option<String> {
                 }
                 Err(e) => {
                     error!("Failed to read {}: {}", name, e);
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Read README from the workspace directory if it's a project directory.
-/// Returns formatted content with emoji prefix, or None if not found.
-pub fn read_project_readme(workspace_dir: &Path) -> Option<String> {
-    // Only read README if we're in a project directory
-    let is_project_dir = workspace_dir.join(".g3").exists() || workspace_dir.join(".git").exists();
-    if !is_project_dir {
-        return None;
-    }
-
-    const README_NAMES: &[&str] = &[
-        "README.md",
-        "README.MD",
-        "readme.md",
-        "Readme.md",
-        "README",
-        "README.txt",
-        "README.rst",
-    ];
-
-    for name in README_NAMES {
-        let path = workspace_dir.join(name);
-        if path.exists() {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    return Some(format!("📚 Project README (from {}):{}\n{}", name, "\n", content));
-                }
-                Err(e) => {
-                    error!("Failed to read {}: {}", path.display(), e);
                 }
             }
         }
@@ -110,15 +75,14 @@ pub fn read_include_prompt(path: Option<&std::path::Path>) -> Option<String> {
     }
 }
 
-/// Combine AGENTS.md, README, and memory content into a single string.
+/// Combine AGENTS.md and memory content into a single string for project context.
 ///
 /// Returns None if all inputs are None, otherwise joins non-None parts with double newlines.
 /// Prepends the current working directory to help the LLM avoid path hallucinations.
 /// 
-/// Order: Working Directory → AGENTS.md → README → Language prompts → Include prompt → Memory
+/// Order: Working Directory → AGENTS.md → Language prompts → Include prompt → Memory
 pub fn combine_project_content(
     agents_content: Option<String>,
-    readme_content: Option<String>,
     memory_content: Option<String>,
     language_content: Option<String>,
     include_prompt: Option<String>,
@@ -127,10 +91,10 @@ pub fn combine_project_content(
     // Always include working directory to prevent LLM from hallucinating paths
     let cwd_info = format!("📂 Working Directory: {}", workspace_dir.display());
     
-    // Order: cwd → agents → readme → language → include_prompt → memory
+    // Order: cwd → agents → language → include_prompt → memory
     // Include prompt comes BEFORE memory so memory is always last (most recent context)
     let parts: Vec<String> = [
-        Some(cwd_info), agents_content, readme_content, language_content, include_prompt, memory_content
+        Some(cwd_info), agents_content, language_content, include_prompt, memory_content
     ]
         .into_iter()
         .flatten()
@@ -152,26 +116,19 @@ fn format_size(len: usize) -> String {
     }
 }
 
-/// Extract the first H1 heading from README content for display.
-pub fn extract_readme_heading(readme_content: &str) -> Option<String> {
-    // Find where the actual README content starts (after any prefix markers)
-    let readme_start = readme_content.find("📚 Project README (from");
-
-    let content_to_search = match readme_start {
-        Some(pos) => &readme_content[pos..],
-        None => readme_content,
-    };
-
-    // Skip the prefix line and collect content
-    let content: String = content_to_search
-        .lines()
-        .filter(|line| !line.starts_with("📚 Project README"))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // Look for H1 heading
-    for line in content.lines() {
+/// Extract the first H1 heading from project context content for display.
+/// Looks for H1 headings in AGENTS.md or memory content.
+pub fn extract_project_heading(project_context: &str) -> Option<String> {
+    // Look for H1 heading in the content
+    // Skip prefix lines (emoji markers)
+    for line in project_context.lines() {
         let trimmed = line.trim();
+        
+        // Skip emoji prefix lines
+        if trimmed.starts_with("📂") || trimmed.starts_with("🤖") || trimmed.starts_with("🔧") || trimmed.starts_with("📎") || trimmed.starts_with("===") {
+            continue;
+        }
+        
         if let Some(stripped) = trimmed.strip_prefix("# ") {
             let title = stripped.trim();
             if !title.is_empty() {
@@ -181,7 +138,7 @@ pub fn extract_readme_heading(readme_content: &str) -> Option<String> {
     }
 
     // Fallback: first non-empty, non-metadata line
-    find_fallback_title(&content)
+    find_fallback_title(project_context)
 }
 
 /// Find a fallback title from the first few lines of content.
@@ -190,6 +147,9 @@ fn find_fallback_title(content: &str) -> Option<String> {
         let trimmed = line.trim();
         if !trimmed.is_empty()
             && !trimmed.starts_with("📚")
+            && !trimmed.starts_with("📂")
+            && !trimmed.starts_with("🤖")
+            && !trimmed.starts_with("🔧")
             && !trimmed.starts_with('#')
             && !trimmed.starts_with("==")
             && !trimmed.starts_with("--")
@@ -216,15 +176,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_readme_heading() {
+    fn test_extract_project_heading() {
         let content = "# My Project\n\nSome description";
-        assert_eq!(extract_readme_heading(content), Some("My Project".to_string()));
+        assert_eq!(extract_project_heading(content), Some("My Project".to_string()));
     }
 
     #[test]
-    fn test_extract_readme_heading_with_prefix() {
-        let content = "📚 Project README (from README.md):\n# Cool App\n\nDescription";
-        assert_eq!(extract_readme_heading(content), Some("Cool App".to_string()));
+    fn test_extract_project_heading_with_agents_prefix() {
+        let content = "🤖 Agent Configuration (from AGENTS.md):\n# Cool App\n\nDescription";
+        assert_eq!(extract_project_heading(content), Some("Cool App".to_string()));
     }
 
     #[test]
@@ -256,7 +216,6 @@ mod tests {
         let workspace = std::path::PathBuf::from("/test/workspace");
         let result = combine_project_content(
             Some("agents".to_string()),
-            Some("readme".to_string()),
             Some("memory".to_string()),
             Some("language".to_string()),
             None, // include_prompt
@@ -266,7 +225,6 @@ mod tests {
         let content = result.unwrap();
         assert!(content.contains("📂 Working Directory: /test/workspace"));
         assert!(content.contains("agents"));
-        assert!(content.contains("readme"));
         assert!(content.contains("memory"));
         assert!(content.contains("language"));
     }
@@ -274,17 +232,17 @@ mod tests {
     #[test]
     fn test_combine_project_content_partial() {
         let workspace = std::path::PathBuf::from("/test/workspace");
-        let result = combine_project_content(None, Some("readme".to_string()), None, None, None, &workspace);
+        let result = combine_project_content(None, Some("memory".to_string()), None, None, &workspace);
         assert!(result.is_some());
         let content = result.unwrap();
         assert!(content.contains("📂 Working Directory: /test/workspace"));
-        assert!(content.contains("readme"));
+        assert!(content.contains("memory"));
     }
 
     #[test]
     fn test_combine_project_content_all_none() {
         let workspace = std::path::PathBuf::from("/test/workspace");
-        let result = combine_project_content(None, None, None, None, None, &workspace);
+        let result = combine_project_content(None, None, None, None, &workspace);
         // Now always returns Some because we always include the working directory
         assert!(result.is_some());
         assert!(result.unwrap().contains("📂 Working Directory: /test/workspace"));
@@ -295,7 +253,6 @@ mod tests {
         let workspace = std::path::PathBuf::from("/test/workspace");
         let result = combine_project_content(
             Some("agents".to_string()),
-            Some("readme".to_string()),
             Some("memory".to_string()),
             Some("language".to_string()),
             Some("include_prompt".to_string()),
@@ -307,12 +264,11 @@ mod tests {
     }
 
     #[test]
-    fn test_combine_project_content_order_include_before_memory() {
-        // Verify that include_prompt appears BEFORE memory in the combined content
+    fn test_combine_project_content_order() {
+        // Verify correct ordering: agents < language < include_prompt < memory
         let workspace = std::path::PathBuf::from("/test/workspace");
         let result = combine_project_content(
             Some("AGENTS_CONTENT".to_string()),
-            Some("README_CONTENT".to_string()),
             Some("MEMORY_CONTENT".to_string()),
             Some("LANGUAGE_CONTENT".to_string()),
             Some("INCLUDE_PROMPT_CONTENT".to_string()),
@@ -322,14 +278,12 @@ mod tests {
         
         // Find positions of each section
         let agents_pos = content.find("AGENTS_CONTENT").expect("agents not found");
-        let readme_pos = content.find("README_CONTENT").expect("readme not found");
         let language_pos = content.find("LANGUAGE_CONTENT").expect("language not found");
         let include_pos = content.find("INCLUDE_PROMPT_CONTENT").expect("include_prompt not found");
         let memory_pos = content.find("MEMORY_CONTENT").expect("memory not found");
         
-        // Verify order: agents < readme < language < include_prompt < memory
-        assert!(agents_pos < readme_pos, "agents should come before readme");
-        assert!(readme_pos < language_pos, "readme should come before language");
+        // Verify order: agents < language < include_prompt < memory
+        assert!(agents_pos < language_pos, "agents should come before language");
         assert!(language_pos < include_pos, "language should come before include_prompt");
         assert!(include_pos < memory_pos, "include_prompt should come before memory");
     }
@@ -340,7 +294,6 @@ mod tests {
         let workspace = std::path::PathBuf::from("/test/workspace");
         let result = combine_project_content(
             Some("AGENTS".to_string()),
-            Some("README".to_string()),
             Some("MEMORY".to_string()),
             Some("LANGUAGE".to_string()),
             None, // no include_prompt

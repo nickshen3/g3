@@ -501,7 +501,7 @@ async fn execute_coach_turn(
     let ui_writer = ConsoleUiWriter::new();
     ui_writer.set_workspace_path(project.workspace().to_path_buf());
     let mut coach_agent =
-        match Agent::new_autonomous_with_readme_and_quiet(coach_config, ui_writer, None, quiet)
+        match Agent::new_autonomous_with_project_context_and_quiet(coach_config, ui_writer, None, quiet)
             .await
         {
             Ok(a) => a,

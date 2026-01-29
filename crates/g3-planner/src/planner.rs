@@ -608,7 +608,7 @@ pub async fn run_coach_player_loop(
         
         let player_config = g3_config.for_player()?;
         let ui_writer = llm::PlannerUiWriter::new();
-        let mut player_agent = Agent::new_autonomous_with_readme_and_quiet(
+        let mut player_agent = Agent::new_autonomous_with_project_context_and_quiet(
             player_config,
             ui_writer,
             None,
@@ -666,7 +666,7 @@ pub async fn run_coach_player_loop(
         
         let coach_config = g3_config.for_coach()?;
         let coach_ui_writer = llm::PlannerUiWriter::new();
-        let mut coach_agent = Agent::new_autonomous_with_readme_and_quiet(
+        let mut coach_agent = Agent::new_autonomous_with_project_context_and_quiet(
             coach_config,
             coach_ui_writer,
             None,

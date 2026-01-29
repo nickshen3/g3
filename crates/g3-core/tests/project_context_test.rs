@@ -1,6 +1,6 @@
 //! Integration tests for project context loading and ordering.
 //!
-//! Tests that the context window has the correct structure when projects are loaded.
+//! Tests that the context window has the correct structure when project context is loaded.
 //! Also tests that project content survives compaction.
 
 use g3_core::{
@@ -11,7 +11,7 @@ use g3_config::Config;
 use g3_providers::{mock::MockProvider, ProviderRegistry, MockResponse, MessageRole};
 
 /// Helper to create a test agent with mock provider
-async fn create_test_agent(readme_content: Option<String>) -> Agent<NullUiWriter> {
+async fn create_test_agent(project_context: Option<String>) -> Agent<NullUiWriter> {
     let config = Config::default();
     let provider = MockProvider::new()
         .with_response(MockResponse::text("Test response"));
@@ -19,7 +19,7 @@ async fn create_test_agent(readme_content: Option<String>) -> Agent<NullUiWriter
     let mut registry = ProviderRegistry::new();
     registry.register(provider);
     
-    Agent::new_for_test_with_readme(config, NullUiWriter, registry, readme_content)
+    Agent::new_for_test_with_project_context(config, NullUiWriter, registry, project_context)
         .await
         .expect("Failed to create test agent")
 }
@@ -337,7 +337,7 @@ async fn create_agent_with_mock_and_readme(
     let mut registry = ProviderRegistry::new();
     registry.register(provider);
     
-    Agent::new_for_test_with_readme(config, NullUiWriter, registry, readme_content)
+    Agent::new_for_test_with_project_context(config, NullUiWriter, registry, readme_content)
         .await
         .expect("Failed to create test agent")
 }

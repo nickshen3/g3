@@ -357,7 +357,7 @@ pub async fn call_refinement_llm_with_tools(
     project.enter_workspace()?;
 
     // Create agent - not autonomous mode, just regular agent with tools
-    let mut agent = Agent::new_with_readme_and_quiet(
+    let mut agent = Agent::new_with_project_context_and_quiet(
         planner_config,
         ui_writer,
         Some(system_prompt),

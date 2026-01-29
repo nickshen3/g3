@@ -104,9 +104,9 @@ fn test_reset_with_summary_and_stub_no_stub() {
     assert!(has_summary, "Should have summary");
 }
 
-/// Test that README message is preserved during reset
+/// Test that project context message is preserved during reset
 #[test]
-fn test_reset_preserves_readme() {
+fn test_reset_preserves_project_context() {
     let mut context = ContextWindow::new(100000);
     
     // Add system prompt
@@ -115,10 +115,10 @@ fn test_reset_preserves_readme() {
         "You are a helpful assistant.".to_string(),
     ));
     
-    // Add README message (second system message with specific content)
+    // Add project context message (second system message with Agent Configuration)
     context.add_message(Message::new(
         MessageRole::System,
-        "Project README: This is a test project.".to_string(),
+        "🤖 Agent Configuration (from AGENTS.md):\nTest agent config.".to_string(),
     ));
     
     // Add conversation
@@ -133,11 +133,11 @@ fn test_reset_preserves_readme() {
         Some(stub),
     );
     
-    // README should be preserved
-    let has_readme = context.conversation_history.iter().any(|m| 
-        m.content.contains("Project README")
+    // Project context should be preserved
+    let has_project_context = context.conversation_history.iter().any(|m| 
+        m.content.contains("Agent Configuration")
     );
-    assert!(has_readme, "README message should be preserved");
+    assert!(has_project_context, "Project context message should be preserved");
 }
 
 /// Test fragment chain integrity

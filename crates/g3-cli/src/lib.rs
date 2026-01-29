@@ -39,7 +39,7 @@ use accumulative::run_accumulative_mode;
 use agent_mode::run_agent_mode;
 use autonomous::run_autonomous;
 use interactive::run_interactive;
-use project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory, read_project_readme};
+use project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory};
 use simple_output::SimpleOutput;
 use ui_writer_impl::ConsoleUiWriter;
 use g3_core::ui_writer::UiWriter;
@@ -109,7 +109,6 @@ pub async fn run() -> Result<()> {
 
     // Load project context files
     let agents_content = read_agents_config(&workspace_dir);
-    let readme_content = read_project_readme(&workspace_dir);
     let memory_content = read_workspace_memory(&workspace_dir);
     let language_content = language_prompts::get_language_prompts_for_workspace(&workspace_dir);
     let include_prompt = read_include_prompt(cli.include_prompt.as_deref());
@@ -124,8 +123,8 @@ pub async fn run() -> Result<()> {
     // Load configuration with CLI overrides
     let config = load_config_with_cli_overrides(&cli)?;
 
-    // Combine AGENTS.md, README, and memory content
-    let combined_content = combine_project_content(agents_content, readme_content, memory_content, language_content, include_prompt, &workspace_dir);
+    // Combine AGENTS.md and memory content
+    let combined_content = combine_project_content(agents_content, memory_content, language_content, include_prompt, &workspace_dir);
 
     run_console_mode(cli, config, project, combined_content, workspace_dir).await
 }
@@ -171,7 +170,7 @@ async fn run_console_mode(
     ui_writer.set_workspace_path(workspace_dir.clone());
 
     let mut agent = if cli.autonomous {
-        Agent::new_autonomous_with_readme_and_quiet(
+        Agent::new_autonomous_with_project_context_and_quiet(
             config.clone(),
             ui_writer,
             combined_content.clone(),
@@ -179,7 +178,7 @@ async fn run_console_mode(
         )
         .await?
     } else {
-        Agent::new_with_readme_and_quiet(
+        Agent::new_with_project_context_and_quiet(
             config.clone(),
             ui_writer,
             combined_content.clone(),

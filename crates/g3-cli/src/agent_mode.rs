@@ -7,7 +7,7 @@ use tracing::debug;
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
 
-use crate::project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory, read_project_readme};
+use crate::project_files::{combine_project_content, read_agents_config, read_include_prompt, read_workspace_memory};
 use crate::display::{LoadedContent, print_loaded_status, print_workspace_path};
 use crate::language_prompts::{get_language_prompts_for_workspace, get_agent_language_prompts_for_workspace_with_langs};
 use crate::simple_output::SimpleOutput;
@@ -115,9 +115,8 @@ pub async fn run_agent_mode(
     // Note: allow_multiple_tool_calls parameter is deprecated but kept for API compatibility
     let system_prompt = get_agent_system_prompt(&agent_prompt, true);
 
-    // Load AGENTS.md, README, and memory - same as normal mode
+    // Load AGENTS.md and memory - same as normal mode
     let agents_content_opt = read_agents_config(&workspace_dir);
-    let readme_content_opt = read_project_readme(&workspace_dir);
     let memory_content_opt = read_workspace_memory(&workspace_dir);
 
     // Read include prompt early so we can show it in the status line
@@ -129,7 +128,6 @@ pub async fn run_agent_mode(
         .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().to_string());
     let loaded = LoadedContent::new(
-        readme_content_opt.is_some(),
         agents_content_opt.is_some(),
         memory_content_opt.is_some(),
         include_filename,
@@ -164,7 +162,6 @@ pub async fn run_agent_mode(
     // Combine all content for the agent's context
     let combined_content = combine_project_content(
         agents_content_opt,
-        readme_content_opt,
         memory_content_opt,
         language_content,
         include_prompt,

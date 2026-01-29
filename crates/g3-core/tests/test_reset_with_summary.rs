@@ -54,18 +54,18 @@ fn test_reset_with_summary_preserves_system_prompt() {
     assert!(has_user_msg, "Should have the latest user message");
 }
 
-/// Test that reset_with_summary preserves README message if present
+/// Test that reset_with_summary preserves project context message if present
 #[test]
-fn test_reset_with_summary_preserves_readme() {
+fn test_reset_with_summary_preserves_project_context() {
     let mut context = ContextWindow::new(10000);
 
     // Add the system prompt as the first message
     let system_prompt = "You are G3, an AI programming agent...";
     context.add_message(Message::new(MessageRole::System, system_prompt.to_string()));
 
-    // Add README as second system message
-    let readme_content = "# Project README\n\nThis is a test project.";
-    context.add_message(Message::new(MessageRole::System, readme_content.to_string()));
+    // Add project context as second system message (with Agent Configuration marker)
+    let project_context = "🤖 Agent Configuration (from AGENTS.md):\n\nTest agent config.";
+    context.add_message(Message::new(MessageRole::System, project_context.to_string()));
 
     // Add some conversation history
     context.add_message(Message::new(MessageRole::User, "Task: Write a function".to_string()));
@@ -85,15 +85,15 @@ fn test_reset_with_summary_preserves_readme() {
         "First message should be the system prompt"
     );
 
-    // Verify the README was preserved as the second message
+    // Verify the project context was preserved as the second message
     let second_message = &context.conversation_history[1];
     assert!(
         matches!(second_message.role, MessageRole::System),
         "Second message should be a System message"
     );
     assert!(
-        second_message.content.contains("Project README"),
-        "Second message should be the README"
+        second_message.content.contains("Agent Configuration"),
+        "Second message should be the project context"
     );
 }
 
