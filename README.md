@@ -133,7 +133,7 @@ g3 supports local models via llama.cpp with Metal acceleration on macOS. Here's 
 |-------|------|-------|---------------|-------|
 | ~~Qwen3-32B~~ (Dense) | 18 GB | Slow | ❌ | Good reasoning, but flails on execution and crashes |
 | Qwen3-14B | 8.4 GB | Medium | ⭐⭐ | Understands tasks but makes implementation errors |
-| ~~GLM-4 9B~~ | 5.7 GB | Fast | ❌ | Uses incompatible native tool format, not JSON |
+| GLM-4 9B | 5.7 GB | Fast | ⭐⭐ | Works with adapter (strips code fences) |
 | Qwen3-4B | 2.3 GB | Very Fast | ❌ | Generates malformed tool calls - not for agentic use |
 | ~~Qwen3-30B-A3B~~ (MoE) | 17 GB | Very Fast | ❌ | **Avoid** - loops infinitely on tool calls |
 

@@ -82,6 +82,8 @@ fn suppress_llama_logging() {
 // Provider Struct
 // ============================================================================
 
+use super::adapters::create_adapter_for_model;
+
 pub struct EmbeddedProvider {
     name: String,
     model: Arc<LlamaModel>,
@@ -540,8 +542,12 @@ impl LLMProvider for EmbeddedProvider {
         let backend = self.backend.clone();
         let context_length = self.context_length;
         let threads = self.threads;
+        let model_type = self.model_type.clone();
 
         tokio::task::spawn_blocking(move || {
+            // Create adapter for model-specific tool format transformation (e.g., GLM)
+            let mut adapter = create_adapter_for_model(&model_type);
+
             let mut prepared = match prepare_context(
                 &model,
                 &backend,
@@ -584,9 +590,17 @@ impl LLMProvider for EmbeddedProvider {
                     break;
                 }
 
-                // Stream the token
-                if tx.blocking_send(Ok(make_text_chunk(token_str))).is_err() {
-                    return; // Receiver dropped
+                // Stream the token (through adapter if present)
+                let output_text = if let Some(ref mut adapt) = adapter {
+                    let output = adapt.process_chunk(&token_str);
+                    output.emit
+                } else {
+                    token_str
+                };
+                if !output_text.is_empty() {
+                    if tx.blocking_send(Ok(make_text_chunk(output_text))).is_err() {
+                        return; // Receiver dropped
+                    }
                 }
 
                 if token_count >= params.max_tokens {
@@ -606,6 +620,16 @@ impl LLMProvider for EmbeddedProvider {
                 if let Err(e) = prepared.ctx.decode(&mut prepared.batch) {
                     error!("Failed to decode: {:?}", e);
                     break;
+                }
+            }
+
+            // Flush any remaining content from the adapter
+            if let Some(ref mut adapt) = adapter {
+                let final_output = adapt.flush();
+                if !final_output.emit.is_empty() {
+                    if tx.blocking_send(Ok(make_text_chunk(final_output.emit))).is_err() {
+                        return;
+                    }
                 }
             }
 
