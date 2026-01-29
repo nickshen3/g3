@@ -255,6 +255,7 @@ pub async fn run_agent_mode(
             &workspace_dir,
             new_session,
             Some(agent_name),  // agent name for prompt (e.g., "butler>")
+            None, // initial_project (not supported in agent mode yet)
         )
         .await;
     }

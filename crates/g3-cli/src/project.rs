@@ -3,6 +3,7 @@
 //! Projects allow loading context from a specific project directory that persists
 //! in the system message and survives compaction/dehydration.
 
+use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
 /// Represents an active project with its loaded content.
@@ -94,6 +95,45 @@ impl Project {
             .collect::<Vec<_>>()
             .join("  ")
     }
+}
+
+/// Load and validate a project from a path string.
+///
+/// This is the shared logic used by both `--project` CLI flag and `/project` command.
+/// It handles:
+/// - Tilde expansion for home directory
+/// - Validation that path is absolute
+/// - Validation that path exists
+/// - Loading project files
+///
+/// Returns the loaded Project or an error with a user-friendly message.
+pub fn load_and_validate_project(project_path_str: &str, workspace_dir: &Path) -> Result<Project> {
+    // Expand tilde if present
+    let project_path = if project_path_str.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            home.join(&project_path_str[2..])
+        } else {
+            PathBuf::from(project_path_str)
+        }
+    } else {
+        PathBuf::from(project_path_str)
+    };
+
+    // Validate path is absolute
+    if !project_path.is_absolute() {
+        return Err(anyhow!(
+            "Project path must be absolute (e.g., /Users/name/projects/myproject)"
+        ));
+    }
+
+    // Validate path exists
+    if !project_path.exists() {
+        return Err(anyhow!("Project path does not exist: {}", project_path.display()));
+    }
+
+    // Load the project
+    Project::load(&project_path, workspace_dir)
+        .ok_or_else(|| anyhow!("No project files found (brief.md, contacts.yaml, status.md)"))
 }
 
 #[cfg(test)]
@@ -190,5 +230,61 @@ mod tests {
         let project = Project::load(project_dir.path(), workspace.path());
 
         assert!(project.is_none());
+    }
+
+    #[test]
+    fn test_load_and_validate_project_success() {
+        let workspace = TempDir::new().unwrap();
+        let project_dir = TempDir::new().unwrap();
+
+        // Create project files
+        fs::write(project_dir.path().join("brief.md"), "Project brief").unwrap();
+
+        let result = load_and_validate_project(
+            project_dir.path().to_str().unwrap(),
+            workspace.path(),
+        );
+
+        assert!(result.is_ok());
+        let project = result.unwrap();
+        assert!(project.loaded_files.contains(&"brief.md".to_string()));
+    }
+
+    #[test]
+    fn test_load_and_validate_project_relative_path_error() {
+        let workspace = TempDir::new().unwrap();
+
+        let result = load_and_validate_project("relative/path", workspace.path());
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("must be absolute"));
+    }
+
+    #[test]
+    fn test_load_and_validate_project_nonexistent_path_error() {
+        let workspace = TempDir::new().unwrap();
+
+        let result = load_and_validate_project("/nonexistent/path/12345", workspace.path());
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("does not exist"));
+    }
+
+    #[test]
+    fn test_load_and_validate_project_no_files_error() {
+        let workspace = TempDir::new().unwrap();
+        let project_dir = TempDir::new().unwrap();
+
+        // No project files created
+        let result = load_and_validate_project(
+            project_dir.path().to_str().unwrap(),
+            workspace.path(),
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("No project files found"));
     }
 }
