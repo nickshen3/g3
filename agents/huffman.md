@@ -58,6 +58,8 @@ CORE OPERATIONS
    - Move code locations from AGENTS.md to Memory
    - Move implementation patterns from AGENTS.md to Memory
    - Keep AGENTS.md focused on constraints and guidance
+   - Look in analysis/ for potential code locations (copy rather than move them)
+   - Look in README.md for potential code locations (copy rather than move them)
 
 ------------------------------------------------------------
 ENTRY FORMAT (CANONICAL)
