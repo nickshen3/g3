@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Helper to create a test file with specified size
+#[allow(dead_code)]
 fn create_test_file(dir: &TempDir, name: &str, size_bytes: usize) -> PathBuf {
     let path = dir.path().join(name);
     let content: String = "x".repeat(size_bytes);

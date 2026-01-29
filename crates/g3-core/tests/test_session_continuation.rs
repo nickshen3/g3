@@ -125,7 +125,7 @@ fn test_find_incomplete_agent_session() {
     use g3_core::session_continuation::find_incomplete_agent_session;
     
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     // Get the actual current directory (after set_current_dir in setup)
     let current_working_dir = std::env::current_dir()
@@ -165,7 +165,7 @@ fn test_find_incomplete_agent_session_ignores_complete_todos() {
     use g3_core::session_continuation::find_incomplete_agent_session;
     
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     let current_working_dir = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
@@ -197,7 +197,7 @@ fn test_find_incomplete_agent_session_ignores_non_agent_mode() {
     use g3_core::session_continuation::find_incomplete_agent_session;
     
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     let current_working_dir = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
@@ -227,7 +227,7 @@ fn test_find_incomplete_agent_session_ignores_non_agent_mode() {
 #[test]
 fn test_load_continuation_when_none_exists() {
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     // No continuation should exist in a fresh temp directory
     let result = load_continuation().expect("load_continuation should not error");
@@ -239,7 +239,7 @@ fn test_load_continuation_when_none_exists() {
 #[test]
 fn test_clear_continuation() {
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     // Create and save a continuation
     let continuation = SessionContinuation::new(false, None, 
@@ -295,7 +295,7 @@ fn test_ensure_session_dir_creates_g3_directory() {
 #[test]
 fn test_has_valid_continuation_with_missing_session_log() {
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     // Create a continuation pointing to a non-existent session log
     let continuation = SessionContinuation::new(false, None, 
@@ -347,7 +347,7 @@ fn test_has_valid_continuation_with_existing_session_log() {
 #[test]
 fn test_continuation_serialization_format() {
     let _lock = TEST_MUTEX.lock().unwrap();
-    let (temp_dir, original_dir) = setup_test_env();
+    let (_temp_dir, original_dir) = setup_test_env();
 
     let continuation = SessionContinuation::new(false, None, 
         "format_test".to_string(),

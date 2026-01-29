@@ -75,7 +75,7 @@ fn test_first_complete_second_incomplete() {
     let content = r#"{"tool": "read_file", "args": {"file_path": "a.txt"}}
 {"tool": "shell", "args": {"command": "ls"#;
     
-    let tools = parser.process_chunk(&chunk(content, false));
+    let _tools = parser.process_chunk(&chunk(content, false));
     
     // Should detect the first complete tool call
     // The incomplete one should be detected by has_incomplete_tool_call

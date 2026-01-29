@@ -164,7 +164,7 @@ fn test_json_in_indented_code_block() {
 
 That's it."#;
     
-    let tools = parser.process_chunk(&chunk(content));
+    let _tools = parser.process_chunk(&chunk(content));
     parser.process_chunk(&finished_chunk());
     
     // Indented code blocks are trickier - the JSON is on its own line but indented

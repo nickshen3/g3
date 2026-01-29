@@ -34,7 +34,7 @@ fn test_no_thinking_budget_passes_through() {
     let config = create_test_config_with_thinking(None);
     
     // Without thinking budget, any max_tokens should be fine
-    let proposed_max = 5000;
+    let _proposed_max = 5000;
     
     // The constraint check would return (proposed_max, false)
     // since there's no thinking_budget_tokens configured

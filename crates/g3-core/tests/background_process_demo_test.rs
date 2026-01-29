@@ -1,5 +1,4 @@
 use g3_core::background_process::BackgroundProcessManager;
-use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 use std::fs;

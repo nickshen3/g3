@@ -331,7 +331,7 @@ async fn test_json_on_own_line_detected_as_tool() {
     // The task should detect the tool call
     // Note: This will fail because we don't have a real shell, but that's OK
     // We just want to verify the tool call was detected
-    let result = agent.execute_task("Run echo hello", None, false).await;
+    let _result = agent.execute_task("Run echo hello", None, false).await;
     
     // The result might be an error (tool execution fails in test env)
     // but we can check if a tool was attempted by looking at context
@@ -408,7 +408,7 @@ async fn test_response_not_duplicated() {
     assert!(result.is_ok(), "Task should succeed: {:?}", result.err());
 
     // Check the TaskResult - it should have the response
-    let task_result = result.unwrap();
+    let _task_result = result.unwrap();
     
     // The response field might be empty (content was streamed) or contain the response
     // Either way, the context should have exactly one assistant message with this content

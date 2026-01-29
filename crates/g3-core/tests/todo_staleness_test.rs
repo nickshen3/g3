@@ -22,14 +22,17 @@ impl MockUiWriter {
         }
     }
 
+    #[allow(dead_code)]
     fn set_prompt_response(&self, response: bool) {
         self.prompt_responses.lock().unwrap().push(response);
     }
 
+    #[allow(dead_code)]
     fn set_choice_response(&self, response: usize) {
         self.choice_responses.lock().unwrap().push(response);
     }
 
+    #[allow(dead_code)]
     fn get_output(&self) -> Vec<String> {
         self.output.lock().unwrap().clone()
     }

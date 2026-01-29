@@ -120,8 +120,6 @@ impl WebDriverSession {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_webdriver_session_enum_variants() {
         // This test just verifies the enum structure compiles correctly
