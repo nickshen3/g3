@@ -1,44 +1,27 @@
-# Strongly Connected Components Analysis
+# Strongly Connected Components (Cycles)
 
-## Method
+## Summary
 
-Tarjan's algorithm applied to file-level dependency graph.
+| Metric | Value |
+|--------|-------|
+| Non-trivial SCCs | 0 |
+| Total nodes in cycles | 0 |
 
-Edge types considered:
-- `mod_declaration`: Parent module declares child module
-- `cross_crate_import`: File imports from another crate
+## Analysis
 
-## Results
+No strongly connected components with more than one node were detected in the dependency graph.
 
-**No non-trivial SCCs detected.**
+This indicates the codebase has a **directed acyclic graph (DAG)** structure at both the crate and file level for the dependencies that were extracted.
 
-The file-level dependency graph is acyclic. All `mod` declarations form a strict tree structure within each crate, and cross-crate imports follow the crate dependency DAG.
+## Methodology
 
-## Crate-Level Cycle Analysis
+- Tarjan's algorithm applied to all 108 nodes and 186 edges
+- Only SCCs with 2+ nodes reported (trivial single-node SCCs excluded)
+- Analysis covers `use` statement imports only
 
-The crate dependency graph was also analyzed:
+## Caveats
 
-```
-g3 → g3-cli → g3-core → g3-providers
-                      → g3-config
-                      → g3-execution
-                      → g3-computer-control
-         → g3-planner → g3-core
-                      → g3-providers
-                      → g3-config
-         → g3-ensembles → g3-core
-                        → g3-config
-```
-
-**No cycles detected at crate level.**
-
-The workspace forms a directed acyclic graph (DAG) with:
-- Leaf crates: `g3-providers`, `g3-config`, `g3-execution`, `g3-computer-control`, `studio`
-- Mid-tier crates: `g3-core`, `g3-planner`, `g3-ensembles`
-- Top-tier crates: `g3-cli`, `g3`
-
-## Implications
-
-- No circular dependencies exist
-- Build order is deterministic
-- Crates can be compiled in parallel respecting the DAG
+1. **Trait implementations**: Mutual trait dependencies not captured by `use` statements
+2. **Type references**: Types referenced without explicit `use` not detected
+3. **Macro expansions**: Dependencies introduced by macros not traced
+4. **Build-time dependencies**: `build.rs` dependencies not included

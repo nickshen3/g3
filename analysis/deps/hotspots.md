@@ -1,112 +1,69 @@
 # Coupling Hotspots
 
-## Method
+## High Fan-In Files (Most Depended Upon)
 
-Hotspots identified by:
-1. Fan-in > 2× average (high incoming dependencies)
-2. Fan-out > 2× average (high outgoing dependencies)
-3. Cross-group edge concentration
+Files with disproportionately high incoming dependencies.
 
-## Metrics
+| File | Fan-In | Crate | Role |
+|------|--------|-------|------|
+| ui_writer.rs | 15 | g3-core | UI abstraction trait |
+| g3_status.rs | 10 | g3-cli | Status message formatting |
+| simple_output.rs | 8 | g3-cli | Output helper |
+| context_window.rs | 6 | g3-core | Token/context management |
+| template.rs | 6 | g3-cli | Template processing |
+| paths.rs | 5 | g3-core | Path utilities |
 
-### Crate Level
+### Evidence: ui_writer.rs (fan-in: 15)
 
-| Metric | Value |
-|--------|-------|
-| Average fan-in | 2.0 |
-| Average fan-out | 1.7 |
-| Threshold (2×) | 4.0 / 3.4 |
+Depended on by:
+- g3-cli: accumulative.rs, agent_mode.rs, autonomous.rs, commands.rs, interactive.rs, task_execution.rs, ui_writer_impl.rs, utils.rs
+- g3-core: compaction.rs, feedback_extraction.rs, lib.rs, retry.rs, tool_dispatch.rs, tools/*.rs
 
-### File Level
+### Evidence: g3_status.rs (fan-in: 10)
 
-| Metric | Value |
-|--------|-------|
-| Total edges | 123 |
-| Total files | 95 |
-| Average fan-out | 1.3 |
-| Threshold (2×) | 2.6 |
+Depended on by:
+- commands.rs, interactive.rs, simple_output.rs, task_execution.rs, and others in g3-cli
 
-## Crate-Level Hotspots
+## High Fan-Out Files (Most Dependencies)
 
-### High Fan-In (Most Depended Upon)
+Files with disproportionately high outgoing dependencies.
 
-| Crate | Fan-In | Status |
-|-------|--------|--------|
-| g3-config | 4 | **HOTSPOT** (2× avg) |
-| g3-providers | 4 | **HOTSPOT** (2× avg) |
-| g3-core | 3 | Near threshold |
+| File | Fan-Out | Crate | Role |
+|------|---------|-------|------|
+| agent_mode.rs | 13 | g3-cli | Agent mode entry point |
+| lib.rs | 13 | g3-core | Core library root |
+| commands.rs | 12 | g3-cli | Command handlers |
+| interactive.rs | 12 | g3-cli | Interactive REPL |
+| accumulative.rs | 11 | g3-cli | Accumulative mode |
+| planner.rs | 8 | g3-planner | Planning orchestration |
 
-**Evidence for g3-config:**
-- Depended on by: g3-cli, g3-core, g3-planner, g3-ensembles
-- Contains: Configuration types, loading logic
+### Evidence: agent_mode.rs (fan-out: 13)
 
-**Evidence for g3-providers:**
-- Depended on by: g3, g3-cli, g3-core, g3-planner
-- Contains: LLM provider trait, message types, streaming
+Depends on:
+- g3-core: Agent, ui_writer::UiWriter
+- Internal: project_files, display, language_prompts, simple_output, embedded_agents, ui_writer_impl, interactive, template
 
-### High Fan-Out (Most Dependencies)
+### Evidence: g3-core/lib.rs (fan-out: 13)
 
-| Crate | Fan-Out | Status |
-|-------|---------|--------|
-| g3-cli | 6 | **HOTSPOT** (3.5× avg) |
-| g3-core | 4 | **HOTSPOT** (2.4× avg) |
-| g3-planner | 3 | Near threshold |
+Depends on:
+- External crates: g3-config, g3-providers
+- Internal modules: ui_writer, context_window, paths, compaction, streaming, tools, etc.
 
-**Evidence for g3-cli:**
-- Depends on: g3-core, g3-config, g3-planner, g3-computer-control, g3-providers, g3-ensembles
-- Role: Top-level integration point
+## Cross-Crate Coupling
 
-**Evidence for g3-core:**
-- Depends on: g3-providers, g3-config, g3-execution, g3-computer-control
-- Role: Central engine with multiple infrastructure dependencies
-
-## File-Level Hotspots
-
-### High Fan-Out Files
-
-| File | Fan-Out | Threshold | Status |
-|------|---------|-----------|--------|
-| crates/g3-core/src/lib.rs | 29 | 2.6 | **HOTSPOT** (22× avg) |
-| crates/g3-cli/src/lib.rs | 17 | 2.6 | **HOTSPOT** (13× avg) |
-| crates/g3-core/src/tools/mod.rs | 9 | 2.6 | **HOTSPOT** (7× avg) |
-| crates/g3-planner/src/lib.rs | 8 | 2.6 | **HOTSPOT** (6× avg) |
-| crates/g3-providers/src/lib.rs | 6 | 2.6 | **HOTSPOT** (4.6× avg) |
-| crates/g3-computer-control/src/lib.rs | 5 | 2.6 | **HOTSPOT** (3.8× avg) |
-| crates/g3-planner/src/llm.rs | 5 | 2.6 | **HOTSPOT** (3.8× avg) |
-
-**Note:** High fan-out in `lib.rs` files is expected (module re-exports). The `tools/mod.rs` and `llm.rs` hotspots are more significant as they represent actual coupling.
-
-### Cross-Crate Import Concentration
-
-| Source File | Cross-Crate Imports |
-|-------------|--------------------|
-| crates/g3-cli/src/lib.rs | 5 (g3-core, g3-config, g3-providers, g3-planner, g3-ensembles) |
-| crates/g3-planner/src/llm.rs | 4 (g3-config, g3-core, g3-providers) |
-| crates/g3-cli/src/autonomous.rs | 2 (g3-core) |
-| crates/g3-cli/src/task_execution.rs | 2 (g3-core) |
+| Source Crate | Target Crate | Edge Count |
+|--------------|--------------|------------|
+| g3-cli | g3-core | 35 |
+| g3-core | g3-providers | 10 |
+| g3-core | g3-config | 5 |
+| g3-planner | g3-core | 4 |
+| g3-planner | g3-providers | 3 |
+| g3-core | g3-computer-control | 2 |
 
 ## Observations
 
-1. **g3-core/src/lib.rs** has extreme fan-out (29 edges) due to declaring 22+ modules
-2. **g3-config** and **g3-providers** are foundational crates with high fan-in
-3. **g3-cli** is the integration hub, pulling together all subsystems
-4. **tools/mod.rs** aggregates 9 tool modules - natural aggregation point
-5. **g3-planner/src/llm.rs** has notable cross-crate coupling (imports from 3 other crates)
-
-## Cross-Group Edges
-
-Total cross-crate imports: 43
-
-| From Crate | To Crate | Count |
-|------------|----------|-------|
-| g3-cli | g3-core | 21 |
-| g3-cli | g3-config | 4 |
-| g3-cli | g3-providers | 2 |
-| g3-planner | g3-core | 5 |
-| g3-planner | g3-providers | 4 |
-| g3-planner | g3-config | 2 |
-| g3-core | g3-providers | 8 |
-| g3-core | g3-config | 3 |
-| g3-core | g3-computer-control | 2 |
-| g3-ensembles | g3-core | 1 |
-| g3-ensembles | g3-config | 1 |
+1. **ui_writer.rs** is a central abstraction point; changes here affect 15+ files
+2. **g3-cli** files have high fan-out due to orchestration responsibilities
+3. **g3-core/lib.rs** is the primary API surface with expected high coupling
+4. **g3_status.rs** and **simple_output.rs** form a UI utility cluster in g3-cli
+5. **tools/*.rs** files consistently depend on ui_writer and ToolCall types
