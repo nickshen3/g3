@@ -523,12 +523,11 @@ fn try_parse_json_from_buffer(buffer: &mut String) -> Option<String> {
 // LLMProvider Implementation
 // ============================================================================
 
-#[async_trait]
-impl LLMProvider for GeminiProvider {
-    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
+impl GeminiProvider {
+    /// Build a GeminiRequest from a CompletionRequest.
+    fn build_request(&self, request: &CompletionRequest) -> GeminiRequest {
         let (contents, system_instruction) = convert_messages(&request.messages);
-        
-        let gemini_request = GeminiRequest {
+        GeminiRequest {
             contents,
             system_instruction,
             tools: request.tools.as_ref().map(|t| convert_tools(t)),
@@ -536,7 +535,14 @@ impl LLMProvider for GeminiProvider {
                 max_output_tokens: request.max_tokens.or(Some(self.max_tokens)),
                 temperature: request.temperature.or(Some(self.temperature)),
             },
-        };
+        }
+    }
+}
+
+#[async_trait]
+impl LLMProvider for GeminiProvider {
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
+        let gemini_request = self.build_request(&request);
 
         let url = self.get_api_url(false);
         debug!("Gemini request URL: {}", url);
@@ -579,17 +585,7 @@ impl LLMProvider for GeminiProvider {
     }
 
     async fn stream(&self, request: CompletionRequest) -> Result<CompletionStream> {
-        let (contents, system_instruction) = convert_messages(&request.messages);
-        
-        let gemini_request = GeminiRequest {
-            contents,
-            system_instruction,
-            tools: request.tools.as_ref().map(|t| convert_tools(t)),
-            generation_config: GeminiGenerationConfig {
-                max_output_tokens: request.max_tokens.or(Some(self.max_tokens)),
-                temperature: request.temperature.or(Some(self.temperature)),
-            },
-        };
+        let gemini_request = self.build_request(&request);
 
         // For streaming, add alt=sse parameter
         let url = format!("{}&alt=sse", self.get_api_url(true));
