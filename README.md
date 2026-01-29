@@ -373,6 +373,7 @@ g3 comes with several embedded agents that work out of the box:
 | **carmack** | Code readability and craft - simplifies, refactors, improves naming |
 | **hopper** | Testing and quality - writes tests, finds edge cases |
 | **euler** | Architecture and dependencies - analyzes structure, finds coupling |
+| **archivist** | Memory maintenance - compacts, deduplicates, increases signal |
 | **lamport** | Concurrency and correctness - reviews async code, finds race conditions |
 | **fowler** | Refactoring patterns - applies design patterns, reduces duplication |
 | **breaker** | Adversarial testing - finds bugs, creates minimal repros |
