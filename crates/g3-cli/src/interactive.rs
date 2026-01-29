@@ -69,6 +69,7 @@ async fn execute_user_input<W: UiWriter>(
 /// Run interactive mode with console output.
 /// If `agent_name` is Some, we're in agent+chat mode: skip session resume/verbose welcome,
 /// and use the agent name as the prompt (e.g., "butler>").
+/// If `initial_project` is Some, the project is pre-loaded (from --project flag).
 pub async fn run_interactive<W: UiWriter>(
     mut agent: Agent<W>,
     show_prompt: bool,
@@ -77,6 +78,7 @@ pub async fn run_interactive<W: UiWriter>(
     workspace_path: &Path,
     new_session: bool,
     agent_name: Option<&str>,
+    initial_project: Option<Project>,
 ) -> Result<()> {
     let output = SimpleOutput::new();
     let from_agent_mode = agent_name.is_some();
@@ -187,8 +189,22 @@ pub async fn run_interactive<W: UiWriter>(
     let mut multiline_buffer = String::new();
     let mut in_multiline = false;
 
-    // Track active project
-    let mut active_project: Option<Project> = None;
+    // Track active project (may be pre-loaded from --project flag)
+    let mut active_project: Option<Project> = initial_project;
+
+    // If we have an initial project, display its status
+    if let Some(ref project) = active_project {
+        let project_name = project.path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("project");
+        G3Status::loading_project(project_name, &project.format_loaded_status());
+        
+        // Print newline after the loading message (G3Status::loading_project doesn't add one)
+        use std::io::Write;
+        println!();
+        std::io::stdout().flush().ok();
+    }
 
     loop {
         // Display context window progress bar before each prompt

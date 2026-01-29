@@ -4,7 +4,6 @@
 
 use anyhow::Result;
 use rustyline::Editor;
-use std::path::PathBuf;
 
 use g3_core::ui_writer::UiWriter;
 use g3_core::Agent;
@@ -13,6 +12,7 @@ use crate::completion::G3Helper;
 use crate::g3_status::{G3Status, Status};
 use crate::simple_output::SimpleOutput;
 use crate::project::Project;
+use crate::project::load_and_validate_project;
 use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
 
@@ -336,33 +336,10 @@ pub async fn handle_command<W: UiWriter>(
                 output.print("Loads project files (brief.md, contacts.yaml, status.md) from the given path.");
             } else {
                 let project_path_str = parts[1].trim();
-                
-                // Expand tilde if present
-                let project_path = if project_path_str.starts_with("~/") {
-                    if let Some(home) = dirs::home_dir() {
-                        home.join(&project_path_str[2..])
-                    } else {
-                        PathBuf::from(project_path_str)
-                    }
-                } else {
-                    PathBuf::from(project_path_str)
-                };
 
-                // Validate path is absolute
-                if !project_path.is_absolute() {
-                    output.print("❌ Project path must be absolute (e.g., /Users/name/projects/myproject)");
-                    return Ok(true);
-                }
-
-                // Validate path exists
-                if !project_path.exists() {
-                    output.print(&format!("❌ Project path does not exist: {}", project_path.display()));
-                    return Ok(true);
-                }
-
-                // Load the project
-                match Project::load(&project_path, workspace_dir) {
-                    Some(project) => {
+                // Use shared helper for validation and loading
+                match load_and_validate_project(project_path_str, workspace_dir) {
+                    Ok(project) => {
                         // Set project content in agent's system message
                         if agent.set_project_content(Some(project.content.clone())) {
                             // Set project path on UI writer for path shortening
@@ -377,10 +354,10 @@ pub async fn handle_command<W: UiWriter>(
                             let project_name = project.path.file_name()
                                 .and_then(|n| n.to_str()).unwrap_or("project");
                             G3Status::loading_project(project_name, &project.format_loaded_status());
-                            
+
                             // Store active project
                             *active_project = Some(project);
-                            
+
                             // Auto-submit the project status prompt
                             let prompt = "what is the current state of the project? and what is your suggested next best step?";
                             execute_task_with_retry(agent, prompt, show_prompt, show_code, output).await;
@@ -388,8 +365,8 @@ pub async fn handle_command<W: UiWriter>(
                             output.print("❌ Failed to set project content in agent context.");
                         }
                     }
-                    None => {
-                        output.print("❌ No project files found (brief.md, contacts.yaml, status.md).");
+                    Err(e) => {
+                        output.print(&format!("❌ {}", e));
                     }
                 }
             }

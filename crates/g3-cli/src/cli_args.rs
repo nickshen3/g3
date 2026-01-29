@@ -122,4 +122,8 @@ pub struct Cli {
     /// Disable automatic memory update reminder at end of agent mode
     #[arg(long)]
     pub no_auto_memory: bool,
+
+    /// Load a project from the given path at startup (like /project but without auto-prompt)
+    #[arg(long, value_name = "PATH")]
+    pub project: Option<PathBuf>,
 }

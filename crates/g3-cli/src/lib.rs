@@ -45,6 +45,7 @@ use ui_writer_impl::ConsoleUiWriter;
 use g3_core::ui_writer::UiWriter;
 use utils::{initialize_logging, load_config_with_cli_overrides, setup_workspace_directory};
 use template::process_template;
+use project::load_and_validate_project;
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
@@ -194,6 +195,34 @@ async fn run_console_mode(
         agent.set_acd_enabled(true);
     }
 
+    // Load CLI project if --project flag was specified
+    let initial_project: Option<project::Project> = if let Some(ref project_path) = cli.project {
+        match load_and_validate_project(&project_path.to_string_lossy(), &workspace_dir) {
+            Ok(cli_project) => {
+                // Set project content in agent's system message
+                if agent.set_project_content(Some(cli_project.content.clone())) {
+                    // Set project path on UI writer for path shortening
+                    let project_name = cli_project.path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("project")
+                        .to_string();
+                    agent.ui_writer().set_project_path(cli_project.path.clone(), project_name);
+                    Some(cli_project)
+                } else {
+                    eprintln!("Warning: Failed to set project content in agent context.");
+                    None
+                }
+            }
+            Err(e) => {
+                eprintln!("Error loading project: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
     if cli.autonomous {
         let _agent = run_autonomous(
             agent,
@@ -232,6 +261,7 @@ async fn run_console_mode(
             project.workspace(),
             cli.new_session,
             None, // agent_name (not in agent mode)
+            initial_project,
         )
         .await
     }
