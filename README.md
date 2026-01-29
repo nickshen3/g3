@@ -125,6 +125,7 @@ g3 supports local models via llama.cpp with Metal acceleration on macOS. Here's 
 | Model | Agentic Score | Notes |
 |-------|---------------|-------|
 | **Claude Opus 4.5** | ⭐⭐⭐⭐⭐ | Flawless execution |
+| **Gemini 3 Pro** | ⭐⭐⭐⭐⭐ | Flawless, fast execution |
 | Claude Sonnet 4.5 | ⭐⭐⭐⭐ | Good, occasional issues |
 | Claude 4 family | ⭐⭐⭐ | Gets there eventually, needs manual checking |
 
