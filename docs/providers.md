@@ -1,6 +1,6 @@
 # g3 LLM Providers Guide
 
-**Last updated**: January 2025  
+**Last updated**: January 2025 (Gemini provider added)  
 **Source of truth**: `crates/g3-providers/src/`
 
 ## Purpose
@@ -13,6 +13,7 @@ This document describes the LLM providers supported by g3, their capabilities, a
 |----------|------|--------------|---------------|----------------|----------|
 | **Anthropic** | Cloud | Native | Yes | 200k (1M optional) | General use, complex tasks |
 | **Databricks** | Cloud | Native | Yes (Claude models) | Varies | Enterprise, existing Databricks users |
+| **Gemini** | Cloud | Native | No | 1M-2M | Google ecosystem, large context |
 | **OpenAI** | Cloud | Native | No | 128k | GPT model preference |
 | **OpenAI-Compatible** | Cloud | Native | No | Varies | OpenRouter, Groq, Together, etc. |
 | **Embedded** | Local | JSON fallback | No | 4k-32k | Privacy, offline, cost savings |
@@ -118,6 +119,50 @@ Models depend on your Databricks workspace configuration:
 - `databricks-meta-llama-3-1-70b-instruct`
 - `databricks-dbrx-instruct`
 - Custom fine-tuned models
+
+---
+
+## Gemini
+
+**Location**: `crates/g3-providers/src/gemini.rs`
+
+### Features
+
+- **Native tool calling**: Full support for structured tool calls
+- **Large context windows**: Up to 2M tokens on some models
+- **Streaming**: Real-time response streaming
+- **Google ecosystem**: Integrates with Google Cloud
+
+### Configuration
+
+```toml
+[providers.gemini.default]
+api_key = "your-google-api-key"  # Required
+model = "gemini-2.0-flash"       # Model name
+max_tokens = 8192                # Max output tokens
+temperature = 0.7                # 0.0-1.0
+```
+
+### Available Models
+
+| Model | Context | Notes |
+|-------|---------|-------|
+| `gemini-2.0-flash` | 1M | Fast, efficient |
+| `gemini-1.5-pro` | 2M | Most capable |
+| `gemini-1.5-flash` | 1M | Balanced speed/quality |
+
+### Getting an API Key
+
+1. Go to [Google AI Studio](https://aistudio.google.com/)
+2. Create or select a project
+3. Generate an API key
+4. Add to your g3 configuration
+
+### Notes
+
+- Gemini models have very large context windows (1M-2M tokens)
+- Good for tasks requiring extensive context
+- Native tool calling works well for agentic workflows
 
 ---
 
@@ -291,6 +336,7 @@ This works but is less reliable than native tool calling.
 | Privacy-critical | Embedded |
 | Offline development | Embedded |
 | Fast iteration | Groq (Llama) |
+| Large context needs | Gemini (1M-2M tokens) |
 | Model variety | OpenRouter |
 
 ### By Priority

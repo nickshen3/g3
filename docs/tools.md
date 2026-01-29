@@ -233,7 +233,7 @@ Syntax-aware code search using tree-sitter.
 - `max_concurrency` (integer, optional): Parallel searches (default: 4)
 - `max_matches_per_search` (integer, optional): Max matches (default: 500)
 
-**Supported languages**: rust, python, javascript, typescript, go, java, c, cpp, kotlin
+**Supported languages**: rust, python, javascript, typescript, go, java, c, cpp, haskell, scheme, racket
 
 **Example**:
 ```json

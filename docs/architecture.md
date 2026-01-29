@@ -57,7 +57,7 @@ g3 follows a **tool-first philosophy**: instead of just providing advice, it act
 
 ## Workspace Structure
 
-g3 is organized as a Rust workspace with 9 crates:
+g3 is organized as a Rust workspace with 8 crates:
 
 ```
 g3/

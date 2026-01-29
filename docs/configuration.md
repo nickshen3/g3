@@ -89,6 +89,21 @@ use_oauth = true                 # Use OAuth (recommended)
 - **OAuth** (`use_oauth = true`): Opens browser for authentication, tokens refresh automatically
 - **Token** (`token = "..."`, `use_oauth = false`): Uses personal access token directly
 
+### Gemini Configuration
+
+```toml
+[providers.gemini.default]
+api_key = "your-google-api-key"  # Required: Your Google AI API key
+model = "gemini-2.0-flash"       # Model to use
+max_tokens = 8192
+temperature = 0.7
+```
+
+**Available Gemini models**:
+- `gemini-2.0-flash` (recommended)
+- `gemini-1.5-pro`
+- `gemini-1.5-flash`
+
 ### OpenAI Configuration
 
 ```toml

@@ -40,8 +40,9 @@ g3 includes a syntax-aware code search tool powered by tree-sitter. Unlike text-
 - Java
 - C
 - C++
-- Racket
+- Haskell
 - Scheme
+- Racket
 
 ## Basic Usage
 
