@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::background_process::BackgroundProcessManager;
+use crate::pending_research::PendingResearchManager;
 use crate::paths::{ensure_session_dir, get_session_todo_path, get_todo_path};
 use crate::ui_writer::UiWriter;
 use crate::webdriver_session::WebDriverSession;
@@ -27,6 +28,7 @@ pub struct ToolContext<'a, W: UiWriter> {
     pub requirements_sha: Option<&'a str>,
     pub context_total_tokens: u32,
     pub context_used_tokens: u32,
+    pub pending_research_manager: &'a PendingResearchManager,
 }
 
 impl<'a, W: UiWriter> ToolContext<'a, W> {

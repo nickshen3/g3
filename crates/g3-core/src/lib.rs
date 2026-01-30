@@ -6,6 +6,7 @@ pub mod context_window;
 pub mod error_handling;
 pub mod feedback_extraction;
 pub mod paths;
+pub mod pending_research;
 pub mod project;
 pub mod provider_config;
 pub mod provider_registration;
@@ -150,6 +151,8 @@ pub struct Agent<W: UiWriter> {
     auto_memory: bool,
     /// Whether aggressive context dehydration is enabled (--acd flag)
     acd_enabled: bool,
+    /// Manager for async research tasks
+    pending_research_manager: pending_research::PendingResearchManager,
 }
 
 impl<W: UiWriter> Agent<W> {
@@ -203,6 +206,7 @@ impl<W: UiWriter> Agent<W> {
             agent_name: None,
             auto_memory: false,
             acd_enabled: false,
+            pending_research_manager: pending_research::PendingResearchManager::new(),
         }
     }
 
@@ -1071,6 +1075,51 @@ impl<W: UiWriter> Agent<W> {
         self.context_window.add_message(message);
     }
 
+    /// Check for completed research tasks and inject them into the context.
+    ///
+    /// This should be called at natural break points:
+    /// - End of each tool iteration (before next LLM call)
+    /// - Before prompting user in interactive mode
+    ///
+    /// Returns the number of research results injected.
+    pub fn inject_completed_research(&mut self) -> usize {
+        let completed = self.pending_research_manager.take_completed();
+        
+        if completed.is_empty() {
+            return 0;
+        }
+        
+        for task in &completed {
+            let message_content = match task.status {
+                pending_research::ResearchStatus::Complete => {
+                    format!(
+                        "📋 **Research completed** (id: `{}`): {}\n\n{}",
+                        task.id,
+                        task.query,
+                        task.result.as_deref().unwrap_or("No result available")
+                    )
+                }
+                pending_research::ResearchStatus::Failed => {
+                    format!(
+                        "❌ **Research failed** (id: `{}`): {}\n\nError: {}",
+                        task.id,
+                        task.query,
+                        task.result.as_deref().unwrap_or("Unknown error")
+                    )
+                }
+                pending_research::ResearchStatus::Pending => continue, // Skip pending tasks
+            };
+            
+            // Inject as a user message so the agent sees and responds to it
+            let message = Message::new(MessageRole::User, message_content);
+            self.context_window.add_message(message);
+            
+            debug!("Injected research result for task {}", task.id);
+        }
+        
+        completed.len()
+    }
+
     /// Execute a tool call and return the result.
     /// This is a public wrapper around execute_tool for use by external callers
     /// like the planner's fast-discovery feature.
@@ -1429,6 +1478,10 @@ impl<W: UiWriter> Agent<W> {
 
     pub fn get_config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn get_pending_research_manager(&self) -> &pending_research::PendingResearchManager {
+        &self.pending_research_manager
     }
 
     pub fn set_requirements_sha(&mut self, sha: String) {
@@ -2041,6 +2094,14 @@ Skip if nothing new. Be brief."#;
             // Add a small delay between iterations to prevent "model busy" errors
             if state.iteration_count > 1 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
+
+            // Check for completed research and inject into context
+            // This happens at the start of each iteration, before the LLM call
+            let injected_count = self.inject_completed_research();
+            if injected_count > 0 {
+                debug!("Injected {} completed research result(s) into context", injected_count);
+                self.ui_writer.println(&format!("📋 {} research result(s) ready and injected into context", injected_count));
             }
 
             // Get provider info for logging, then drop it to avoid borrow issues
@@ -2852,6 +2913,7 @@ Skip if nothing new. Be brief."#;
             requirements_sha: self.requirements_sha.as_deref(),
             context_total_tokens: self.context_window.total_tokens,
             context_used_tokens: self.context_window.used_tokens,
+            pending_research_manager: &self.pending_research_manager,
         };
 
         // Dispatch to the appropriate tool handler

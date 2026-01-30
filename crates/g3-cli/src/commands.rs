@@ -38,6 +38,7 @@ pub async fn handle_command<W: UiWriter>(
             output.print("  /fragments - List dehydrated context fragments (ACD)");
             output.print("  /rehydrate - Restore a dehydrated fragment by ID");
             output.print("  /resume    - List and switch to a previous session");
+            output.print("  /research  - List pending/completed research tasks");
             output.print("  /project <path> - Load a project from the given absolute path");
             output.print("  /unproject - Unload the current project and reset context");
             output.print("  /dump      - Dump entire context window to file for debugging");
@@ -126,6 +127,42 @@ pub async fn handle_command<W: UiWriter>(
                     }
                 } else {
                     output.print("No active session - fragments are session-scoped.");
+                }
+            }
+            Ok(true)
+        }
+        "/research" => {
+            let manager = agent.get_pending_research_manager();
+            let all_tasks = manager.list_all();
+            
+            if all_tasks.is_empty() {
+                output.print("📋 No research tasks (pending or completed).");
+            } else {
+                output.print(&format!("📋 Research Tasks ({} total):\n", all_tasks.len()));
+                
+                for task in all_tasks {
+                    let status_emoji = match task.status {
+                        g3_core::pending_research::ResearchStatus::Pending => "🔄",
+                        g3_core::pending_research::ResearchStatus::Complete => "✅",
+                        g3_core::pending_research::ResearchStatus::Failed => "❌",
+                    };
+                    
+                    let injected_marker = if task.injected { " (injected)" } else { "" };
+                    
+                    output.print(&format!(
+                        "  {} `{}` - {} ({}){}\n     Query: {}",
+                        status_emoji,
+                        task.id,
+                        task.status,
+                        task.elapsed_display(),
+                        injected_marker,
+                        if task.query.len() > 60 {
+                            format!("{}...", &task.query.chars().take(57).collect::<String>())
+                        } else {
+                            task.query.clone()
+                        }
+                    ));
+                    output.print("");
                 }
             }
             Ok(true)

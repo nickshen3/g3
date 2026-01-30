@@ -91,7 +91,7 @@ If you create temporary files for verification or investigation, place these in 
 const SHARED_WEB_RESEARCH: &str = "\
 # Web Research
 
-When you need to look up documentation, search for resources, find data online, or research a topic to complete your task, use the `research` tool.
+When you need to look up documentation, search for resources, find data online, or research a topic to complete your task, use the `research` tool. **Research is asynchronous** - it runs in the background while you continue working.
 
 **Use the `research` tool** for any web research tasks:
 - Researching APIs, SDKs, libraries, frameworks, or tools
@@ -99,7 +99,12 @@ When you need to look up documentation, search for resources, find data online, 
 - Investigating bugs, issues, or error messages
 - Looking up documentation or specifications
 
-Simply call `research` with a specific query describing what you need to know. The tool returns a structured research brief with options, trade-offs, and recommendations.
+**How async research works:**
+1. Call `research` with your query - it returns immediately with a `research_id`
+2. Continue with other work while research runs in the background (30-120 seconds)
+3. Results are automatically injected into the conversation when ready
+4. Use `research_status` to check progress if needed
+5. If you need results before continuing, say so and yield the turn to the user
 
 IMPORTANT: If the user asks you to just respond with text (like \"just say hello\" or \"tell me about X\"), do NOT use tools. Simply respond with the requested text directly. Only use tools when you need to execute commands or complete tasks that require action.
 

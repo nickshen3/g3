@@ -1,5 +1,5 @@
 # Workspace Memory
-> Updated: 2026-01-27T04:00:00Z | Size: ~12k chars
+> Updated: 2026-01-30T01:10:54Z | Size: 13.2k chars
 
 ### Remember Tool Wiring
 - `crates/g3-core/src/tools/memory.rs` [0..5000] - `execute_remember()`, `get_memory_path()`, `merge_memory()`
@@ -210,3 +210,34 @@ context_length = 32768
 max_tokens = 4096
 gpu_layers = 99
 ```
+
+### Async Research Tool
+Research tool is asynchronous - spawns scout agent in background, returns immediately with research_id.
+
+- `crates/g3-core/src/pending_research.rs`
+  - `PendingResearchManager` [80..100] - thread-safe task storage (Arc<Mutex<HashMap>>)
+  - `ResearchTask` [40..75] - id, query, status, result, started_at, injected
+  - `ResearchStatus` [20..35] - Pending, Complete, Failed enum
+  - `register()` [110..125] - creates task, returns research_id
+  - `complete()` / `fail()` [130..150] - update task status
+  - `take_completed()` [180..200] - returns completed tasks, marks as injected
+  - `list_all()` [165..170] - returns all tasks for /research command
+
+- `crates/g3-core/src/tools/research.rs`
+  - `execute_research()` [150..210] - spawns scout in tokio::spawn, returns placeholder
+  - `run_scout_agent()` [215..300] - async fn that runs in background task
+  - `execute_research_status()` [305..380] - check status of pending research
+
+- `crates/g3-core/src/lib.rs`
+  - `inject_completed_research()` [1080..1120] - injects completed research into context
+  - Called at start of each tool iteration and before user prompt in interactive mode
+
+- `crates/g3-cli/src/commands.rs`
+  - `/research` command [125..160] - lists all research tasks with status
+
+**Flow:**
+1. Agent calls `research(query)` → returns immediately with research_id
+2. Scout agent runs in background tokio task
+3. On completion, `PendingResearchManager.complete()` stores result
+4. At next iteration start or user prompt, `inject_completed_research()` adds to context
+5. Agent can check status with `research_status` tool or user with `/research` command

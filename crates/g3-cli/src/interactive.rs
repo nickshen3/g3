@@ -210,6 +210,14 @@ pub async fn run_interactive<W: UiWriter>(
         // Display context window progress bar before each prompt
         display_context_progress(&agent, &output);
 
+        // Check for completed research and inject into context
+        // This happens before prompting the user for input
+        let injected_count = agent.inject_completed_research();
+        if injected_count > 0 {
+            println!("📋 {} research result(s) ready - injected into context", injected_count);
+            println!();
+        }
+
         // Build prompt
         let prompt = build_prompt(in_multiline, agent_name, &active_project);
 

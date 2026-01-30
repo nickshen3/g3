@@ -120,6 +120,7 @@ mod tests {
     use crate::acd::Fragment;
     use crate::ui_writer::NullUiWriter;
     use crate::background_process::BackgroundProcessManager;
+    use crate::pending_research::PendingResearchManager;
     use serial_test::serial;
     use crate::webdriver_session::WebDriverSession;
     use g3_providers::{Message, MessageRole};
@@ -135,6 +136,7 @@ mod tests {
         todo_content: Arc<RwLock<String>>,
         pending_images: Vec<g3_providers::ImageContent>,
         config: g3_config::Config,
+        pending_research_manager: PendingResearchManager,
     }
 
     impl TestContext {
@@ -147,6 +149,7 @@ mod tests {
                 todo_content: Arc::new(RwLock::new(String::new())),
                 pending_images: Vec::new(),
                 config: g3_config::Config::default(),
+                pending_research_manager: PendingResearchManager::new(),
             }
         }
     }
@@ -169,6 +172,7 @@ mod tests {
             requirements_sha: None,
             context_total_tokens: 100000,
             context_used_tokens: 10000,
+            pending_research_manager: &test_ctx.pending_research_manager,
         };
 
         let tool_call = ToolCall {
@@ -199,6 +203,7 @@ mod tests {
             requirements_sha: None,
             context_total_tokens: 100000,
             context_used_tokens: 10000,
+            pending_research_manager: &test_ctx.pending_research_manager,
         };
 
         let tool_call = ToolCall {
@@ -229,6 +234,7 @@ mod tests {
             requirements_sha: None,
             context_total_tokens: 100000,
             context_used_tokens: 10000,
+            pending_research_manager: &test_ctx.pending_research_manager,
         };
 
         let tool_call = ToolCall {

@@ -1,9 +1,15 @@
 //! Research tool: spawns a scout agent to perform web-based research.
+//!
+//! The research tool is **asynchronous** - it spawns the scout agent in the background
+//! and returns immediately with a research_id. The agent can continue with other work
+//! while research is in progress. Results are automatically injected into the conversation
+//! when ready, or the agent can check status with the `research_status` tool.
 
 use anyhow::Result;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tracing::{debug, error};
 
 use crate::ui_writer::UiWriter;
 use crate::ToolCall;
@@ -19,6 +25,7 @@ const REPORT_END_MARKER: &str = "---SCOUT_REPORT_END---";
 ///
 /// Parses tool call headers from the scout output and returns human-readable
 /// progress messages. Returns None for lines that should be suppressed.
+#[allow(dead_code)] // Used in tests, may be used for progress display in future
 fn translate_progress(line: &str) -> Option<String> {
     // Strip ANSI codes first for pattern matching
     let clean_line = strip_ansi_codes(line);
@@ -118,6 +125,7 @@ fn translate_progress(line: &str) -> Option<String> {
 }
 
 /// Extract domain from a URL for cleaner display.
+#[allow(dead_code)] // Used in tests
 fn extract_domain(url: &str) -> Option<&str> {
     // Remove protocol
     let without_protocol = url
@@ -131,6 +139,7 @@ fn extract_domain(url: &str) -> Option<&str> {
 
 /// Truncate a command to a maximum length for display.
 /// Preserves the beginning of the command and adds "..." if truncated.
+#[allow(dead_code)] // Used in tests
 fn truncate_command_snippet(cmd: &str, max_len: usize) -> String {
     // Take just the first line if multi-line
     let first_line = cmd.lines().next().unwrap_or(cmd);
@@ -149,6 +158,14 @@ const CONTEXT_ERROR_PATTERNS: &[&str] = &[
     "too many tokens", "exceeds the model", "context window", "max_tokens",
 ];
 
+/// Execute the research tool - spawns scout agent in background and returns immediately.
+///
+/// This is the **async** version of research. It:
+/// 1. Registers a new research task with the PendingResearchManager
+/// 2. Spawns the scout agent in a background tokio task
+/// 3. Returns immediately with a placeholder message containing the research_id
+/// 4. The background task updates the manager when research completes
+/// 5. Results are injected into the conversation at the next natural break point
 pub async fn execute_research<W: UiWriter>(
     tool_call: &ToolCall,
     ctx: &mut ToolContext<'_, W>,
@@ -159,20 +176,74 @@ pub async fn execute_research<W: UiWriter>(
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing required 'query' parameter"))?;
 
+    // Register the research task and get an ID
+    let research_id = ctx.pending_research_manager.register(query);
+    
+    // Clone values needed for the background task
+    let query_owned = query.to_string();
+    let research_id_clone = research_id.clone();
+    let manager = ctx.pending_research_manager.clone();
+    let browser = ctx.config.webdriver.browser.clone();
+    
     // Find the g3 executable path
     let g3_path = std::env::current_exe()
         .unwrap_or_else(|_| std::path::PathBuf::from("g3"));
 
+    // Spawn the scout agent in a background task
+    tokio::spawn(async move {
+        let result = run_scout_agent(&g3_path, &query_owned, browser).await;
+        
+        match result {
+            Ok(report) => {
+                debug!("Research {} completed successfully", research_id_clone);
+                manager.complete(&research_id_clone, report);
+            }
+            Err(e) => {
+                error!("Research {} failed: {}", research_id_clone, e);
+                manager.fail(&research_id_clone, e.to_string());
+            }
+        }
+    });
+
+    // Return immediately with placeholder
+    let placeholder = format!(
+        "🔍 **Research initiated** (id: `{}`)
+
+\
+**Query:** {}
+
+\
+Research is running in the background. You can:
+- Continue with other work - results will be automatically provided when ready
+- Check status with `research_status` tool
+- If you need the results before continuing, say so and yield the turn to the user
+
+\
+_Estimated time: 30-120 seconds depending on query complexity_",
+        research_id,
+        query
+    );
+    
+    Ok(placeholder)
+}
+
+/// Run the scout agent and return the research report.
+/// This is the blocking part that runs in a background task.
+async fn run_scout_agent(
+    g3_path: &std::path::Path,
+    query: &str,
+    browser: WebDriverBrowser,
+) -> Result<String> {
     // Build the command with appropriate webdriver flags
-    let mut cmd = Command::new(&g3_path);
+    let mut cmd = Command::new(g3_path);
     cmd
         .arg("--agent")
         .arg("scout")
         .arg("--new-session")  // Always start fresh for research
         .arg("--quiet");  // Suppress log file creation
 
-    // Propagate the webdriver browser choice from the parent g3 instance
-    match ctx.config.webdriver.browser {
+    // Propagate the webdriver browser choice
+    match browser {
         WebDriverBrowser::ChromeHeadless => { cmd.arg("--chrome-headless"); }
         WebDriverBrowser::Safari => { cmd.arg("--webdriver"); }
     }
@@ -204,15 +275,9 @@ pub async fn execute_research<W: UiWriter>(
         stderr_output
     });
 
-    // Collect stdout lines, showing only translated progress messages
+    // Collect stdout lines (no progress display in background)
     while let Some(line) = reader.next_line().await? {
-        all_output.push(line.clone());
-        
-        // Show translated progress for tool calls
-        if let Some(progress_msg) = translate_progress(&line) {
-            // Update the status line in-place (no spinner)
-            ctx.ui_writer.update_tool_output_line(&progress_msg);
-        }
+        all_output.push(line);
     }
     
     // Collect stderr output
@@ -234,79 +299,116 @@ pub async fn execute_research<W: UiWriter>(
             .any(|pattern| combined_output.contains(pattern));
         
         if is_context_error {
-            let error_msg = format!(
-                "❌ **Scout Agent Error: Context Window Exhausted**\n\n\
+            return Err(anyhow::anyhow!(
+                "Context Window Exhausted\n\n\
                 The research query required more context than the model supports.\n\n\
                 **Suggestions:**\n\
                 - Try a more specific, narrower query\n\
                 - Break the research into smaller sub-questions\n\
                 - Use a model with a larger context window\n\n\
-                **Technical Details:**\n\
-                Exit code: {}\n\
-                {}",
-                exit_code,
-                if !stderr_text.is_empty() { format!("Error output: {}", stderr_text.chars().take(500).collect::<String>()) } else { String::new() }
-            );
-            ctx.ui_writer.println(&error_msg);
-            return Ok(error_msg);
+                Exit code: {}",
+                exit_code
+            ));
         }
         
         // Generic error with details
-        let error_msg = format!(
-            "❌ **Scout Agent Failed**\n\n\
+        return Err(anyhow::anyhow!(
+            "Scout Agent Failed\n\n\
             Exit code: {}\n\n\
             {}{}",
             exit_code,
             if !stderr_text.is_empty() { format!("**Error output:**\n{}\n\n", stderr_text.chars().take(1000).collect::<String>()) } else { String::new() },
-            if all_output.len() > 0 { format!("**Last output lines:**\n{}", all_output.iter().rev().take(10).rev().cloned().collect::<Vec<_>>().join("\n")) } else { String::new() }
-        );
-        ctx.ui_writer.println(&error_msg);
-        return Ok(error_msg);
+            if !all_output.is_empty() { format!("**Last output lines:**\n{}", all_output.iter().rev().take(10).rev().cloned().collect::<Vec<_>>().join("\n")) } else { String::new() }
+        ));
     }
 
     // Join all output and extract the report between markers
     let full_output = all_output.join("\n");
     
-    let report = match extract_report(&full_output) {
-        Ok(r) => r,
-        Err(e) => {
-            // Check if this looks like a context exhaustion issue
-            let combined = format!("{} {}", full_output, stderr_output.join(" ")).to_lowercase();
-            let is_context_error = CONTEXT_ERROR_PATTERNS.iter()
-                .any(|pattern| combined.contains(pattern));
-            
-            let error_msg = if is_context_error {
-                format!(
-                    "❌ **Scout Agent Error: Context Window Exhausted**\n\n\
-                    The scout agent ran out of context before completing the research report.\n\n\
-                    **Suggestions:**\n\
-                    - Try a more specific, narrower query\n\
-                    - Break the research into smaller sub-questions\n\n\
-                    **Technical Details:**\n\
-                    {}",
-                    e
-                )
-            } else {
-                format!(
-                    "❌ **Scout Agent Error: Report Extraction Failed**\n\n\
-                    {}\n\n\
-                    The scout agent completed but did not produce a valid report.\n\
-                    This may indicate the agent encountered an error during research.",
-                    e
-                )
-            };
-            ctx.ui_writer.println(&error_msg);
-            return Ok(error_msg);
+    extract_report(&full_output)
+}
+
+/// Execute the research_status tool - check status of pending research tasks.
+pub async fn execute_research_status<W: UiWriter>(
+    tool_call: &ToolCall,
+    ctx: &mut ToolContext<'_, W>,
+) -> Result<String> {
+    let research_id = tool_call
+        .args
+        .get("research_id")
+        .and_then(|v| v.as_str());
+
+    if let Some(id) = research_id {
+        // Check specific research task
+        match ctx.pending_research_manager.get(&id.to_string()) {
+            Some(task) => {
+                let status_emoji = match task.status {
+                    crate::pending_research::ResearchStatus::Pending => "🔄",
+                    crate::pending_research::ResearchStatus::Complete => "✅",
+                    crate::pending_research::ResearchStatus::Failed => "❌",
+                };
+                
+                let mut output = format!(
+                    "{} **Research Status** (id: `{}`)\n\n\
+                    **Query:** {}\n\
+                    **Status:** {}\n\
+                    **Elapsed:** {}\n",
+                    status_emoji,
+                    task.id,
+                    task.query,
+                    task.status,
+                    task.elapsed_display()
+                );
+                
+                if task.injected {
+                    output.push_str("\n_Results have already been injected into the conversation._\n");
+                } else if task.status != crate::pending_research::ResearchStatus::Pending {
+                    output.push_str("\n_Results will be injected at the next opportunity._\n");
+                }
+                
+                Ok(output)
+            }
+            None => Ok(format!("❓ No research task found with id: `{}`", id)),
         }
-    };
-    
-    // Print the research brief to the console for scrollback reference
-    // The report is printed without stripping ANSI codes to preserve formatting
-    ctx.ui_writer.println("");
-    ctx.ui_writer.println(&report);
-    ctx.ui_writer.println("");
-    
-    Ok(report)
+    } else {
+        // List all pending research tasks
+        let tasks = ctx.pending_research_manager.list_pending();
+        
+        if tasks.is_empty() {
+            return Ok("📋 No pending research tasks.".to_string());
+        }
+        
+        let mut output = format!("📋 **Pending Research Tasks** ({} total)\n\n", tasks.len());
+        
+        for task in tasks {
+            let status_emoji = match task.status {
+                crate::pending_research::ResearchStatus::Pending => "🔄",
+                crate::pending_research::ResearchStatus::Complete => "✅",
+                crate::pending_research::ResearchStatus::Failed => "❌",
+            };
+            
+            output.push_str(&format!(
+                "{} `{}` - {} ({})\n   Query: {}\n\n",
+                status_emoji,
+                task.id,
+                task.status,
+                task.elapsed_display(),
+                truncate_query(&task.query, 60)
+            ));
+        }
+        
+        Ok(output)
+    }
+}
+
+/// Truncate a query for display
+fn truncate_query(query: &str, max_len: usize) -> String {
+    if query.chars().count() <= max_len {
+        query.to_string()
+    } else {
+        let truncated: String = query.chars().take(max_len - 3).collect();
+        format!("{}...", truncated)
+    }
 }
 
 /// Extract the research report from scout output.
@@ -347,10 +449,10 @@ fn extract_report(output: &str) -> Result<String> {
     let report_content = output[report_start..original_end].trim();
     
     if report_content.is_empty() {
-        return Ok("❌ Scout agent returned an empty report.".to_string());
+        return Ok("Scout agent returned an empty report.".to_string());
     }
     
-    Ok(format!("📋 Research Report:\n\n{}", report_content))
+    Ok(report_content.to_string())
 }
 
 /// Find the position of a marker in text that may contain ANSI codes.
@@ -372,7 +474,7 @@ fn find_marker_position(text: &str, marker: &str) -> Option<usize> {
 /// Handles common ANSI sequences like:
 /// - CSI sequences: \x1b[...m (colors, styles)
 /// - OSC sequences: \x1b]...\x07 (terminal titles, etc.)
-fn strip_ansi_codes(s: &str) -> String {
+pub fn strip_ansi_codes(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     
@@ -594,5 +696,15 @@ Some trailing text"#;
         let result = translate_progress(line).unwrap();
         assert!(result.starts_with(" > `grep"));
         assert!(result.contains("..."));
+    }
+
+    #[test]
+    fn test_truncate_query() {
+        assert_eq!(truncate_query("short query", 50), "short query");
+        
+        let long_query = "This is a very long research query that should be truncated for display purposes";
+        let result = truncate_query(long_query, 40);
+        assert!(result.len() <= 40);
+        assert!(result.ends_with("..."));
     }
 }

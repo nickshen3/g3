@@ -258,7 +258,7 @@ fn create_core_tools(exclude_research: bool) -> Vec<Tool> {
     if !exclude_research {
         tools.push(Tool {
             name: "research".to_string(),
-            description: "Perform web-based research on a topic and return a structured research brief. Use this tool when you need to research APIs, SDKs, libraries, approaches, bugs, documentation, or anything else that requires web-based research. The tool spawns a specialized research agent that browses the web and returns a concise, decision-ready report.".to_string(),
+            description: "Initiate web-based research on a topic. This tool is ASYNCHRONOUS - it spawns a research agent in the background and returns immediately with a research_id. Results are automatically injected into the conversation when ready. Use this when you need to research APIs, SDKs, libraries, approaches, bugs, or documentation. If you need the results before continuing, say so and yield the turn to the user. Check status with research_status tool.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -268,6 +268,22 @@ fn create_core_tools(exclude_research: bool) -> Vec<Tool> {
                     }
                 },
                 "required": ["query"]
+            }),
+        });
+
+        // research_status tool - check status of pending research
+        tools.push(Tool {
+            name: "research_status".to_string(),
+            description: "Check the status of pending research tasks. Call without arguments to list all pending research, or with a research_id to check a specific task. Use this to see if research has completed before it's automatically injected.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "research_id": {
+                        "type": "string",
+                        "description": "Optional: specific research_id to check. If omitted, lists all pending research tasks."
+                    }
+                },
+                "required": []
             }),
         });
     }
@@ -509,9 +525,9 @@ mod tests {
         let tools = create_core_tools(false);
         // Should have the core tools: shell, background_process, read_file, read_image,
         // write_file, str_replace, screenshot,
-        // todo_read, todo_write, coverage, code_search, research, remember
-        // (13 total - memory is auto-loaded, only remember tool needed)
-        assert_eq!(tools.len(), 14);
+        // todo_read, todo_write, coverage, code_search, research, research_status, remember
+        // (15 total - memory is auto-loaded, only remember tool needed)
+        assert_eq!(tools.len(), 15);
     }
 
     #[test]
@@ -525,15 +541,15 @@ mod tests {
     fn test_create_tool_definitions_core_only() {
         let config = ToolConfig::default();
         let tools = create_tool_definitions(config);
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 15);
     }
 
     #[test]
     fn test_create_tool_definitions_all_enabled() {
         let config = ToolConfig::new(true, true);
         let tools = create_tool_definitions(config);
-        // 13 core + 15 webdriver = 28
-        assert_eq!(tools.len(), 29);
+        // 15 core + 15 webdriver = 30
+        assert_eq!(tools.len(), 30);
     }
 
     #[test]
@@ -551,8 +567,8 @@ mod tests {
         let tools_with_research = create_core_tools(false);
         let tools_without_research = create_core_tools(true);
         
-        assert_eq!(tools_with_research.len(), 14);
-        assert_eq!(tools_without_research.len(), 13);
+        assert_eq!(tools_with_research.len(), 15);
+        assert_eq!(tools_without_research.len(), 13);  // research + research_status both excluded
         
         assert!(tools_with_research.iter().any(|t| t.name == "research"));
         assert!(!tools_without_research.iter().any(|t| t.name == "research"));
