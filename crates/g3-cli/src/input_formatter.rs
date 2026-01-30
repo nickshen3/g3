@@ -5,8 +5,10 @@
 //! - Quoted text ("..." or '...') becomes cyan
 //! - Standard markdown formatting (bold, italic, code) is applied
 
+use crossterm::terminal;
 use regex::Regex;
 use std::io::Write;
+use std::io::IsTerminal;
 use termimad::MadSkin;
 
 use crate::streaming_markdown::StreamingMarkdownFormatter;
@@ -87,23 +89,40 @@ pub fn format_input(input: &str) -> String {
 /// 
 /// This moves the cursor up to overwrite the original input line,
 /// then prints the formatted version.
+/// 
+/// Note: This function only performs formatting when stdout is a TTY.
+/// In non-TTY contexts (piped output, etc.), it does nothing to avoid
+/// corrupting terminal state for subsequent stdin operations.
 pub fn reprint_formatted_input(input: &str, prompt: &str) {
+    // Only reformat if stdout is a TTY - avoid corrupting terminal state otherwise
+    if !std::io::stdout().is_terminal() {
+        return;
+    }
+
     // Format the input
     let formatted = format_input(input);
-    
-    // Count how many lines the input spans (for multiline input)
-    let line_count = input.lines().count().max(1);
-    
+
+    // Get terminal width to calculate visual lines
+    // The prompt + input may wrap across multiple terminal rows
+    let term_width = terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(80);
+
+    // Calculate visual lines: prompt + input length divided by terminal width
+    // This accounts for line wrapping in the terminal
+    let total_chars = prompt.len() + input.len();
+    let visual_lines = ((total_chars + term_width - 1) / term_width).max(1); // ceiling division
+
     // Move cursor up by the number of lines and clear
-    for _ in 0..line_count {
+    for _ in 0..visual_lines {
         // Move up one line and clear it
         print!("\x1b[1A\x1b[2K");
     }
-    
+
     // Reprint with prompt and formatted input
     // Use dim color for the prompt to distinguish from the formatted input
-    print!("\x1b[2m{}\x1b[0m{}", prompt, formatted);
-    
+    println!("\x1b[2m{}\x1b[0m{}", prompt, formatted);
+
     // Ensure output is flushed
     let _ = std::io::stdout().flush();
 }
