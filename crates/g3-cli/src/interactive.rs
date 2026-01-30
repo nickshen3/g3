@@ -17,6 +17,7 @@ use crate::g3_status::{G3Status, Status};
 use crate::project::Project;
 use crate::project_files::extract_project_heading;
 use crate::simple_output::SimpleOutput;
+use crate::input_formatter::reprint_formatted_input;
 use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
 use crate::utils::display_context_progress;
@@ -246,6 +247,9 @@ pub async fn run_interactive<W: UiWriter>(
                         break;
                     }
 
+                    // Reprint input with formatting
+                    reprint_formatted_input(&input, &prompt);
+
                     execute_user_input(
                         &mut agent, &input, show_prompt, show_code, &output, from_agent_mode
                     ).await;
@@ -270,6 +274,9 @@ pub async fn run_interactive<W: UiWriter>(
                             continue;
                         }
                     }
+
+                    // Reprint input with formatting
+                    reprint_formatted_input(&input, &prompt);
 
                     execute_user_input(
                         &mut agent, &input, show_prompt, show_code, &output, from_agent_mode

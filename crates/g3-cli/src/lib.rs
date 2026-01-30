@@ -23,6 +23,7 @@ mod g3_status;
 mod template;
 mod completion;
 mod project;
+mod input_formatter;
 
 use anyhow::Result;
 use std::path::PathBuf;
