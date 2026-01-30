@@ -90,17 +90,9 @@ pub async fn run() -> Result<()> {
     if let Some(agent_name) = &cli.agent {
         return run_agent_mode(
             agent_name,
-            cli.workspace.clone(),
-            cli.config.as_deref(),
-            cli.quiet,
-            cli.new_session,
             cli.task.clone(),
-            cli.chrome_headless,
-            cli.safari,
             cli.chat,
-            cli.include_prompt.clone(),
-            cli.no_auto_memory,
-            cli.acd,
+            cli.common_flags(),
         )
         .await;
     }

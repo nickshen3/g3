@@ -1,7 +1,6 @@
 //! Agent mode for G3 CLI - runs specialized agents with custom prompts.
 
 use anyhow::Result;
-use std::path::PathBuf;
 use tracing::debug;
 
 use g3_core::ui_writer::UiWriter;
@@ -15,21 +14,17 @@ use crate::embedded_agents::load_agent_prompt;
 use crate::ui_writer_impl::ConsoleUiWriter;
 use crate::interactive::run_interactive;
 use crate::template::process_template;
+use crate::project::{Project, load_and_validate_project};
+use crate::cli_args::CommonFlags;
 
 /// Run agent mode - loads a specialized agent prompt and executes a single task.
+/// 
+/// Uses `CommonFlags` for flags that apply across all modes, ensuring consistency.
 pub async fn run_agent_mode(
     agent_name: &str,
-    workspace: Option<PathBuf>,
-    config_path: Option<&str>,
-    _quiet: bool,
-    new_session: bool,
     task: Option<String>,
-    chrome_headless: bool,
-    safari: bool,
     chat: bool,
-    include_prompt_path: Option<PathBuf>,
-    no_auto_memory: bool,
-    acd_enabled: bool,
+    flags: CommonFlags,
 ) -> Result<()> {
     use g3_core::find_incomplete_agent_session;
     use g3_core::get_agent_system_prompt;
@@ -40,7 +35,7 @@ pub async fn run_agent_mode(
     let output = SimpleOutput::new();
 
     // Determine workspace directory (current dir if not specified)
-    let workspace_dir = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let workspace_dir = flags.workspace.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     // Change to the workspace directory first so session scanning works correctly
     std::env::set_current_dir(&workspace_dir)?;
@@ -49,7 +44,7 @@ pub async fn run_agent_mode(
     // Skip session resume entirely when in chat mode (--agent --chat)
     let resuming_session = if chat {
         None // Chat mode always starts fresh
-    } else if new_session {
+    } else if flags.new_session {
         if !chat {
             output.print("\n🆕 Starting new session (--new-session flag set)");
             output.print("");
@@ -97,16 +92,16 @@ pub async fn run_agent_mode(
     print_workspace_path(&workspace_dir);
 
     // Load config
-    let mut config = g3_config::Config::load(config_path)?;
+    let mut config = g3_config::Config::load(flags.config.as_deref())?;
 
     // Apply chrome-headless flag override
-    if chrome_headless {
+    if flags.chrome_headless {
         config.webdriver.enabled = true;
         config.webdriver.browser = g3_config::WebDriverBrowser::ChromeHeadless;
     }
 
     // Apply safari flag override
-    if safari {
+    if flags.safari {
         config.webdriver.enabled = true;
         config.webdriver.browser = g3_config::WebDriverBrowser::Safari;
     }
@@ -120,10 +115,10 @@ pub async fn run_agent_mode(
     let memory_content_opt = read_workspace_memory(&workspace_dir);
 
     // Read include prompt early so we can show it in the status line
-    let include_prompt = read_include_prompt(include_prompt_path.as_deref());
+    let include_prompt = read_include_prompt(flags.include_prompt.as_deref());
 
     // Build and print status line showing what was loaded
-    let include_filename = include_prompt_path.as_ref()
+    let include_filename = flags.include_prompt.as_ref()
         .filter(|_| include_prompt.is_some())
         .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().to_string());
@@ -181,10 +176,10 @@ pub async fn run_agent_mode(
 
     // Auto-memory is enabled by default in agent mode (unless --no-auto-memory is set)
     // This prompts the LLM to save discoveries to workspace memory after each turn
-    agent.set_auto_memory(!no_auto_memory);
+    agent.set_auto_memory(!flags.no_auto_memory);
     
     // Enable ACD (Aggressive Context Dehydration) if requested
-    if acd_enabled {
+    if flags.acd {
         agent.set_acd_enabled(true);
     }
 
@@ -244,15 +239,43 @@ pub async fn run_agent_mode(
 
     // If chat mode is enabled, run interactive loop instead of single task
     if chat {
+        // Load project if --project flag was specified
+        let initial_project: Option<Project> = if let Some(ref proj_path) = flags.project {
+            match load_and_validate_project(&proj_path.to_string_lossy(), &workspace_dir) {
+                Ok(cli_project) => {
+                    // Set project content in agent's system message
+                    if agent.set_project_content(Some(cli_project.content.clone())) {
+                        // Set project path on UI writer for path shortening
+                        let project_name = cli_project.path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("project")
+                            .to_string();
+                        agent.ui_writer().set_project_path(cli_project.path.clone(), project_name);
+                        Some(cli_project)
+                    } else {
+                        eprintln!("Warning: Failed to set project content in agent context.");
+                        None
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error loading project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            None
+        };
+
         return run_interactive(
             agent,
             false, // show_prompt
             false, // show_code
             combined_content,
             &workspace_dir,
-            new_session,
+            flags.new_session,
             Some(agent_name),  // agent name for prompt (e.g., "butler>")
-            None, // initial_project (not supported in agent mode yet)
+            initial_project,
         )
         .await;
     }

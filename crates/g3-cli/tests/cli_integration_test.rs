@@ -305,3 +305,33 @@ fn test_no_auto_memory_in_help_output() {
         "Help output should mention --no-auto-memory flag"
     );
 }
+
+// =============================================================================
+// Test: Project option is accepted (including with agent mode)
+// =============================================================================
+
+#[test]
+fn test_project_option_accepted() {
+    let output = Command::new(get_g3_binary())
+        .args(["--project", "/tmp/myproject", "--help"])
+        .output()
+        .expect("Failed to execute g3 with project option");
+
+    assert!(
+        output.status.success(),
+        "--project option should be recognized"
+    );
+}
+
+#[test]
+fn test_project_option_with_agent_mode_accepted() {
+    let output = Command::new(get_g3_binary())
+        .args(["--agent", "butler", "--chat", "--project", "/tmp/myproject", "--help"])
+        .output()
+        .expect("Failed to execute g3 with agent and project options");
+
+    assert!(
+        output.status.success(),
+        "--project option should work with --agent --chat"
+    );
+}

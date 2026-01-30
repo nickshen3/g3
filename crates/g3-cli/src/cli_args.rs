@@ -3,6 +3,35 @@
 use clap::Parser;
 use std::path::PathBuf;
 
+/// Flags that apply across all execution modes (interactive, agent, autonomous).
+/// 
+/// When adding a new flag that should work in all modes, add it here instead of
+/// passing individual parameters to mode functions. This prevents bugs where a
+/// flag works in one mode but is forgotten in another.
+#[derive(Clone, Debug, Default)]
+pub struct CommonFlags {
+    /// Workspace directory
+    pub workspace: Option<PathBuf>,
+    /// Configuration file path
+    pub config: Option<String>,
+    /// Skip session resumption and force a new session
+    pub new_session: bool,
+    /// Suppress output/logging
+    pub quiet: bool,
+    /// Use Chrome in headless mode for WebDriver
+    pub chrome_headless: bool,
+    /// Use Safari for WebDriver
+    pub safari: bool,
+    /// Include additional prompt content from a file
+    pub include_prompt: Option<PathBuf>,
+    /// Disable automatic memory update reminder
+    pub no_auto_memory: bool,
+    /// Enable aggressive context dehydration
+    pub acd: bool,
+    /// Load a project from the given path at startup
+    pub project: Option<PathBuf>,
+}
+
 #[derive(Parser, Clone)]
 #[command(name = "g3")]
 #[command(about = "A modular, composable AI coding agent")]
@@ -126,4 +155,23 @@ pub struct Cli {
     /// Load a project from the given path at startup (like /project but without auto-prompt)
     #[arg(long, value_name = "PATH")]
     pub project: Option<PathBuf>,
+}
+
+impl Cli {
+    /// Extract common flags that apply across all execution modes.
+    /// This ensures flags like --project, --acd, --include-prompt work consistently.
+    pub fn common_flags(&self) -> CommonFlags {
+        CommonFlags {
+            workspace: self.workspace.clone(),
+            config: self.config.clone(),
+            new_session: self.new_session,
+            quiet: self.quiet,
+            chrome_headless: self.chrome_headless,
+            safari: self.safari,
+            include_prompt: self.include_prompt.clone(),
+            no_auto_memory: self.no_auto_memory,
+            acd: self.acd,
+            project: self.project.clone(),
+        }
+    }
 }
