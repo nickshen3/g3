@@ -43,6 +43,7 @@ pub async fn dispatch_tool<W: UiWriter>(
 
         // Research tool
         "research" => research::execute_research(tool_call, ctx).await,
+        "research_status" => research::execute_research_status(tool_call, ctx).await,
 
         // Workspace memory tools
         "remember" => memory::execute_remember(tool_call, ctx).await,
