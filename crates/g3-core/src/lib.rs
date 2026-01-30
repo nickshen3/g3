@@ -38,6 +38,9 @@ pub use task_result::TaskResult;
 // Re-export context window types
 pub use context_window::{ContextWindow, ThinResult, ThinScope};
 
+// Re-export pending research types for notification handling
+pub use pending_research::{PendingResearchManager, ResearchCompletionNotification, ResearchStatus};
+
 // Export agent prompt generation for CLI use
 pub use prompts::get_agent_system_prompt;
 
@@ -1482,6 +1485,26 @@ impl<W: UiWriter> Agent<W> {
 
     pub fn get_pending_research_manager(&self) -> &pending_research::PendingResearchManager {
         &self.pending_research_manager
+    }
+
+    /// Subscribe to research completion notifications.
+    ///
+    /// Returns a receiver that will receive notifications when research tasks complete.
+    /// Returns None if the agent was not configured with notifications enabled.
+    /// Use this in interactive mode to get real-time updates when research finishes.
+    pub fn subscribe_research_notifications(&self) -> Option<tokio::sync::broadcast::Receiver<pending_research::ResearchCompletionNotification>> {
+        self.pending_research_manager.subscribe()
+    }
+
+    /// Enable research completion notifications and return a receiver.
+    ///
+    /// This replaces the internal research manager with one that sends notifications.
+    /// Call this once during setup (e.g., in interactive mode) before any research tasks.
+    /// Returns a receiver that will receive notifications when research tasks complete.
+    pub fn enable_research_notifications(&mut self) -> tokio::sync::broadcast::Receiver<pending_research::ResearchCompletionNotification> {
+        let (manager, rx) = pending_research::PendingResearchManager::with_notifications();
+        self.pending_research_manager = manager;
+        rx
     }
 
     pub fn set_requirements_sha(&mut self, sha: String) {

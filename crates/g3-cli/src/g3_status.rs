@@ -284,6 +284,24 @@ impl G3Status {
         );
         Self::done();
     }
+
+    /// Print research completion notification: "g3: N research report(s) ... [done/failed]"
+    ///
+    /// Used for real-time notification when background research completes.
+    pub fn research_complete(count: usize, all_succeeded: bool) {
+        let report_word = if count == 1 { "report" } else { "reports" };
+        print!(
+            "{} {} research {} ...",
+            Self::format_prefix(),
+            count,
+            report_word
+        );
+        if all_succeeded {
+            Self::done();
+        } else {
+            Self::failed();
+        }
+    }
 }
 
 #[cfg(test)]
