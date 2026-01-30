@@ -139,12 +139,15 @@ impl PendingResearchManager {
     /// Generate a unique research ID
     pub fn generate_id() -> ResearchId {
         use std::time::{SystemTime, UNIX_EPOCH};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis();
-        // Use timestamp + random suffix for uniqueness
-        format!("research_{:x}_{:04x}", timestamp, rand::random::<u16>())
+        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("research_{:x}_{:08x}", timestamp, counter)
     }
 
     /// Register a new research task

@@ -61,8 +61,6 @@ pub struct GlmToolAdapter {
     buffer: String,
     /// Buffer for current line (to detect code fences)
     line_buffer: String,
-    /// Whether we're currently inside a code fence
-    in_code_fence: bool,
     /// Current parse state
     state: ParseState,
     /// JSON parsing state (when in InToolJson)
@@ -78,7 +76,6 @@ impl GlmToolAdapter {
         Self {
             buffer: String::new(),
             line_buffer: String::new(),
-            in_code_fence: false,
             state: ParseState::Prose,
             json_state: JsonState::Normal,
             json_depth: 0,
@@ -457,7 +454,6 @@ impl ToolFormatAdapter for GlmToolAdapter {
     fn reset(&mut self) {
         self.buffer.clear();
         self.line_buffer.clear();
-        self.in_code_fence = false;
         self.state = ParseState::Prose;
         self.json_state = JsonState::Normal;
         self.json_depth = 0;
@@ -696,7 +692,6 @@ Second:<|assistant|>read_file
         assert_eq!(output.emit, "Normal text");
         assert!(!output.has_tool_call);
     }
-}
 
     #[test]
     fn test_strip_code_fences() {
@@ -731,3 +726,4 @@ Second:<|assistant|>read_file
         assert!(!full.contains("```"));
         assert!(full.contains("{\"tool\": \"shell\""));
     }
+}
