@@ -9,11 +9,11 @@
 //! ```
 //!
 //! 2. Code-fenced JSON (when following system prompt instructions):
-//! ```text
+//! ````text
 //! ```json
 //! {"tool": "shell", "args": {"command": "ls"}}
 //! ```
-//! ```
+//! ````
 //!
 //! This adapter handles both formats and strips code fences when present.
 
