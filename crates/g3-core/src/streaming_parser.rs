@@ -160,6 +160,7 @@ fn find_json_object_end(text: &str) -> Option<usize> {
 /// Detects two invalidation cases:
 /// 1. Unescaped newline inside a JSON string (invalid JSON)
 /// 2. Newline followed by non-JSON prose (e.g., regular text, not `"`, `{`, `}`, etc.)
+/// 3. Newline followed by a new tool call pattern (`{"tool"`) - indicates abandoned fragment
 fn is_json_invalidated(json_text: &str) -> bool {
     let mut in_string = false;
     let mut escape_next = false;
@@ -184,8 +185,20 @@ fn is_json_invalidated(json_text: &str) -> bool {
                     chars.next();
                 }
 
-                // Check if next char is valid JSON continuation
-                if let Some(&(_, next_ch)) = chars.peek() {
+                // Check what comes after the newline
+                if let Some(&(next_pos, next_ch)) = chars.peek() {
+                    // Check if this is the start of a NEW tool call pattern
+                    // This indicates the previous JSON fragment was abandoned
+                    let remaining = &json_text[next_pos..];
+                    if remaining.starts_with("{\"tool\"")
+                        || remaining.starts_with("{ \"tool\"")
+                        || remaining.starts_with("{\"tool\" ")
+                        || remaining.starts_with("{ \"tool\" ")
+                    {
+                        return true; // New tool call started, previous fragment is abandoned
+                    }
+
+                    // Check if next char is valid JSON continuation
                     let valid_json_char = matches!(
                         next_ch,
                         '"' | '{' | '}' | '[' | ']' | ':' | ',' | '-' | '0'..='9' | 't' | 'f' | 'n' | '\n'
@@ -802,5 +815,73 @@ Some text after"#;
         assert!(is_position_in_fence_ranges(15, &ranges));
         assert!(!is_position_in_fence_ranges(25, &ranges));
         assert!(is_position_in_fence_ranges(35, &ranges));
+    }
+
+    #[test]
+    fn test_stuttering_tool_call_pattern() {
+        // This test reproduces the bug seen in butler session butler_c6ab59af2e4f991c
+        // The LLM emits a complete tool call, then an incomplete fragment, then the complete call again
+        let mut parser = StreamingToolParser::new();
+
+        let content = r#"{"tool": "shell", "args": {"command": "ls"}}
+
+{"tool":
+
+{"tool": "shell", "args": {"command": "ls"}}"#;
+
+        let chunk = g3_providers::CompletionChunk {
+            content: content.to_string(),
+            finished: true,
+            tool_calls: None,
+            usage: None,
+            stop_reason: None,
+            tool_call_streaming: None,
+        };
+
+        let tools = parser.process_chunk(&chunk);
+
+        // We should get at least one valid tool call, not zero
+        // The incomplete {"tool": fragment should be skipped/invalidated
+        assert!(
+            !tools.is_empty(),
+            "Expected at least one tool call, got none. Parser may be stuck on incomplete fragment."
+        );
+    }
+
+    #[test]
+    fn test_incomplete_json_followed_by_new_object_is_invalidated() {
+        // The incomplete {"tool": should be invalidated when we see the newline + new JSON start
+        // This is the root cause of the stuttering bug
+        // Pattern: {"tool":\n\n{"tool": "shell"...}
+        let invalidated = is_json_invalidated("{\"tool\":\n\n{\"tool\": \"shell\"}");
+        assert!(
+            invalidated,
+            "Incomplete JSON followed by newline and new object start should be invalidated"
+        );
+
+        // Also test the simpler case - just a bare { after newline
+        // This is less common but could happen
+        let invalidated2 = is_json_invalidated("{\"tool\":\n\n{");
+        // Note: This case is NOT invalidated by our current logic because a bare { 
+        // could be a valid nested object. We only invalidate when we see a NEW tool call pattern.
+        // This is intentional - we don't want to break valid nested JSON.
+        assert!(!invalidated2, "Bare {{ after newline is valid JSON continuation");
+    }
+
+    #[test]
+    fn test_tool_pattern_inside_string_not_invalidated() {
+        // When writing example tool call code to a file, the {"tool" pattern
+        // appears inside a JSON string. This should NOT invalidate the JSON.
+        // Note: The newline inside the string is escaped as \n
+        let json_with_example = r#"{"tool": "write_file", "args": {"content": "Example:\n{\"tool\": \"shell\"}"}}"#;
+        let invalidated = is_json_invalidated(json_with_example);
+        assert!(!invalidated, "Tool pattern inside escaped string should not invalidate");
+
+        // Also test with literal newline inside string (which IS invalid JSON)
+        // But this should be caught by the "unescaped newline in string" rule, not the tool pattern rule
+        let json_with_literal_newline = "{\"tool\": \"write_file\", \"args\": {\"content\": \"Example:\n{\"tool\": \"shell\"}\"}";
+        let invalidated2 = is_json_invalidated(json_with_literal_newline);
+        // This is invalid because of the unescaped newline in string, not because of the tool pattern
+        assert!(invalidated2, "Unescaped newline in string should invalidate");
     }
 }
