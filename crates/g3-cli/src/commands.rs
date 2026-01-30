@@ -1,6 +1,6 @@
 //! Interactive command handlers for G3 CLI.
 //!
-//! Handles `/` commands in interactive mode.
+//! Handles `/` commands in interactive mode (help, compact, research, etc.).
 
 use anyhow::Result;
 use rustyline::Editor;
@@ -15,6 +15,33 @@ use crate::project::Project;
 use crate::project::load_and_validate_project;
 use crate::template::process_template;
 use crate::task_execution::execute_task_with_retry;
+
+// --- Research command helpers ---
+
+fn format_research_task_summary(task: &g3_core::pending_research::ResearchTask) -> String {
+    let status_emoji = match task.status {
+        g3_core::pending_research::ResearchStatus::Pending => "🔄",
+        g3_core::pending_research::ResearchStatus::Complete => "✅",
+        g3_core::pending_research::ResearchStatus::Failed => "❌",
+    };
+    let injected = if task.injected { " (injected)" } else { "" };
+    let query_preview = if task.query.len() > 60 {
+        format!("{}...", task.query.chars().take(57).collect::<String>())
+    } else {
+        task.query.clone()
+    };
+    format!(
+        "  {} `{}` - {} ({}){}\n     Query: {}",
+        status_emoji, task.id, task.status, task.elapsed_display(), injected, query_preview
+    )
+}
+
+fn format_research_report_header(task: &g3_core::pending_research::ResearchTask) -> String {
+    format!(
+        "📋 Research Report: `{}`\n\nQuery: {}\n\nStatus: {} | Elapsed: {}\n\n{}",
+        task.id, task.query, task.status, task.elapsed_display(), "─".repeat(60)
+    )
+}
 
 /// Handle a control command. Returns true if the command was handled and the loop should continue.
 pub async fn handle_command<W: UiWriter>(
@@ -135,89 +162,49 @@ pub async fn handle_command<W: UiWriter>(
         }
         cmd if cmd == "/research" || cmd.starts_with("/research ") => {
             let manager = agent.get_pending_research_manager();
-            
-            // Parse argument: /research, /research latest, /research <id>
             let arg = cmd.strip_prefix("/research").unwrap_or("").trim();
             
             if arg.is_empty() {
-                // List all research tasks
                 let all_tasks = manager.list_all();
-                
                 if all_tasks.is_empty() {
-                output.print("📋 No research tasks (pending or completed).");
+                    output.print("📋 No research tasks (pending or completed).");
                 } else {
-                output.print(&format!("📋 Research Tasks ({} total):\n", all_tasks.len()));
-                
-                for task in all_tasks {
-                    let status_emoji = match task.status {
-                        g3_core::pending_research::ResearchStatus::Pending => "🔄",
-                        g3_core::pending_research::ResearchStatus::Complete => "✅",
-                        g3_core::pending_research::ResearchStatus::Failed => "❌",
-                    };
-                    
-                    let injected_marker = if task.injected { " (injected)" } else { "" };
-                    
-                    output.print(&format!(
-                        "  {} `{}` - {} ({}){}\n     Query: {}",
-                        status_emoji,
-                        task.id,
-                        task.status,
-                        task.elapsed_display(),
-                        injected_marker,
-                        if task.query.len() > 60 {
-                            format!("{}...", &task.query.chars().take(57).collect::<String>())
-                        } else {
-                            task.query.clone()
-                        }
-                    ));
-                    output.print("");
+                    output.print(&format!("📋 Research Tasks ({} total):\n", all_tasks.len()));
+                    for task in all_tasks {
+                        output.print(&format_research_task_summary(&task));
+                        output.print("");
                     }
                 }
             } else if arg == "latest" {
-                // Show the most recent research report
                 let all_tasks = manager.list_all();
-                
-                // Find the most recent completed task (smallest elapsed time = most recent)
                 let latest = all_tasks.iter()
                     .filter(|t| t.status != g3_core::pending_research::ResearchStatus::Pending)
                     .min_by_key(|t| t.started_at.elapsed());
                 
                 match latest {
                     Some(task) => {
-                        output.print(&format!("📋 Research Report: `{}`\n", task.id));
-                        output.print(&format!("Query: {}\n", task.query));
-                        output.print(&format!("Status: {} | Elapsed: {}\n", task.status, task.elapsed_display()));
-                        output.print(&"─".repeat(60));
-                        if let Some(ref result) = task.result {
-                            output.print(result);
-                        } else {
-                            output.print("(No report content available)");
-                        }
+                        output.print(&format_research_report_header(task));
+                        output.print(task.result.as_deref().unwrap_or("(No report content available)"));
                     }
                     None => {
                         output.print("📋 No completed research tasks yet.");
                     }
                 }
             } else {
-                // View a specific research report by ID
-                let task_id = arg.to_string();
-                
-                match manager.get(&task_id) {
+                match manager.get(&arg.to_string()) {
                     Some(task) => {
-                        output.print(&format!("📋 Research Report: `{}`\n", task.id));
-                        output.print(&format!("Query: {}\n", task.query));
-                        output.print(&format!("Status: {} | Elapsed: {}\n", task.status, task.elapsed_display()));
-                        output.print(&"─".repeat(60));
-                        if let Some(ref result) = task.result {
-                            output.print(result);
+                        output.print(&format_research_report_header(&task));
+                        let content = if let Some(ref result) = task.result {
+                            result.as_str()
                         } else if task.status == g3_core::pending_research::ResearchStatus::Pending {
-                            output.print("(Research still in progress...)");
+                            "(Research still in progress...)"
                         } else {
-                            output.print("(No report content available)");
-                        }
+                            "(No report content available)"
+                        };
+                        output.print(content);
                     }
                     None => {
-                        output.print(&format!("❓ No research task found with id: `{}`", task_id));
+                        output.print(&format!("❓ No research task found with id: `{}`", arg));
                     }
                 }
             }

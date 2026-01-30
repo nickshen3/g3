@@ -366,7 +366,7 @@ mod tests {
         
         let id1 = manager.register("Query 1");
         let id2 = manager.register("Query 2");
-        let id3 = manager.register("Query 3");
+        let _id3 = manager.register("Query 3");
         
         // Complete two, leave one pending
         manager.complete(&id1, "Report 1".to_string());
@@ -415,7 +415,7 @@ mod tests {
         assert!(manager.format_status_summary().is_none());
         
         // One pending
-        let id1 = manager.register("Query 1");
+        let _id1 = manager.register("Query 1");
         let summary = manager.format_status_summary().unwrap();
         assert!(summary.contains("1 researching"));
         
