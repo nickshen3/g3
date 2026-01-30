@@ -2,7 +2,8 @@
 //!
 //! This module manages research tasks that run in the background while the agent
 //! continues with other work. Research results are stored until they can be
-//! injected into the conversation at a natural break point.
+//! injected into the conversation at a natural break point. Completion notifications
+//! are sent via a channel for real-time UI updates.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -80,10 +81,23 @@ impl ResearchTask {
     }
 }
 
+/// Notification sent when a research task completes (success or failure)
+#[derive(Debug, Clone)]
+pub struct ResearchCompletionNotification {
+    /// The research ID that completed
+    pub id: ResearchId,
+    /// Whether it succeeded or failed
+    pub status: ResearchStatus,
+    /// The query that was researched
+    pub query: String,
+}
+
 /// Thread-safe manager for pending research tasks
 #[derive(Debug, Clone)]
 pub struct PendingResearchManager {
     tasks: Arc<Mutex<HashMap<ResearchId, ResearchTask>>>,
+    /// Channel sender for completion notifications (optional, for UI updates)
+    completion_tx: Option<tokio::sync::broadcast::Sender<ResearchCompletionNotification>>,
 }
 
 impl Default for PendingResearchManager {
@@ -97,7 +111,29 @@ impl PendingResearchManager {
     pub fn new() -> Self {
         Self {
             tasks: Arc::new(Mutex::new(HashMap::new())),
+            completion_tx: None,
         }
+    }
+
+    /// Create a new pending research manager with completion notifications enabled.
+    ///
+    /// Returns the manager and a receiver for completion notifications.
+    /// The receiver can be used to get real-time updates when research completes.
+    pub fn with_notifications() -> (Self, tokio::sync::broadcast::Receiver<ResearchCompletionNotification>) {
+        // Buffer size of 16 should be plenty for concurrent research tasks
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let manager = Self {
+            tasks: Arc::new(Mutex::new(HashMap::new())),
+            completion_tx: Some(tx),
+        };
+        (manager, rx)
+    }
+
+    /// Subscribe to completion notifications.
+    ///
+    /// Returns None if notifications are not enabled (manager created with `new()`).
+    pub fn subscribe(&self) -> Option<tokio::sync::broadcast::Receiver<ResearchCompletionNotification>> {
+        self.completion_tx.as_ref().map(|tx| tx.subscribe())
     }
 
     /// Generate a unique research ID
@@ -127,21 +163,47 @@ impl PendingResearchManager {
 
     /// Update a research task with its result
     pub fn complete(&self, id: &ResearchId, result: String) {
-        let mut tasks = self.tasks.lock().unwrap();
-        if let Some(task) = tasks.get_mut(id) {
-            task.status = ResearchStatus::Complete;
-            task.result = Some(result);
-            debug!("Research task {} completed successfully", id);
+        let notification = {
+            let mut tasks = self.tasks.lock().unwrap();
+            if let Some(task) = tasks.get_mut(id) {
+                task.status = ResearchStatus::Complete;
+                task.result = Some(result);
+                debug!("Research task {} completed successfully", id);
+                Some(ResearchCompletionNotification {
+                    id: id.clone(),
+                    status: ResearchStatus::Complete,
+                    query: task.query.clone(),
+                })
+            } else {
+                None
+            }
+        };
+        // Send notification outside the lock to avoid potential deadlocks
+        if let (Some(notification), Some(tx)) = (notification, &self.completion_tx) {
+            let _ = tx.send(notification); // Ignore error if no receivers
         }
     }
 
     /// Mark a research task as failed
     pub fn fail(&self, id: &ResearchId, error: String) {
-        let mut tasks = self.tasks.lock().unwrap();
-        if let Some(task) = tasks.get_mut(id) {
-            task.status = ResearchStatus::Failed;
-            task.result = Some(error);
-            debug!("Research task {} failed", id);
+        let notification = {
+            let mut tasks = self.tasks.lock().unwrap();
+            if let Some(task) = tasks.get_mut(id) {
+                task.status = ResearchStatus::Failed;
+                task.result = Some(error);
+                debug!("Research task {} failed", id);
+                Some(ResearchCompletionNotification {
+                    id: id.clone(),
+                    status: ResearchStatus::Failed,
+                    query: task.query.clone(),
+                })
+            } else {
+                None
+            }
+        };
+        // Send notification outside the lock to avoid potential deadlocks
+        if let (Some(notification), Some(tx)) = (notification, &self.completion_tx) {
+            let _ = tx.send(notification); // Ignore error if no receivers
         }
     }
 
@@ -432,5 +494,44 @@ mod tests {
         let ids: Vec<_> = (0..100).map(|_| PendingResearchManager::generate_id()).collect();
         let unique: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(ids.len(), unique.len(), "Generated IDs should be unique");
+    }
+
+    #[tokio::test]
+    async fn test_notifications_on_complete() {
+        let (manager, mut rx) = PendingResearchManager::with_notifications();
+        
+        let id = manager.register("Test query");
+        
+        // Complete the research
+        manager.complete(&id, "Report content".to_string());
+        
+        // Should receive a notification
+        let notification = rx.recv().await.unwrap();
+        assert_eq!(notification.id, id);
+        assert_eq!(notification.status, ResearchStatus::Complete);
+        assert_eq!(notification.query, "Test query");
+    }
+
+    #[tokio::test]
+    async fn test_notifications_on_fail() {
+        let (manager, mut rx) = PendingResearchManager::with_notifications();
+        
+        let id = manager.register("Test query");
+        
+        // Fail the research
+        manager.fail(&id, "Connection error".to_string());
+        
+        // Should receive a notification
+        let notification = rx.recv().await.unwrap();
+        assert_eq!(notification.id, id);
+        assert_eq!(notification.status, ResearchStatus::Failed);
+        assert_eq!(notification.query, "Test query");
+    }
+
+    #[test]
+    fn test_no_notifications_without_setup() {
+        let manager = PendingResearchManager::new();
+        // subscribe() should return None when notifications not enabled
+        assert!(manager.subscribe().is_none());
     }
 }

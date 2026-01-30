@@ -39,6 +39,8 @@ pub async fn handle_command<W: UiWriter>(
             output.print("  /rehydrate - Restore a dehydrated fragment by ID");
             output.print("  /resume    - List and switch to a previous session");
             output.print("  /research  - List pending/completed research tasks");
+            output.print("  /research <id> - View a specific research report");
+            output.print("  /research latest - View the most recent research report");
             output.print("  /project <path> - Load a project from the given absolute path");
             output.print("  /unproject - Unload the current project and reset context");
             output.print("  /dump      - Dump entire context window to file for debugging");
@@ -131,13 +133,19 @@ pub async fn handle_command<W: UiWriter>(
             }
             Ok(true)
         }
-        "/research" => {
+        cmd if cmd == "/research" || cmd.starts_with("/research ") => {
             let manager = agent.get_pending_research_manager();
-            let all_tasks = manager.list_all();
             
-            if all_tasks.is_empty() {
+            // Parse argument: /research, /research latest, /research <id>
+            let arg = cmd.strip_prefix("/research").unwrap_or("").trim();
+            
+            if arg.is_empty() {
+                // List all research tasks
+                let all_tasks = manager.list_all();
+                
+                if all_tasks.is_empty() {
                 output.print("📋 No research tasks (pending or completed).");
-            } else {
+                } else {
                 output.print(&format!("📋 Research Tasks ({} total):\n", all_tasks.len()));
                 
                 for task in all_tasks {
@@ -163,6 +171,54 @@ pub async fn handle_command<W: UiWriter>(
                         }
                     ));
                     output.print("");
+                    }
+                }
+            } else if arg == "latest" {
+                // Show the most recent research report
+                let all_tasks = manager.list_all();
+                
+                // Find the most recent completed task (smallest elapsed time = most recent)
+                let latest = all_tasks.iter()
+                    .filter(|t| t.status != g3_core::pending_research::ResearchStatus::Pending)
+                    .min_by_key(|t| t.started_at.elapsed());
+                
+                match latest {
+                    Some(task) => {
+                        output.print(&format!("📋 Research Report: `{}`\n", task.id));
+                        output.print(&format!("Query: {}\n", task.query));
+                        output.print(&format!("Status: {} | Elapsed: {}\n", task.status, task.elapsed_display()));
+                        output.print(&"─".repeat(60));
+                        if let Some(ref result) = task.result {
+                            output.print(result);
+                        } else {
+                            output.print("(No report content available)");
+                        }
+                    }
+                    None => {
+                        output.print("📋 No completed research tasks yet.");
+                    }
+                }
+            } else {
+                // View a specific research report by ID
+                let task_id = arg.to_string();
+                
+                match manager.get(&task_id) {
+                    Some(task) => {
+                        output.print(&format!("📋 Research Report: `{}`\n", task.id));
+                        output.print(&format!("Query: {}\n", task.query));
+                        output.print(&format!("Status: {} | Elapsed: {}\n", task.status, task.elapsed_display()));
+                        output.print(&"─".repeat(60));
+                        if let Some(ref result) = task.result {
+                            output.print(result);
+                        } else if task.status == g3_core::pending_research::ResearchStatus::Pending {
+                            output.print("(Research still in progress...)");
+                        } else {
+                            output.print("(No report content available)");
+                        }
+                    }
+                    None => {
+                        output.print(&format!("❓ No research task found with id: `{}`", task_id));
+                    }
                 }
             }
             Ok(true)
